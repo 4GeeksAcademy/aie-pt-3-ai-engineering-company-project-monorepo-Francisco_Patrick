@@ -23,7 +23,11 @@ La clasificación de estado de productos devueltos por imagen es el reto que má
 
 ## Mi idea de agente de IA
 ---
-Claude Code de Anthropic puede ofrecer los servicios de IA que se necesita para solventar los retos de automatización o IA.
+El agente de IA requerirá de la información del inventario de los almacenes para poder controlar el stock de forma eficiente. Esto permitiría al agente de IA enviar alertas reales de stock bajo, avisando a los operarios y los clientes correctamente. Para esto el agente de IA requerirá también información de los emails de los clientes para poder enviar dichas alertas de stock bajo.
+Además de los emails, necesitaría la información de entrega a los clientes (dirección de entrega, peso del paquete, urgencia), junto con la de los transportistas que recibirá a través de las APIs de éstos, para poder realizar estimaciones y poder proporcionar una sugerencia de qué transportista sería el más adecuado para realizar el envío.
+También recibirá varias imagenes mediante fotografías para realizar un analisis mediante imagen del estado visual de un paquete para proporcionar una clasificación adecuada para los paquetes, actualizando la información para que los operarios puedan trabajar adecuadamente con ella.
+
+Como el resultado de una investigación propia, sugiriría el uso de Claude Code de Anthropic, ya que puede ofrecer los servicios de IA que se necesita para solventar los retos de automatización o IA.
 - Tiene MCP para el uso de herramientas externas.
 - Puede comunicarse con APIs, lo cual se vuelve crucial para conectar con las APIs de transportistas.
 - Puede crear análisis y realizar una explicación.
