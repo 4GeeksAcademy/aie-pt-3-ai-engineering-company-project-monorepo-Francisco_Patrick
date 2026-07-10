@@ -64,6 +64,15 @@ ai-engineering-company-project-monorepo/
 
 ---
 
+## TypeScript validation (programming milestone)
+
+- Install dependencies: `npm install`
+- Validate types without emitting JS: `npm run typecheck`
+- Compile TypeScript to JavaScript: `npm run build`
+- Manually test operations in browser: `operations-playground.html` (loads `dist/utils/manualTestApp.js` after build)
+
+---
+
 ## Milestones (reference)
 
 | Milestone | Focus        | Typical deliverables                        |

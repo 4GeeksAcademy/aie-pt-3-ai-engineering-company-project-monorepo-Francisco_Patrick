@@ -64,6 +64,15 @@ ai-engineering-company-project-monorepo/
 
 ---
 
+## Validacion TypeScript (hito de programacion)
+
+- Instalar dependencias: `npm install`
+- Verificar tipos sin compilar: `npm run typecheck`
+- Compilar TypeScript a JavaScript: `npm run build`
+- Probar operaciones manualmente en navegador: `operations-playground.html` (usa `dist/utils/manualTestApp.js` generado por build)
+
+---
+
 ## Hitos (referencia)
 
 | Hito | Enfoque       | Entregables típicos                              |
