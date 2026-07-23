@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrackFlow | Playground de Operaciones</title>
+    <meta
+      name="description"
+      content="Pruebas manuales de funciones TypeScript de TrackFlow para filtrar, ordenar, buscar y agregar datos logisticos."
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "name": "TrackFlow Operations Playground",
+        "description": "Pagina para pruebas manuales de logica de negocio en TypeScript.",
+        "isPartOf": {
+          "@type": "WebSite",
+          "name": "TrackFlow",
+          "url": "https://www.trackflow.example"
+        }
+      }
+    </script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+    <header class="border-b border-slate-800 bg-slate-900/80">
+      <div class="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+        <a href="./index.html" class="text-sm text-cyan-300 hover:text-cyan-200">Volver a TrackFlow</a>
+        <h1 class="text-lg font-semibold">Playground de funciones TypeScript</h1>
+      </div>
+    </header>
+
+    <main class="mx-auto grid w-full max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[340px_1fr] lg:px-8">
+      <section aria-labelledby="actions-title" class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 id="actions-title" class="text-base font-semibold">Operaciones disponibles</h2>
+        <p class="mt-2 text-sm text-slate-300">
+          Cada boton ejecuta una funcion pura sobre datos de ejemplo basados en CONTEXT.md.
+        </p>
+
+        <div class="mt-4 grid gap-3">
+          <button id="btn-filter-shipments" class="rounded-md bg-cyan-400 px-3 py-2 text-left text-sm font-medium text-slate-950 hover:bg-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-100">
+            Filtrar shipments
+          </button>
+          <button id="btn-filter-carriers" class="rounded-md bg-cyan-400 px-3 py-2 text-left text-sm font-medium text-slate-950 hover:bg-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-100">
+            Filtrar carriers
+          </button>
+          <button id="btn-filter-returns" class="rounded-md bg-cyan-400 px-3 py-2 text-left text-sm font-medium text-slate-950 hover:bg-cyan-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-100">
+            Filtrar devoluciones
+          </button>
+          <button id="btn-sort-asc" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Orden ascendente
+          </button>
+          <button id="btn-sort-desc" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Orden descendente
+          </button>
+          <button id="btn-sort-multi" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Orden por multiples campos
+          </button>
+          <button id="btn-linear-search" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Busqueda lineal
+          </button>
+          <button id="btn-binary-search" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Busqueda binaria
+          </button>
+          <button id="btn-report" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Generar reporte de agregacion
+          </button>
+          <button id="btn-validate" class="rounded-md border border-slate-700 px-3 py-2 text-left text-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300">
+            Validar reglas de negocio
+          </button>
+        </div>
+      </section>
+
+      <section aria-labelledby="result-title" class="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 id="result-title" class="text-base font-semibold">Resultado</h2>
+        <p class="mt-2 text-sm text-slate-300">
+          El panel muestra en JSON el resultado exacto de cada operacion.
+        </p>
+        <pre
+          id="operation-result"
+          aria-live="polite"
+          class="mt-4 min-h-[560px] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs leading-6 text-slate-200"
+        >Haz clic en cualquier operacion para ver el resultado.</pre>
+      </section>
+    </main>
+
+    <script type="module" src="/dist/utils/manualTestApp.js"></script>
+  </body>
+</html>

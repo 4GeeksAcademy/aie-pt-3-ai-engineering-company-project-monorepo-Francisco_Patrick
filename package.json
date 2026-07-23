@@ -1,0 +1,13 @@
+{
+  "name": "trackflow-programming-foundations",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TypeScript business foundations for TrackFlow",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
