@@ -31,3 +31,4 @@ Audit user interface components and HTML templates in `uis/` against TrackFlow f
 - [ ] **Criteria 2 (Form Accessibility):** 100% of interactive form controls possess an associated `<label>` element linked via matching `for` and `id` attributes.
 - [ ] **Criteria 3 (Schema.org Markup):** Contains valid `<script type="application/ld+json">` structured data specifying `Organization` and `WebSite` metadata.
 - [ ] **Criteria 4 (Pure Tailwind Styling):** Interface relies exclusively on Tailwind CSS utility classes with zero custom inline CSS style attributes.
+- [ ] **Criteria 5 (React Component Props):** Must use prop `className` instead HTML prop `class`.

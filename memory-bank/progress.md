@@ -29,12 +29,12 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 
 ### Phase 2: Application Restructuring (`uis/`)
 - [x] **Application Specification:** Created and updated `specs/nextjs-typescript-application/SPEC.md` detailing frontend structure, Next.js applications (`./uis/website` and `./uis/backoffice`), component specs, layout separation, Milestone 2 business logic integration, and a 5-step consolidated implementation guide.
-- [ ] **Public Website (`./uis/website`):**
-  - Migrate and improve the existing landing page into a modern Next.js application inside `./uis/website`.
-  - Implement reusable UI components, mobile-first Tailwind CSS styling, semantic HTML5, keyboard accessibility (ARIA), and Schema.org structured data.
-- [ ] **Internal Backoffice (`./uis/backoffice`):**
-  - Create `./uis/backoffice` for internal company logic with its own layout and main entry view.
-  - Integrate Milestone 2 TypeScript business logic (`src/utils`) into the backoffice to provide operational visibility from day one.
+- [x] **Public Website (`./uis/website`):**
+  - Migrated and improved landing page and application form into `./uis/website` (Next.js App Router).
+  - Implemented reusable UI components, mobile-first Tailwind CSS styling, semantic HTML5, keyboard accessibility (ARIA), and Schema.org structured data.
+- [x] **Internal Backoffice (`./uis/backoffice`):**
+  - Created `./uis/backoffice` for internal company logic with an independent administrative layout shell (`layout.tsx`), sidebar, topbar hub switcher, and dashboard entry view.
+  - Integrated Milestone 2 TypeScript business logic (`src/utils`) directly into `/business-logic` route, rendering execution outputs dynamically in the web UI.
 
 ### Phase 3: Backend Services & Integrations (`/services`)
 - [ ] **Services Layer (`/services`):**
@@ -50,10 +50,10 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 | Milestone | Focus | Status | Notes / Deliverables |
 | --- | --- | --- | --- |
 | **0** | Prework & Context | **Completed** | Template initialized, `CONTEXT.md` integrated |
-| **1** | Web Foundation | **In Progress** | HTML prototypes created; migrating to `./uis/website` (Next.js) |
+| **1** | Web Foundation | **Completed** | Prototypes migrated and improved in `./uis/website` (Next.js) |
 | **2** | Programming Foundations | **Completed** | Core TS logic in `src/types` & `src/utils`, manual test playground |
-| **3** | Repository & Agent Governance | **Completed** | Memory Bank established (`projectbrief.md`, `techContext.md`, `progress.md`); pending `AGENTS.md`, `.agents/`, skills |
-| **4** | Next.js Applications | **Pending** | `./uis/website` & `./uis/backoffice` |
+| **3** | Repository & Agent Governance | **Completed** | Memory Bank established, `AGENTS.md`, `.agents/`, skills configured |
+| **4** | Next.js Applications | **Completed** | `./uis/website` & `./uis/backoffice` fully implemented & built |
 | **5** | Backend Services | **Pending** | API endpoints under `/services` |
 | **6** | Telemetry & Data Pipelines | **Pending** | Data pipelines under `data/pipelines/` |
 | **7** | RAG & Knowledge Base | **Pending** | Semantic search and vector index |
