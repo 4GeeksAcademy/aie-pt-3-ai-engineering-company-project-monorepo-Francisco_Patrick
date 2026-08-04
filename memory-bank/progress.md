@@ -23,9 +23,9 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 
 ### Phase 1: Repository Governance & Agent Rules (Immediate)
 - [x] **Initialize Memory Bank:** Complete `projectbrief.md`, `techContext.md`, and `progress.md` with business and technical context.
-- [ ] **Create `AGENTS.md`:** Define mandatory operational and delivery workflow for all AI agents working in this repository (pre-commit checks, verification requirements, delivery process).
-- [ ] **Configure `.agents/` Folder:** Establish directory-level conventions and scoped rules to prevent regressions and maintain code standards across monorepo modules.
-- [ ] **Formalize Reusable Skill(s):** Create at least one reusable skill with explicit, verifiable acceptance criteria for recurring development tasks.
+- [x] **Create `AGENTS.md`:** Define mandatory operational and delivery workflow for all AI agents working in this repository (pre-commit checks, verification requirements, delivery process).
+- [x] **Configure `.agents/` Folder:** Establish directory-level conventions and scoped rules to prevent regressions and maintain code standards across monorepo modules.
+- [x] **Formalize Reusable Skill(s):** Create at least one reusable skill with explicit, verifiable acceptance criteria for recurring development tasks.
 
 ### Phase 2: Application Restructuring (`uis/`)
 - [ ] **Public Website (`./uis/website`):**
@@ -51,7 +51,7 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 | **0** | Prework & Context | **Completed** | Template initialized, `CONTEXT.md` integrated |
 | **1** | Web Foundation | **In Progress** | HTML prototypes created; migrating to `./uis/website` (Next.js) |
 | **2** | Programming Foundations | **Completed** | Core TS logic in `src/types` & `src/utils`, manual test playground |
-| **3** | Repository & Agent Governance | **In Progress** | Memory Bank established (`projectbrief.md`, `techContext.md`, `progress.md`); pending `AGENTS.md`, `.agents/`, skills |
+| **3** | Repository & Agent Governance | **Completed** | Memory Bank established (`projectbrief.md`, `techContext.md`, `progress.md`); pending `AGENTS.md`, `.agents/`, skills |
 | **4** | Next.js Applications | **Pending** | `./uis/website` & `./uis/backoffice` |
 | **5** | Backend Services | **Pending** | API endpoints under `/services` |
 | **6** | Telemetry & Data Pipelines | **Pending** | Data pipelines under `data/pipelines/` |
