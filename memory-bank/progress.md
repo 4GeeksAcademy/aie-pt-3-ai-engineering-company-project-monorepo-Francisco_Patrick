@@ -28,6 +28,7 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 - [x] **Formalize Reusable Skill(s):** Create at least one reusable skill with explicit, verifiable acceptance criteria for recurring development tasks.
 
 ### Phase 2: Application Restructuring (`uis/`)
+- [x] **Application Specification:** Created and updated `specs/nextjs-typescript-application/SPEC.md` detailing frontend structure, Next.js applications (`./uis/website` and `./uis/backoffice`), component specs, layout separation, Milestone 2 business logic integration, and a 5-step consolidated implementation guide.
 - [ ] **Public Website (`./uis/website`):**
   - Migrate and improve the existing landing page into a modern Next.js application inside `./uis/website`.
   - Implement reusable UI components, mobile-first Tailwind CSS styling, semantic HTML5, keyboard accessibility (ARIA), and Schema.org structured data.
