@@ -1,0 +1,12 @@
+Metric,Value
+Total Elements Processed,10
+Valid Records,7
+Invalid Records,3
+Category: last_mile,1
+Category: warehouse,2
+Category: reverse_logistics,2
+Category: customer_experience,2
+Status: closed,4
+Status: open,2
+Status: discarded,1
+Average Satisfaction Index,3.5
