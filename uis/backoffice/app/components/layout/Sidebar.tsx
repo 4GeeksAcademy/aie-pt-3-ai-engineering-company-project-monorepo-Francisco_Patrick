@@ -13,6 +13,7 @@ export interface NavLinkItem {
 const NAV_LINKS: readonly NavLinkItem[] = [
   { label: 'Dashboard', href: '/', iconName: 'dashboard' },
   { label: 'Business Logic Suite', href: '/business-logic', iconName: 'cpu' },
+  { label: 'Proveedores', href: '/suppliers', iconName: 'truck' },
 ];
 
 /**
