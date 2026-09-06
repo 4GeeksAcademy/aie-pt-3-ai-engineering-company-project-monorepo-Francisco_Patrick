@@ -10,8 +10,11 @@ from fastapi.responses import StreamingResponse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from shared.analyzer.engine import analyze_csv_stream
+from routes.suppliers import router as suppliers_router
 
 app = FastAPI(title="Incident Analyzer API")
+
+app.include_router(suppliers_router)
 
 # Enable CORS for the frontend
 app.add_middleware(
