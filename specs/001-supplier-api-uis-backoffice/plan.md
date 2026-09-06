@@ -64,6 +64,21 @@ uis/
 
 **Structure Decision**: Placed backend in `services/api` as per previous context and frontend in `uis/backoffice` using Next.js App Router structure.
 
+## Integration & Refactoring Strategy
+
+### Backend (API Service)
+The `services/api/main.py` file already exists and serves the Incident Analyzer endpoints. To prevent losing or breaking the existing source:
+- **Do not overwrite `main.py`**: We will refactor `main.py` to use `fastapi.APIRouter`. 
+- **Modular Routes**: The new Supplier API endpoints will be encapsulated in a router within `services/api/routes/suppliers.py`.
+- **Integration**: In `main.py`, we will simply import and `app.include_router(suppliers_router, prefix="/suppliers")` without modifying the existing `/api/incidents/analyze` routes.
+- **Data persistence**: TinyDB initialization will be handled carefully in `services/api/database.py` without interfering with the existing in-memory state of the incident analyzer.
+
+### Frontend (Backoffice UI)
+The backoffice application (`uis/backoffice`) is an existing Next.js application.
+- **Layout Preservation**: We will integrate a new navigation link to the Supplier Directory within the existing UI layout or navigation menu.
+- **Modular Components**: The new UI code will be contained in `app/suppliers/page.tsx` and isolated components (`components/SupplierTable.tsx`, `components/SupplierForm.tsx`).
+- **No Overwriting**: We will not overwrite existing global state, CSS styles (other than extending Tailwind classes), or the existing incident logic components.
+
 ## Complexity Tracking
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |

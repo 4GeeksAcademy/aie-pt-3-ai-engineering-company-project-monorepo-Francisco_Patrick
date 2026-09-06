@@ -1,75 +1,158 @@
-"use client";
-import React, { useEffect, useState } from 'react';
-import SupplierForm from '../../components/SupplierForm';
-import SupplierTable from '../../components/SupplierTable';
+'use client';
 
-export default function SuppliersPage() {
-  const [suppliers, setSuppliers] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  
-  const [countryFilter, setCountryFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+import React, { useState, useEffect, useCallback } from 'react';
+import { SupplierTable, Supplier } from '../components/SupplierTable';
+import { SupplierForm, SupplierFormData } from '../components/SupplierForm';
 
-  const fetchSuppliers = async () => {
+const API_URL = 'http://127.0.0.1:8000/suppliers';
+
+export default function SuppliersPage(): React.ReactElement {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filterCountry, setFilterCountry] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchSuppliers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams();
-      if (countryFilter) params.append('country', countryFilter);
-      if (categoryFilter) params.append('category', categoryFilter);
+      if (filterCountry) params.append('country', filterCountry);
+      if (filterCategory) params.append('category', filterCategory);
       
-      const res = await fetch(`http://localhost:8000/api/suppliers/?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch');
+      const res = await fetch(`${API_URL}?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch suppliers');
+      
       const data = await res.json();
       setSuppliers(data);
-    } catch (e) {
-      console.error(e);
+    } catch (err: any) {
+      setError(err.message || 'Error fetching suppliers');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [filterCountry, filterCategory]);
 
   useEffect(() => {
     fetchSuppliers();
-  }, [countryFilter, categoryFilter]);
+  }, [fetchSuppliers]);
+
+  const handleAddSupplier = async (data: SupplierFormData) => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail?.[0]?.msg || errData.detail || 'Failed to create supplier');
+      }
+      
+      await fetchSuppliers();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateRate = async (id: number, newRate: number) => {
+    try {
+      const res = await fetch(`${API_URL}/${id}/rate`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cost_per_kg: newRate }),
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail?.[0]?.msg || errData.detail || 'Failed to update rate');
+      }
+      
+      await fetchSuppliers();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleUpdateStatus = async (id: number, newStatus: 'active' | 'suspended') => {
+    try {
+      const res = await fetch(`${API_URL}/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail?.[0]?.msg || errData.detail || 'Failed to update status');
+      }
+      
+      await fetchSuppliers();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!res.ok) throw new Error('Failed to delete supplier');
+      
+      await fetchSuppliers();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-sm">
-        <div className="flex gap-4 w-full sm:w-auto">
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-slate-400 mb-1">Filtrar por País</label>
-            <input 
-              type="text" 
-              placeholder="Todos los países..." 
-              value={countryFilter}
-              onChange={e => setCountryFilter(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+    <div className="flex flex-col gap-6">
+      <SupplierForm onSubmit={handleAddSupplier} isSubmitting={isSubmitting} />
+      
+      <div className="flex flex-col gap-4 pt-4 border-t border-slate-800">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <h2 className="text-xl font-semibold text-slate-200">Registered Suppliers</h2>
+          
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Filter by country..."
+              value={filterCountry}
+              onChange={(e) => setFilterCountry(e.target.value)}
+              className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-cyan-500"
             />
-          </div>
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-slate-400 mb-1">Filtrar por Categoría</label>
-            <input 
-              type="text" 
-              placeholder="Todas las categorías..." 
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+            <input
+              type="text"
+              placeholder="Filter by category..."
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="rounded border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-cyan-500"
             />
           </div>
         </div>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-sm shadow-blue-900/20"
-        >
-          {showForm ? 'Cancelar' : '+ Nuevo Proveedor'}
-        </button>
+        
+        {error && (
+          <div className="rounded bg-red-900/50 p-3 text-sm text-red-200 border border-red-800">
+            {error}
+          </div>
+        )}
+        
+        {loading ? (
+          <div className="flex justify-center p-8 text-slate-400">Loading suppliers...</div>
+        ) : (
+          <SupplierTable 
+            suppliers={suppliers} 
+            onUpdateRate={handleUpdateRate} 
+            onUpdateStatus={handleUpdateStatus} 
+            onDelete={handleDelete}
+          />
+        )}
       </div>
-
-      {showForm && (
-        <SupplierForm onSuccess={() => {
-          setShowForm(false);
-          fetchSuppliers();
-        }} />
-      )}
-
-      <SupplierTable suppliers={suppliers} onUpdate={fetchSuppliers} />
     </div>
   );
 }

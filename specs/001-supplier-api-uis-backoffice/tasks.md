@@ -14,12 +14,12 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Project initialization and basic structure
+**Purpose**: Project preparation and dependency verification
 
-- [x] T001 Create backend project structure in services/api/
-- [x] T002 Create frontend project structure in uis/backoffice/
-- [x] T003 Initialize FastAPI dependencies in services/api/
-- [x] T004 [P] Initialize Next.js project with Tailwind CSS in uis/backoffice/
+- [x] T001 Ensure `services/api/routes` directory exists for the new router
+- [x] T002 Ensure `uis/backoffice/app/suppliers` and `components` directories exist
+- [x] T003 Add `tinydb` and `pydantic` (if missing) to backend dependencies
+- [x] T004 [P] Verify existing Next.js and Tailwind configuration in `uis/backoffice/`
 
 ---
 
@@ -29,10 +29,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T005 Implement TinyDB database initialization in services/api/database.py
-- [x] T006 Implement FastAPI application entrypoint in services/api/main.py
-- [x] T007 Create Supplier base Pydantic models in services/api/models.py
-- [x] T008 [P] Setup Next.js base layout in uis/backoffice/app/layout.tsx
+- [x] T005 Implement TinyDB database initialization in `services/api/database.py` (ensure non-destructive to existing states)
+- [x] T006 Refactor `services/api/main.py` to support `APIRouter` without modifying existing incident endpoints
+- [x] T007 Create Supplier base Pydantic models in `services/api/models.py`
+- [x] T008 [P] Add Navigation link to Supplier Directory in existing `uis/backoffice` layout/menu
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -108,7 +108,7 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [x] T023 [P] Add CORS middleware in services/api/main.py to allow frontend connection
+- [x] T023 [P] Verify CORS middleware in `services/api/main.py` covers the new routes
 - [x] T024 Test backend with frontend integrated end-to-end (run quickstart.md validation)
 
 ---
