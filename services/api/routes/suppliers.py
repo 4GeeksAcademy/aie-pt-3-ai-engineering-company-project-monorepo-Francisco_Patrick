@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus
-from database import get_db
+from infrastructure.database import get_db
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 

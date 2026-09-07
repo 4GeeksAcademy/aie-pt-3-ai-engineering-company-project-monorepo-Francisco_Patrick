@@ -14,19 +14,19 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure directories under `services/api/` (domain, application, infrastructure, presentation).
-- [ ] T002 Update `requirements.txt` or `pyproject.toml` with `python-jose[cryptography]` and `libpass[bcrypt]`.
+- [X] T001 Create project structure directories under `services/api/` (domain, application, infrastructure, presentation).
+- [X] T002 Update `requirements.txt` or `pyproject.toml` with `python-jose[cryptography]` and `libpass[bcrypt]`.
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-- [ ] T003 Implement TinyDB connection setup in `services/api/infrastructure/database.py`.
-- [ ] T004 Define domain exceptions in `services/api/domain/exceptions.py`.
-- [ ] T005 [P] Define Security and Repository port interfaces in `services/api/domain/ports.py`.
-- [ ] T006 Implement JWT and hashing security adapter in `services/api/infrastructure/adapters/security_adapter.py`. (Ensure it crashes at startup if JWT secret is missing).
-- [ ] T007 Implement TinyDB base repository adapter in `services/api/infrastructure/adapters/tiny_db_repository.py`.
-- [ ] T008 Scaffold FastAPI app and wiring in `services/api/main.py`.
+- [X] T003 Implement TinyDB connection setup in `services/api/infrastructure/database.py`.
+- [X] T004 Define domain exceptions in `services/api/domain/exceptions.py`.
+- [X] T005 [P] Define Security and Repository port interfaces in `services/api/domain/ports.py`.
+- [X] T006 Implement JWT and hashing security adapter in `services/api/infrastructure/adapters/security_adapter.py`. (Ensure it crashes at startup if JWT secret is missing).
+- [X] T007 Implement TinyDB base repository adapter in `services/api/infrastructure/adapters/tiny_db_repository.py`.
+- [X] T008 Scaffold FastAPI app and wiring in `services/api/main.py`.
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel.
 

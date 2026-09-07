@@ -12,6 +12,27 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
 
+# Auth & Users infrastructure wiring
+from infrastructure.database import get_db
+from infrastructure.adapters.tiny_db_repository import TinyDBUserRepository, TinyDBProfileRepository
+from infrastructure.adapters.security_adapter import JwtSecurityAdapter
+
+# Initialize adapters (will crash if JWT_SECRET_KEY is missing, fulfilling the requirement)
+security_adapter = JwtSecurityAdapter()
+db_instance = get_db()
+user_repository = TinyDBUserRepository(db_instance)
+profile_repository = TinyDBProfileRepository(db_instance)
+
+def get_security_adapter() -> JwtSecurityAdapter:
+    return security_adapter
+
+def get_user_repository() -> TinyDBUserRepository:
+    return user_repository
+
+def get_profile_repository() -> TinyDBProfileRepository:
+    return profile_repository
+
+
 app = FastAPI(title="Incident Analyzer API")
 
 app.include_router(suppliers_router)
