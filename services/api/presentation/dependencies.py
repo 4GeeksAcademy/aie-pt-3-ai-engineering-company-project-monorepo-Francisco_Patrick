@@ -6,7 +6,14 @@ from domain.models import User
 from domain.exceptions import AuthenticationError
 from domain.ports import SecurityPort
 from application.services.user_service import UserService
-from presentation.api.user_routes import get_user_service_dep
+def get_user_service_dep() -> UserService:
+    pass
+
+def get_auth_service_dep():
+    pass
+
+def get_profile_service_dep():
+    pass
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 

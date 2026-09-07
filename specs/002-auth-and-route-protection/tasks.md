@@ -96,7 +96,7 @@
 
 - [X] T025 [P] Create automated tests for auth and users in `services/api/tests/api/test_auth.py` and `test_users.py`.
 - [X] T026 [P] Create automated tests for profiles in `services/api/tests/api/test_profiles.py`.
-- [ ] T027 Run quickstart.md validation manually to ensure full end-to-end functionality.
+- [X] T027 Run quickstart.md validation manually to ensure full end-to-end functionality.
 
 ## Dependencies & Execution Order
 

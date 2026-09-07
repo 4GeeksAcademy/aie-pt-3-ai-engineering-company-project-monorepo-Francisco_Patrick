@@ -1,10 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from domain.models import User, Profile, ProfileBase
 from application.services.profile_service import ProfileService
-from presentation.dependencies import get_current_user
-
-def get_profile_service_dep() -> ProfileService:
-    pass
+from presentation.dependencies import get_current_user, get_profile_service_dep
 
 router = APIRouter(prefix="/profiles", tags=["Profiles"])
 

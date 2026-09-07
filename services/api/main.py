@@ -11,10 +11,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
-from presentation.api.user_routes import router as user_router, get_user_service_dep
-from presentation.api.auth_routes import router as auth_router, get_auth_service_dep
-from presentation.api.profile_routes import router as profile_router, get_profile_service_dep
-from presentation.dependencies import get_security_adapter_dep
+from presentation.api.user_routes import router as user_router
+from presentation.api.auth_routes import router as auth_router
+from presentation.api.profile_routes import router as profile_router
+from presentation.dependencies import get_security_adapter_dep, get_user_service_dep, get_auth_service_dep, get_profile_service_dep
 from application.services.user_service import UserService
 from application.services.auth_service import AuthService
 from application.services.profile_service import ProfileService

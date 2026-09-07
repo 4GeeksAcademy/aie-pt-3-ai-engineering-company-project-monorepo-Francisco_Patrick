@@ -2,9 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from domain.models import UserCreate, User
 from application.services.user_service import UserService
 
-# A placeholder dependency to get the user service; we will wire this up in main.py
-def get_user_service_dep() -> UserService:
-    pass
+from presentation.dependencies import get_user_service_dep
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

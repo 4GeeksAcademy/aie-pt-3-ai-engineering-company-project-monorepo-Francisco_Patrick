@@ -5,11 +5,7 @@ from pydantic import BaseModel
 from application.services.auth_service import AuthService
 from domain.exceptions import AuthenticationError, UserInactiveError
 from domain.models import User
-from presentation.dependencies import get_current_user
-
-# A placeholder dependency to get the auth service; we will wire this up in main.py
-def get_auth_service_dep() -> AuthService:
-    pass
+from presentation.dependencies import get_current_user, get_auth_service_dep
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
