@@ -11,10 +11,60 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
+from presentation.api.user_routes import router as user_router
+from presentation.api.auth_routes import router as auth_router
+from presentation.api.profile_routes import router as profile_router
+from presentation.dependencies import get_security_adapter_dep, get_user_service_dep, get_auth_service_dep, get_profile_service_dep
+from application.services.user_service import UserService
+from application.services.auth_service import AuthService
+from application.services.profile_service import ProfileService
+
+# Auth & Users infrastructure wiring
+from infrastructure.database import get_db
+from infrastructure.adapters.tiny_db_repository import TinyDBUserRepository, TinyDBProfileRepository
+from infrastructure.adapters.security_adapter import JwtSecurityAdapter
+
+# Initialize adapters (will crash if JWT_SECRET_KEY is missing, fulfilling the requirement)
+security_adapter = JwtSecurityAdapter()
+db_instance = get_db()
+user_repository = TinyDBUserRepository(db_instance)
+profile_repository = TinyDBProfileRepository(db_instance)
+
+def get_security_adapter() -> JwtSecurityAdapter:
+    return security_adapter
+
+def get_user_repository() -> TinyDBUserRepository:
+    return user_repository
+
+def get_profile_repository() -> TinyDBProfileRepository:
+    return profile_repository
+
+# Initialize application services
+user_service = UserService(
+    user_repo=user_repository,
+    profile_repo=profile_repository,
+    security_port=security_adapter
+)
+auth_service = AuthService(
+    user_repo=user_repository,
+    security_port=security_adapter
+)
+profile_service = ProfileService(
+    profile_repo=profile_repository
+)
 
 app = FastAPI(title="Incident Analyzer API")
 
+# Dependency overrides for routing
+app.dependency_overrides[get_security_adapter_dep] = lambda: security_adapter
+app.dependency_overrides[get_user_service_dep] = lambda: user_service
+app.dependency_overrides[get_auth_service_dep] = lambda: auth_service
+app.dependency_overrides[get_profile_service_dep] = lambda: profile_service
+
 app.include_router(suppliers_router)
+app.include_router(user_router)
+app.include_router(auth_router)
+app.include_router(profile_router)
 
 # Enable CORS for the frontend
 app.add_middleware(
