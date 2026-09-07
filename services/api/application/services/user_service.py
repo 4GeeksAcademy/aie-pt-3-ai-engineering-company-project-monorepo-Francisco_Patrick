@@ -55,3 +55,32 @@ class UserService:
         if data:
             return User(**data)
         return None
+
+    def list_users(self) -> List[User]:
+        users_data = self.user_repo.get_all()
+        return [User(**u) for u in users_data]
+
+    def update_user(self, user_id: str, update_data: dict) -> Optional[User]:
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return None
+        
+        # If updating password, hash it
+        if "password" in update_data:
+            update_data["hashed_password"] = self.security_port.hash_password(update_data.pop("password"))
+
+        updated = self.user_repo.update(user_id, update_data)
+        return User(**updated) if updated else None
+
+    def delete_user(self, user_id: str) -> bool:
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False
+            
+        # Delete linked profile first if needed, though TinyDBProfileRepository doesn't enforce foreign keys,
+        # it's good practice.
+        profile_data = self.profile_repo.get_by_user_id(user_id)
+        if profile_data:
+            self.profile_repo.delete(profile_data["id"])
+            
+        return self.user_repo.delete(user_id)

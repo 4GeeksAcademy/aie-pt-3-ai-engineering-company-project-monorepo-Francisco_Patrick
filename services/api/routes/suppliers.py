@@ -3,10 +3,16 @@ from tinydb import Query as TinyQuery
 from datetime import datetime
 from typing import List, Optional
 
-from domain.models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus
+from domain.models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus, User
 from infrastructure.database import get_db
+from presentation.dependencies import get_current_user
+from fastapi import Depends
 
-router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
+router = APIRouter(
+    prefix="/suppliers",
+    tags=["Suppliers"],
+    dependencies=[Depends(get_current_user)]
+)
 
 def get_current_time_str() -> str:
     return datetime.utcnow().isoformat()

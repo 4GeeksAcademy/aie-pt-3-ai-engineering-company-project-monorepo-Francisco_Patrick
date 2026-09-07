@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 from application.services.auth_service import AuthService
 from domain.exceptions import AuthenticationError, UserInactiveError
+from domain.models import User
+from presentation.dependencies import get_current_user
 
 # A placeholder dependency to get the auth service; we will wire this up in main.py
 def get_auth_service_dep() -> AuthService:
@@ -35,3 +37,10 @@ def login_for_access_token(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+@router.get("/me", response_model=User)
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """
+    Returns the currently authenticated user's information.
+    """
+    return current_user

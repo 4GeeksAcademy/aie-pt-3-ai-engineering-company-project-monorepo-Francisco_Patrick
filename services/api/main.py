@@ -13,8 +13,11 @@ from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
 from presentation.api.user_routes import router as user_router, get_user_service_dep
 from presentation.api.auth_routes import router as auth_router, get_auth_service_dep
+from presentation.api.profile_routes import router as profile_router, get_profile_service_dep
+from presentation.dependencies import get_security_adapter_dep
 from application.services.user_service import UserService
 from application.services.auth_service import AuthService
+from application.services.profile_service import ProfileService
 
 # Auth & Users infrastructure wiring
 from infrastructure.database import get_db
@@ -46,16 +49,22 @@ auth_service = AuthService(
     user_repo=user_repository,
     security_port=security_adapter
 )
+profile_service = ProfileService(
+    profile_repo=profile_repository
+)
 
 app = FastAPI(title="Incident Analyzer API")
 
 # Dependency overrides for routing
+app.dependency_overrides[get_security_adapter_dep] = lambda: security_adapter
 app.dependency_overrides[get_user_service_dep] = lambda: user_service
 app.dependency_overrides[get_auth_service_dep] = lambda: auth_service
+app.dependency_overrides[get_profile_service_dep] = lambda: profile_service
 
 app.include_router(suppliers_router)
 app.include_router(user_router)
 app.include_router(auth_router)
+app.include_router(profile_router)
 
 # Enable CORS for the frontend
 app.add_middleware(

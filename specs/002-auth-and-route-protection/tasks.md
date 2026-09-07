@@ -67,12 +67,12 @@
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] Implement `get_current_user` dependency in `services/api/presentation/dependencies.py`. Must explicitly reject token if user is not found or `is_active=False`.
-- [ ] T017 [US3] Implement ProfileService in `services/api/application/services/profile_service.py` for retrieving profile data.
-- [ ] T018 [US3] Implement GET `/auth/me` endpoint in `services/api/presentation/api/auth_routes.py`.
-- [ ] T019 [US3] Implement GET `/profiles/me` and PUT `/profiles/me` endpoints in `services/api/presentation/api/profile_routes.py`.
-- [ ] T020 [US3] Wire profile routes into FastAPI app in `services/api/main.py`.
-- [ ] T021 [US3] Apply `get_current_user` to at least 5 existing sensitive routes outside `/users` and `/auth`.
+- [X] T016 [US3] Implement `get_current_user` dependency in `services/api/presentation/dependencies.py`. Must explicitly reject token if user is not found or `is_active=False`.
+- [X] T017 [US3] Implement ProfileService in `services/api/application/services/profile_service.py` for retrieving profile data.
+- [X] T018 [US3] Implement GET `/auth/me` endpoint in `services/api/presentation/api/auth_routes.py`.
+- [X] T019 [US3] Implement GET `/profiles/me` and PUT `/profiles/me` endpoints in `services/api/presentation/api/profile_routes.py`.
+- [X] T020 [US3] Wire profile routes into FastAPI app in `services/api/main.py`.
+- [X] T021 [US3] Apply `get_current_user` to at least 5 existing sensitive routes outside `/users` and `/auth`.
 
 **Checkpoint**: Protected resources are secured, and authenticated users can access their profile data.
 
@@ -84,9 +84,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Expand UserService in `services/api/application/services/user_service.py` to handle list, get, update, and delete logic.
-- [ ] T023 [US4] Implement GET `/users`, GET `/users/{id}`, PUT `/users/{id}`, and DELETE `/users/{id}` in `services/api/presentation/api/user_routes.py`.
-- [ ] T024 [US4] Add role-based authorization checks to these endpoints (e.g., using `get_current_admin_user` or directly checking the role in the route).
+- [X] T022 [US4] Expand UserService in `services/api/application/services/user_service.py` to handle list, get, update, and delete logic.
+- [X] T023 [US4] Implement GET `/users`, GET `/users/{id}`, PUT `/users/{id}`, and DELETE `/users/{id}` in `services/api/presentation/api/user_routes.py`.
+- [X] T024 [US4] Add role-based authorization checks to these endpoints (e.g., using `get_current_admin_user` or directly checking the role in the route).
 
 **Checkpoint**: All user stories are independently functional.
 
