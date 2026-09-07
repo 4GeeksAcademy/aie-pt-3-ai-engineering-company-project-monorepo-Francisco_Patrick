@@ -94,8 +94,8 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T025 [P] Create automated tests for auth and users in `services/api/tests/api/test_auth.py` and `test_users.py`.
-- [ ] T026 [P] Create automated tests for profiles in `services/api/tests/api/test_profiles.py`.
+- [X] T025 [P] Create automated tests for auth and users in `services/api/tests/api/test_auth.py` and `test_users.py`.
+- [X] T026 [P] Create automated tests for profiles in `services/api/tests/api/test_profiles.py`.
 - [ ] T027 Run quickstart.md validation manually to ensure full end-to-end functionality.
 
 ## Dependencies & Execution Order
