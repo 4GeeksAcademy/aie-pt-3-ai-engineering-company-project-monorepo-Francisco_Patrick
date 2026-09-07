@@ -3,7 +3,7 @@ from tinydb import Query as TinyQuery
 from datetime import datetime
 from typing import List, Optional
 
-from models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus
+from domain.models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus
 from infrastructure.database import get_db
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])

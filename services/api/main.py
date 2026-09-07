@@ -11,6 +11,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
+from presentation.api.user_routes import router as user_router, get_user_service_dep
+from presentation.api.auth_routes import router as auth_router, get_auth_service_dep
+from application.services.user_service import UserService
+from application.services.auth_service import AuthService
 
 # Auth & Users infrastructure wiring
 from infrastructure.database import get_db
@@ -32,10 +36,26 @@ def get_user_repository() -> TinyDBUserRepository:
 def get_profile_repository() -> TinyDBProfileRepository:
     return profile_repository
 
+# Initialize application services
+user_service = UserService(
+    user_repo=user_repository,
+    profile_repo=profile_repository,
+    security_port=security_adapter
+)
+auth_service = AuthService(
+    user_repo=user_repository,
+    security_port=security_adapter
+)
 
 app = FastAPI(title="Incident Analyzer API")
 
+# Dependency overrides for routing
+app.dependency_overrides[get_user_service_dep] = lambda: user_service
+app.dependency_overrides[get_auth_service_dep] = lambda: auth_service
+
 app.include_router(suppliers_router)
+app.include_router(user_router)
+app.include_router(auth_router)
 
 # Enable CORS for the frontend
 app.add_middleware(

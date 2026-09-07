@@ -38,10 +38,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [P] [US1] Create User and Profile domain entities in `services/api/domain/models.py`. Include validation for 8-char password minimum.
-- [ ] T010 [US1] Implement UserService in `services/api/application/services/user_service.py` to handle registration logic. Enforce default role 'user' and `is_active=True`.
-- [ ] T011 [US1] Implement POST `/users` endpoint in `services/api/presentation/api/user_routes.py`.
-- [ ] T012 [US1] Wire user routes into FastAPI app in `services/api/main.py`.
+- [X] T009 [P] [US1] Create User and Profile domain entities in `services/api/domain/models.py`. Include validation for 8-char password minimum.
+- [X] T010 [US1] Implement UserService in `services/api/application/services/user_service.py` to handle registration logic. Enforce default role 'user' and `is_active=True`.
+- [X] T011 [US1] Implement POST `/users` endpoint in `services/api/presentation/api/user_routes.py`.
+- [X] T012 [US1] Wire user routes into FastAPI app in `services/api/main.py`.
 
 **Checkpoint**: User Registration is fully functional and testable independently.
 
@@ -53,9 +53,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T013 [P] [US2] Implement AuthService in `services/api/application/services/auth_service.py` for credential validation and token generation. Must explicitly reject if `is_active=False`.
-- [ ] T014 [US2] Implement POST `/auth/login` endpoint in `services/api/presentation/api/auth_routes.py`. Must explicitly use FastAPI `OAuth2PasswordBearer` and accept `application/x-www-form-urlencoded`.
-- [ ] T015 [US2] Wire auth routes into FastAPI app in `services/api/main.py`.
+- [X] T013 [P] [US2] Implement AuthService in `services/api/application/services/auth_service.py` for credential validation and token generation. Must explicitly reject if `is_active=False`.
+- [X] T014 [US2] Implement POST `/auth/login` endpoint in `services/api/presentation/api/auth_routes.py`. Must explicitly use FastAPI `OAuth2PasswordBearer` and accept `application/x-www-form-urlencoded`.
+- [X] T015 [US2] Wire auth routes into FastAPI app in `services/api/main.py`.
 
 **Checkpoint**: User Login works independently and returns valid JWTs.
 
