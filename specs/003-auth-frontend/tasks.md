@@ -18,7 +18,7 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create necessary directories (`lib`, `components`) in `uis/backoffice/src/` if they do not exist
+- [x] T001 Create necessary directories (`lib`, `components`) in `uis/backoffice/src/` if they do not exist
 
 ---
 
@@ -28,8 +28,8 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T002 [P] Implement token storage utilities (get, set, remove token) in `uis/backoffice/src/lib/auth.ts`
-- [ ] T003 [P] Implement centralized fetch wrapper with token injection and 401 handling in `uis/backoffice/src/lib/api.ts` (Reference `contracts/api.md` for global headers)
+- [x] T002 [P] Implement token storage utilities (get, set, remove token) in `uis/backoffice/src/lib/auth.ts`
+- [x] T003 [P] Implement centralized fetch wrapper with token injection and 401 handling in `uis/backoffice/src/lib/api.ts` (Reference `contracts/api.md` for global headers)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -43,8 +43,8 @@
 
 ### Implementation for User Story 1
 
-- [ ] T004 [P] [US1] Implement login form and API integration in `uis/backoffice/src/app/login/page.tsx` (Must use OAuth2 `application/x-www-form-urlencoded` per `contracts/api.md`)
-- [ ] T005 [P] [US1] Implement registration form and API integration in `uis/backoffice/src/app/register/page.tsx` (Must use JSON payload per `contracts/api.md`)
+- [x] T004 [P] [US1] Implement login form and API integration in `uis/backoffice/src/app/login/page.tsx` (Must use OAuth2 `application/x-www-form-urlencoded` per `contracts/api.md`)
+- [x] T005 [P] [US1] Implement registration form and API integration in `uis/backoffice/src/app/register/page.tsx` (Must use JSON payload per `contracts/api.md`)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -58,8 +58,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T006 [US2] Implement `AuthGuard` client component in `uis/backoffice/src/components/AuthGuard.tsx`
-- [ ] T007 [US2] Integrate `AuthGuard` to protect the layout in `uis/backoffice/src/app/layout.tsx` (excluding public routes like login/register)
+- [x] T006 [US2] Implement `AuthGuard` client component in `uis/backoffice/src/components/AuthGuard.tsx`
+- [x] T007 [US2] Integrate `AuthGuard` to protect the layout in `uis/backoffice/src/app/layout.tsx` (excluding public routes like login/register)
 
 **Checkpoint**: Route protection is active across the backoffice application.
 
@@ -73,7 +73,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T008 [US4] Add a logout button/action that uses the `removeToken` utility and redirects to `/login`. Update `uis/backoffice/src/app/layout.tsx` or the relevant navigation component.
+- [x] T008 [US4] Add a logout button/action that uses the `removeToken` utility and redirects to `/login`. Update `uis/backoffice/src/app/layout.tsx` or the relevant navigation component.
 
 **Checkpoint**: Logout flow is fully functional.
 
@@ -87,7 +87,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T009 [US3] Implement profile view and edit form in `uis/backoffice/src/app/account/profile/page.tsx` (Uses `GET /auth/me` and `PUT /profiles/me` per `contracts/api.md`)
+- [x] T009 [US3] Implement profile view and edit form in `uis/backoffice/src/app/account/profile/page.tsx` (Uses `GET /auth/me` and `PUT /profiles/me` per `contracts/api.md`)
 
 **Checkpoint**: All user stories are independently functional.
 
@@ -97,8 +97,8 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T010 Run quickstart.md validation to ensure all scenarios pass.
-- [ ] T011 Verify UI styling is consistent with Tailwind CSS conventions.
+- [x] T010 Run quickstart.md validation to ensure all scenarios pass.
+- [x] T011 Verify UI styling is consistent with Tailwind CSS conventions.
 
 ---
 
