@@ -37,8 +37,9 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
   - Integrated Milestone 2 TypeScript business logic (`src/utils`) directly into `/business-logic` route, rendering execution outputs dynamically in the web UI.
 
 ### Phase 3: Backend Services & Integrations (`/services`)
-- [ ] **Services Layer (`/services`):**
-  - Create backend microservices and API endpoints under `/services` (Inventory API, Carrier Aggregator, Returns Engine, CX Gateway).
+- [x] **Password Reset & Account Auth (AUTH-03):**
+  - Implemented `/auth/forgot-password` (anti-enumeration, email delivery via Resend, rate limiting), `/auth/reset-password` (token-based 30-min window, single-use invalidation), and `/auth/change-password` (authenticated session flow).
+  - Created Next.js UI views in `./uis/backoffice` (`/forgot-password`, `/reset-password`, `/account/change-password`, login link).
 
 ### Phase 4: Delivery
 - [ ] **Pull Request:** Open a PR summarizing all governance, application, and skill additions once complete.

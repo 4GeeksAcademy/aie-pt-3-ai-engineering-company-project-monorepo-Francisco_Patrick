@@ -15,7 +15,7 @@
 
 **Purpose**: Project initialization and basic structure setup
 
-- [ ] T001 Verify and update environment configuration variables in `services/api/.env.example` to document `RESEND_API_KEY` and token expiration settings.
+- [x] T001 Verify and update environment configuration variables in `services/api/.env.example` to document `RESEND_API_KEY` and token expiration settings.
 
 ---
 
@@ -23,11 +23,11 @@
 
 **Purpose**: Core infrastructure and data types that MUST be complete before ANY user story can be implemented
 
-- [ ] T002 Define TypeScript domain types for PasswordResetToken, AuditLog, and API request/response payloads in `packages/shared/src/types/auth.ts`.
-- [ ] T003 [P] Implement database repository or in-memory persistence layer for PasswordResetToken with SHA-256 token hashing and expiration validation in `services/api/src/models/passwordResetToken.ts`.
-- [ ] T004 [P] Implement security audit logging service in `services/api/src/services/auditService.ts`.
-- [ ] T005 [P] Implement rate limiting middleware for auth endpoints (5 requests/hour per email) in `services/api/src/middlewares/rateLimiter.ts`.
-- [ ] T006 Implement transactional email delivery service with Resend SDK integration and HTML template support in `services/api/src/services/emailService.ts`.
+- [x] T002 Define TypeScript domain types for PasswordResetToken, AuditLog, and API request/response payloads in `packages/shared/src/types/auth.ts`.
+- [x] T003 [P] Implement database repository or in-memory persistence layer for PasswordResetToken with SHA-256 token hashing and expiration validation in `services/api/src/models/passwordResetToken.ts`.
+- [x] T004 [P] Implement security audit logging service in `services/api/src/services/auditService.ts`.
+- [x] T005 [P] Implement rate limiting middleware for auth endpoints (5 requests/hour per email) in `services/api/src/middlewares/rateLimiter.ts`.
+- [x] T006 Implement transactional email delivery service with Resend SDK integration and HTML template support in `services/api/src/services/emailService.ts`.
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -39,10 +39,10 @@
 
 **Independent Test**: Enviar solicitud desde `/forgot-password` con correos existentes y no existentes; ambos deben devolver 200 OK y la misma respuesta en UI, emitiendo el correo solo para el existente.
 
-- [ ] T007 [P] [US1] Implement `POST /auth/forgot-password` controller and service in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
-- [ ] T008 [P] [US1] Create frontend API client method `requestPasswordReset` in `uis/backoffice/src/services/authApi.ts`.
-- [ ] T009 [US1] Create `/forgot-password` page component with form disabling and anti-enumeration feedback in `uis/backoffice/src/app/(auth)/forgot-password/page.tsx`.
-- [ ] T010 [US1] Add visible "¿Olvidaste tu contraseña?" link pointing to `/forgot-password` in `uis/backoffice/src/app/(auth)/login/page.tsx`.
+- [x] T007 [P] [US1] Implement `POST /auth/forgot-password` controller and service in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
+- [x] T008 [P] [US1] Create frontend API client method `requestPasswordReset` in `uis/backoffice/src/services/authApi.ts`.
+- [x] T009 [US1] Create `/forgot-password` page component with form disabling and anti-enumeration feedback in `uis/backoffice/src/app/(auth)/forgot-password/page.tsx`.
+- [x] T010 [US1] Add visible "¿Olvidaste tu contraseña?" link pointing to `/forgot-password` in `uis/backoffice/src/app/(auth)/login/page.tsx`.
 
 **Checkpoint**: User Story 1 fully functional and testable independently.
 
@@ -54,9 +54,9 @@
 
 **Independent Test**: Navegar a `/reset-password?token=<token_válido>`, enviar nueva clave, verificar redirección a `/login` e intentar reutilizar el token (debe fallar con 400 Bad Request).
 
-- [ ] T011 [P] [US2] Implement `POST /auth/reset-password` controller and service logic in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
-- [ ] T012 [P] [US2] Create frontend API client method `resetPassword` in `uis/backoffice/src/services/authApi.ts`.
-- [ ] T013 [US2] Create `/reset-password` page component reading `token` from URL query string with validation and error handling in `uis/backoffice/src/app/(auth)/reset-password/page.tsx`.
+- [x] T011 [P] [US2] Implement `POST /auth/reset-password` controller and service logic in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
+- [x] T012 [P] [US2] Create frontend API client method `resetPassword` in `uis/backoffice/src/services/authApi.ts`.
+- [x] T013 [US2] Create `/reset-password` page component reading `token` from URL query string with validation and error handling in `uis/backoffice/src/app/(auth)/reset-password/page.tsx`.
 
 **Checkpoint**: User Stories 1 and 2 work independently and end-to-end.
 
@@ -68,9 +68,9 @@
 
 **Independent Test**: Desde `/account/change-password`, enviar contraseña actual errónea (rechazo 400) y luego contraseña correcta (éxito 200).
 
-- [ ] T014 [P] [US3] Implement `POST /auth/change-password` authenticated controller and service logic in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
-- [ ] T015 [P] [US3] Create frontend API client method `changePassword` in `uis/backoffice/src/services/authApi.ts`.
-- [ ] T016 [US3] Create `/account/change-password` page component with current password and match validation in `uis/backoffice/src/app/account/change-password/page.tsx`.
+- [x] T014 [P] [US3] Implement `POST /auth/change-password` authenticated controller and service logic in `services/api/src/controllers/authController.ts` and `services/api/src/services/authService.ts`.
+- [x] T015 [P] [US3] Create frontend API client method `changePassword` in `uis/backoffice/src/services/authApi.ts`.
+- [x] T016 [US3] Create `/account/change-password` page component with current password and match validation in `uis/backoffice/src/app/account/change-password/page.tsx`.
 
 ---
 
@@ -78,8 +78,8 @@
 
 **Purpose**: Verificación final, pruebas integradas y documentación
 
-- [ ] T017 Execute end-to-end quickstart validation scenarios defined in `specs/004-password-reset/quickstart.md`.
-- [ ] T018 Run TypeScript static typecheck (`npm run typecheck`) and linting across `services/api` and `uis/backoffice`.
+- [x] T017 Execute end-to-end quickstart validation scenarios defined in `specs/004-password-reset/quickstart.md`.
+- [x] T018 Run TypeScript static typecheck (`npm run typecheck`) and linting across `services/api` and `uis/backoffice`.
 
 ---
 
