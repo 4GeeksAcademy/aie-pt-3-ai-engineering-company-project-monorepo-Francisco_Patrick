@@ -1,9 +1,3 @@
-/**
- * Shared types for transversal project apps.
- * Extend with domain types (e.g. Location, Sale, Customer) as needed.
- */
-
-// Example placeholder — replace with your domain types
 export type Id = string;
 
 export interface BaseEntity {
@@ -11,3 +5,5 @@ export interface BaseEntity {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export * from "./auth";
