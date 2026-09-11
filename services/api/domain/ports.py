@@ -60,3 +60,28 @@ class ProfileRepositoryPort(ABC):
     @abstractmethod
     def delete(self, profile_id: str) -> bool:
         pass
+
+
+class PasswordResetTokenRepositoryPort(ABC):
+    @abstractmethod
+    def create_token(self, user_id: str, raw_token: str, expires_in_minutes: int = 30) -> Dict[str, Any]:
+        pass
+
+    @abstractmethod
+    def get_valid_token(self, raw_token: str) -> Optional[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def mark_used(self, token_id: str) -> bool:
+        pass
+
+    @abstractmethod
+    def invalidate_user_tokens(self, user_id: str) -> int:
+        pass
+
+
+class AuditLogRepositoryPort(ABC):
+    @abstractmethod
+    def log_event(self, event_type: str, user_id: Optional[str], ip_address: str, details: Optional[str] = None) -> Dict[str, Any]:
+        pass
+
