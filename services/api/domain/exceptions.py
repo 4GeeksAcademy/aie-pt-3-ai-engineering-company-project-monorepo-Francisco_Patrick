@@ -17,3 +17,12 @@ class ResourceNotFoundError(DomainException):
 class UserInactiveError(AuthenticationError):
     """Raised when an inactive user attempts to authenticate"""
     pass
+
+class InvalidStatusTransitionError(DomainException):
+    """Raised when an illegal incident status transition is requested"""
+    pass
+
+class IncidentNotFoundError(ResourceNotFoundError):
+    """Raised when an incident is not found by ID"""
+    pass
+
