@@ -17,8 +17,8 @@
 
 **Purpose**: Project layout setup and shared module preparation
 
-- [ ] T001 [P] Ensure shared package directory `shared/incidents` exists with `shared/incidents/__init__.py`
-- [ ] T002 [P] Configure environment setup and verify dependencies in `services/api/requirements.txt`
+- [x] T001 [P] Ensure shared package directory `shared/incidents` exists with `shared/incidents/__init__.py`
+- [x] T002 [P] Configure environment setup and verify dependencies in `services/api/requirements.txt`
 
 ---
 
@@ -26,10 +26,10 @@
 
 **Purpose**: Data model definitions, repository adapters, and database wiring
 
-- [ ] T003 [P] Define Incident domain entity and enum types in `services/api/domain/models/incident.py`
-- [ ] T004 Define TinyDB database initialization and incidents table getter in `services/api/infrastructure/database.py`
-- [ ] T005 Create TinyDB Incident Repository adapter in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
-- [ ] T006 Configure centralized JSON exception middleware for FastAPI in `services/api/main.py`
+- [x] T003 [P] Define Incident domain entity and enum types in `services/api/domain/models/incident.py`
+- [x] T004 Define TinyDB database initialization and incidents table getter in `services/api/infrastructure/database.py`
+- [x] T005 Create TinyDB Incident Repository adapter in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
+- [x] T006 Configure centralized JSON exception middleware for FastAPI in `services/api/main.py`
 
 ---
 
@@ -39,11 +39,11 @@
 
 **Independent Test**: Running `python scripts/seed_incidents.py scripts/incidents-COMPANY.csv` loads valid historical records into TinyDB with origin `"customer"`. Running it twice inserts 0 duplicate records.
 
-- [ ] T007 [P] [US1] Extract CSV transformation and validation helpers into `shared/analyzer/engine.py`
-- [ ] T008 [US1] Implement CLI historical seed script with CSV-to-Model transformation in `scripts/seed_incidents.py`
-- [ ] T009 [US1] Add idempotency logic checking existing `legacy_id` in `scripts/seed_incidents.py`
-- [ ] T010 [US1] Add invalid row reporting and terminal summary outputs in `scripts/seed_incidents.py`
-- [ ] T011 [P] [US1] Add unit and idempotency tests for seeding script in `services/api/tests/test_seed_incidents.py`
+- [x] T007 [P] [US1] Extract CSV transformation and validation helpers into `shared/analyzer/engine.py`
+- [x] T008 [US1] Implement CLI historical seed script with CSV-to-Model transformation in `scripts/seed_incidents.py`
+- [x] T009 [US1] Add idempotency logic checking existing `legacy_id` in `scripts/seed_incidents.py`
+- [x] T010 [US1] Add invalid row reporting and terminal summary outputs in `scripts/seed_incidents.py`
+- [x] T011 [P] [US1] Add unit and idempotency tests for seeding script in `services/api/tests/test_seed_incidents.py`
 
 ---
 
@@ -53,9 +53,9 @@
 
 **Independent Test**: Submitting incomplete or invalid incident objects fails validation with clean, structured error responses.
 
-- [ ] T012 [P] [US2] Implement Pydantic input schemas and validation rules in `services/api/domain/schemas/incident_schema.py`
-- [ ] T013 [US2] Implement Incident application service for record validation in `services/api/application/services/incident_service.py`
-- [ ] T014 [P] [US2] Add unit tests for validation rules and allowed enum sets in `services/api/tests/test_incident_validation.py`
+- [x] T012 [P] [US2] Implement Pydantic input schemas and validation rules in `services/api/domain/schemas/incident_schema.py`
+- [x] T013 [US2] Implement Incident application service for record validation in `services/api/application/services/incident_service.py`
+- [x] T014 [P] [US2] Add unit tests for validation rules and allowed enum sets in `services/api/tests/test_incident_validation.py`
 
 ---
 
@@ -65,10 +65,10 @@
 
 **Independent Test**: `GET /api/incidents/summary` returns counts by status and category matching expected transformed historical figures.
 
-- [ ] T015 [US3] Implement summary aggregation logic in `services/api/application/services/incident_service.py`
-- [ ] T016 [US3] Create API route handler for `GET /api/incidents/summary` in `services/api/routes/incidents.py`
-- [ ] T017 [US3] Register incident router in FastAPI main application in `services/api/main.py`
-- [ ] T018 [P] [US3] Add API integration tests for summary endpoint in `services/api/tests/test_incident_summary_api.py`
+- [x] T015 [US3] Implement summary aggregation logic in `services/api/application/services/incident_service.py`
+- [x] T016 [US3] Create API route handler for `GET /api/incidents/summary` in `services/api/routes/incidents.py`
+- [x] T017 [US3] Register incident router in FastAPI main application in `services/api/main.py`
+- [x] T018 [P] [US3] Add API integration tests for summary endpoint in `services/api/tests/test_incident_summary_api.py`
 
 ---
 
@@ -76,8 +76,8 @@
 
 **Purpose**: End-to-end verification and documentation check
 
-- [ ] T019 Execute full quickstart verification steps documented in `specs/005-centralized-incident-manager-part1/quickstart.md`
-- [ ] T020 [P] Verify zero raw unhandled stack traces are returned on error conditions in `services/api/main.py`
+- [x] T019 Execute full quickstart verification steps documented in `specs/005-centralized-incident-manager-part1/quickstart.md`
+- [x] T020 [P] Verify zero raw unhandled stack traces are returned on error conditions in `services/api/main.py`
 
 ---
 

@@ -15,6 +15,14 @@ def get_auth_service_dep():
 def get_profile_service_dep():
     pass
 
+def get_incident_service_dep() -> IncidentService:
+    from infrastructure.database import get_db
+    from infrastructure.adapters.tiny_db_incident_repository import TinyDBIncidentRepository
+    from application.services.incident_service import IncidentService
+    return IncidentService(TinyDBIncidentRepository(get_db()))
+
+
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 def get_security_adapter_dep() -> SecurityPort:
