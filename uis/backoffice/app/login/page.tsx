@@ -5,14 +5,19 @@ import { useRouter } from 'next/navigation';
 import { setToken } from '../../lib/auth';
 import Link from 'next/link';
 
-export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+/**
+ * Login page component allowing users to authenticate into the backoffice dashboard.
+ *
+ * @returns JSX Element rendering the login form.
+ */
+export default function LoginPage(): React.ReactElement {
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -22,7 +27,8 @@ export default function LoginPage() {
       formData.append('username', email);
       formData.append('password', password);
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/login`, {
+      const baseUrl = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -31,18 +37,22 @@ export default function LoginPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Invalid credentials');
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData?.detail?.[0]?.msg ?? errorData?.detail ?? errorData?.message ?? 'Invalid email or password credentials.';
+        throw new Error(String(message));
       }
 
-      const data = await response.json();
-      if (data.access_token) {
+      const data = await response.json().catch(() => ({}));
+      if (data?.access_token) {
         setToken(data.access_token);
-        router.push('/'); // Redirect to protected route
+        router.push('/');
       } else {
-        throw new Error('No token received');
+        throw new Error('Authentication succeeded but no access token was returned.');
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during login');
+    } catch (err: unknown) {
+      console.error('[Login Error]:', err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred during login. Please try again.';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -81,7 +91,7 @@ export default function LoginPage() {
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               />
             </div>
             <div>
@@ -95,7 +105,7 @@ export default function LoginPage() {
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               />
             </div>
           </div>

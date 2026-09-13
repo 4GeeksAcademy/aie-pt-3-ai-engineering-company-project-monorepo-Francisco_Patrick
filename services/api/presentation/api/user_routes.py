@@ -46,10 +46,13 @@ def update_user(
     user_service: UserService = Depends(get_user_service_dep),
     admin_user: User = Depends(get_current_admin_user)
 ):
-    user = user_service.update_user(user_id, update_data)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    try:
+        user = user_service.update_user(user_id, update_data)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
