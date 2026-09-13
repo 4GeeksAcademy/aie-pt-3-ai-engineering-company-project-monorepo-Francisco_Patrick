@@ -7,3 +7,4 @@ export interface BaseEntity {
 }
 
 export * from "./auth";
+export * from "./incidents";
