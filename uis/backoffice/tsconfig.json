@@ -31,6 +31,7 @@
         "./*"
       ],
       "@repo/shared-types": [
+        "../../packages/shared/index.ts",
         "../../packages/shared/src/index.ts"
       ]
     }
