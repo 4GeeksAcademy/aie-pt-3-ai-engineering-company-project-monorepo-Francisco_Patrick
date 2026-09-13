@@ -1,17 +1,28 @@
 import os
 from typing import Optional
 
+def mask_email(email: str) -> str:
+    """Mask email address PII for safe log output."""
+    if not email or "@" not in email:
+        return "***"
+    parts = email.split("@", 1)
+    name = parts[0]
+    domain = parts[1]
+    masked_name = name[0] + "***" + name[-1] if len(name) > 2 else name[0] + "***"
+    return f"{masked_name}@{domain}"
+
 class EmailService:
     def __init__(self):
         self.api_key = os.environ.get("RESEND_API_KEY")
 
     def send_password_reset_email(self, to_email: str, reset_link: str) -> bool:
+        masked_to = mask_email(to_email)
         if not self.api_key:
-            # Fallback for dev / mock environment when API Key is missing
-            print(f"[EmailService Mock] Sending Password Reset Email to {to_email}: {reset_link}")
+            # Fallback for dev / mock environment when API Key is missing (omitting reset link token for security)
+            print(f"[EmailService Mock] Password reset email dispatch requested for user {masked_to} (reset link token omitted)")
             return True
 
-        # In production with RESEND_API_KEY, use Resend API via urllib or resend package if installed
+        # In production with RESEND_API_KEY, use Resend API via urllib
         try:
             import urllib.request
             import json
@@ -42,6 +53,6 @@ class EmailService:
             )
             with urllib.request.urlopen(req) as resp:
                 return resp.status in (200, 201)
-        except Exception as e:
-            print(f"[EmailService Error] Failed to send email via Resend: {e}")
+        except Exception:
+            print(f"[EmailService Error] Failed to dispatch password reset email to {masked_to}")
             return False

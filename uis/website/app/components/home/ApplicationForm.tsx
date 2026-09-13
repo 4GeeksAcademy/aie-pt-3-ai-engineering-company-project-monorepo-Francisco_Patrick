@@ -126,16 +126,22 @@ export function ApplicationForm(): React.ReactElement {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
-    const validationErrors = validate();
-    setErrors(validationErrors);
+    try {
+      const validationErrors = validate();
+      setErrors(validationErrors);
 
-    if (Object.keys(validationErrors).length === 0) {
-      setIsSuccess(true);
-      setStatusMessage('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.');
-      setFormData(INITIAL_FORM_DATA);
-    } else {
+      if (Object.keys(validationErrors).length === 0) {
+        setIsSuccess(true);
+        setStatusMessage('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.');
+        setFormData(INITIAL_FORM_DATA);
+      } else {
+        setIsSuccess(false);
+        setStatusMessage('Por favor, corrige los errores destacados en el formulario.');
+      }
+    } catch (err: unknown) {
+      console.error('[Application Form Error]:', err instanceof Error ? err.message : err);
       setIsSuccess(false);
-      setStatusMessage('Por favor, corrige los errores destacados en el formulario.');
+      setStatusMessage('Ocurrió un error inesperado al procesar la solicitud. Por favor, inténtalo de nuevo.');
     }
   };
 

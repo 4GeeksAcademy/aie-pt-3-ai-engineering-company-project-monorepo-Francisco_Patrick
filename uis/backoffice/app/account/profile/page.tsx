@@ -1,55 +1,65 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '../../../lib/api';
 
-interface Profile {
-  name: string;
-  phone: string;
-  address: string;
+export interface ProfileState {
+  readonly name: string;
+  readonly phone: string;
+  readonly address: string;
 }
 
-export default function ProfilePage() {
-  const [profile, setProfile] = useState<Profile>({ name: '', phone: '', address: '' });
-  const [email, setEmail] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+/**
+ * Profile management page component allowing authenticated users to view and update contact details.
+ *
+ * @returns JSX Element rendering the profile settings form.
+ */
+export default function ProfilePage(): React.ReactElement {
+  const [profile, setProfile] = useState<ProfileState>({ name: '', phone: '', address: '' });
+  const [email, setEmail] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const userRes = await fetchWithAuth('/auth/me');
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          setEmail(userData.email || '');
-        }
-
-        const profileRes = await fetchWithAuth('/profiles/me');
-        if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          setProfile({
-            name: profileData.name || '',
-            phone: profileData.phone || '',
-            address: profileData.address || '',
-          });
-        }
-      } catch (err: any) {
-        setError('Failed to load profile data.');
-      } finally {
-        setIsLoading(false);
+  const loadProfile = useCallback(async (): Promise<void> => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const userRes = await fetchWithAuth('/auth/me');
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        setEmail(userData?.email ?? '');
       }
-    };
 
-    loadProfile();
+      const profileRes = await fetchWithAuth('/profiles/me');
+      if (profileRes.ok) {
+        const profileData = await profileRes.json();
+        setProfile({
+          name: profileData?.name ?? '',
+          phone: profileData?.phone ?? '',
+          address: profileData?.address ?? '',
+        });
+      } else {
+        throw new Error('Failed to load profile data.');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load profile data.';
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -66,12 +76,14 @@ export default function ProfilePage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to update profile');
+        const message = errorData?.detail ?? errorData?.message ?? 'Failed to update profile';
+        throw new Error(String(message));
       }
 
       setSuccess('Profile updated successfully!');
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while saving.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred while saving.';
+      setError(message);
     } finally {
       setIsSaving(false);
     }
@@ -80,7 +92,7 @@ export default function ProfilePage() {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
       </div>
     );
   }
@@ -95,8 +107,15 @@ export default function ProfilePage() {
         <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-50 p-4 rounded-md">
+              <div className="bg-red-50 p-4 rounded-md flex items-center justify-between gap-4">
                 <p className="text-sm text-red-700">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => loadProfile()}
+                  className="px-3 py-1.5 text-xs font-semibold rounded bg-red-600 hover:bg-red-700 text-white transition-all shrink-0"
+                >
+                  🔄 Retry Loading Profile
+                </button>
               </div>
             )}
             {success && (
@@ -147,3 +166,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

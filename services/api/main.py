@@ -160,25 +160,33 @@ last_analysis_result = None
 async def analyze_incidents(file: UploadFile = File(...)):
     global last_analysis_result
     
-    if not file.filename.endswith('.csv'):
+    if not file.filename or not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
     
     try:
         content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Empty file uploaded.")
-            
-        # Decode and stream to the engine
-        text_stream = io.StringIO(content.decode("utf-8"))
-        results = analyze_csv_stream(text_stream)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read uploaded file payload.")
         
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+            
+    try:
+        text_stream = io.StringIO(content.decode("utf-8"))
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid encoding. File must be UTF-8 encoded.")
+
+    try:
+        results = analyze_csv_stream(text_stream)
         last_analysis_result = results
         return results
-        
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid encoding. File must be UTF-8.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=f"CSV processing failed: {str(ve)}")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred while analyzing the incident data. Please verify file format and try again."
+        )
 
 
 @app.get("/api/incidents/results/export")
