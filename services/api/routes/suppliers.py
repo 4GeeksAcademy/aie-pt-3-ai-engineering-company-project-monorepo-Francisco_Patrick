@@ -19,107 +19,141 @@ def get_current_time_str() -> str:
 
 @router.post("", response_model=Supplier, status_code=201)
 def create_supplier(supplier_in: SupplierCreate):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    supplier_dict = supplier_in.model_dump()
-    supplier_dict["updated_at"] = get_current_time_str()
-    
-    doc_id = table.insert(supplier_dict)
-    supplier_dict["id"] = doc_id
-    
-    return supplier_dict
+    try:
+        db = get_db()
+        table = db.table('suppliers')
+        
+        supplier_dict = supplier_in.model_dump()
+        supplier_dict["updated_at"] = get_current_time_str()
+        
+        doc_id = table.insert(supplier_dict)
+        supplier_dict["id"] = doc_id
+        
+        return supplier_dict
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to create supplier due to a database error.")
 
 @router.get("", response_model=List[Supplier])
 def list_suppliers(
     country: Optional[str] = Query(None, description="Filter by country"),
     category: Optional[str] = Query(None, description="Filter by category")
 ):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    SupplierQuery = TinyQuery()
-    
-    query = None
-    if country:
-        query = (SupplierQuery.country == country)
+    try:
+        db = get_db()
+        table = db.table('suppliers')
         
-    if category:
-        category_query = (SupplierQuery.categories.any(category))
-        if query is not None:
-            query = query & category_query
-        else:
-            query = category_query
+        SupplierQuery = TinyQuery()
+        
+        query = None
+        if country:
+            query = (SupplierQuery.country == country)
             
-    if query is not None:
-        results = table.search(query)
-    else:
-        results = table.all()
-        
-    # Inject doc_id as id
-    response = []
-    for r in results:
-        data = dict(r)
-        data["id"] = r.doc_id
-        response.append(data)
-        
-    return response
+        if category:
+            category_query = (SupplierQuery.categories.any(category))
+            if query is not None:
+                query = query & category_query
+            else:
+                query = category_query
+                
+        if query is not None:
+            results = table.search(query)
+        else:
+            results = table.all()
+            
+        # Inject doc_id as id
+        response = []
+        for r in results:
+            data = dict(r)
+            data["id"] = r.doc_id
+            response.append(data)
+            
+        return response
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to retrieve suppliers due to a database query error.")
 
 @router.get("/{id}", response_model=Supplier)
 def get_supplier(id: int):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    result = table.get(doc_id=id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+    try:
+        db = get_db()
+        table = db.table('suppliers')
         
-    data = dict(result)
-    data["id"] = result.doc_id
-    return data
+        result = table.get(doc_id=id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+            
+        data = dict(result)
+        data["id"] = result.doc_id
+        return data
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to retrieve supplier details.")
 
 @router.patch("/{id}/rate", response_model=Supplier)
 def update_supplier_rate(id: int, update_data: SupplierUpdateRate):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    result = table.get(doc_id=id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+    try:
+        db = get_db()
+        table = db.table('suppliers')
         
-    new_data = {"cost_per_kg": update_data.cost_per_kg, "updated_at": get_current_time_str()}
-    table.update(new_data, doc_ids=[id])
-    
-    updated = table.get(doc_id=id)
-    data = dict(updated)
-    data["id"] = updated.doc_id
-    return data
+        result = table.get(doc_id=id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+            
+        new_data = {"cost_per_kg": update_data.cost_per_kg, "updated_at": get_current_time_str()}
+        table.update(new_data, doc_ids=[id])
+        
+        updated = table.get(doc_id=id)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Supplier not found after update")
+        data = dict(updated)
+        data["id"] = updated.doc_id
+        return data
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to update supplier rate.")
 
 @router.patch("/{id}/status", response_model=Supplier)
 def update_supplier_status(id: int, update_data: SupplierUpdateStatus):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    result = table.get(doc_id=id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+    try:
+        db = get_db()
+        table = db.table('suppliers')
         
-    new_data = {"status": update_data.status, "updated_at": get_current_time_str()}
-    table.update(new_data, doc_ids=[id])
-    
-    updated = table.get(doc_id=id)
-    data = dict(updated)
-    data["id"] = updated.doc_id
-    return data
+        result = table.get(doc_id=id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+            
+        new_data = {"status": update_data.status, "updated_at": get_current_time_str()}
+        table.update(new_data, doc_ids=[id])
+        
+        updated = table.get(doc_id=id)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Supplier not found after update")
+        data = dict(updated)
+        data["id"] = updated.doc_id
+        return data
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to update supplier status.")
 
 @router.delete("/{id}", status_code=204)
 def delete_supplier(id: int):
-    db = get_db()
-    table = db.table('suppliers')
-    
-    result = table.get(doc_id=id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+    try:
+        db = get_db()
+        table = db.table('suppliers')
         
-    table.remove(doc_ids=[id])
-    return
+        result = table.get(doc_id=id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+            
+        table.remove(doc_ids=[id])
+        return
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Failed to delete supplier.")

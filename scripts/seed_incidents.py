@@ -33,29 +33,41 @@ def seed_incidents_from_csv(csv_path: str) -> dict:
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2): # Header is row 1
-            is_valid, reason = validate_csv_record(row)
-            if not is_valid:
+            try:
+                is_valid, reason = validate_csv_record(row)
+                if not is_valid:
+                    invalid_count += 1
+                    invalid_records.append({
+                        "row": row_num,
+                        "id": row.get("id", "N/A"),
+                        "reason": reason
+                    })
+                    print(f"[WARN] Row {row_num}: Invalid record ({reason})", file=sys.stderr)
+                    continue
+
+                legacy_id = str(row.get("id", "")).strip()
+
+                # Idempotency check: verify if record with legacy_id already exists in database
+                existing = repo.find_by_legacy_id(legacy_id)
+                if existing:
+                    skipped_duplicate_count += 1
+                    continue
+
+                # Transform CSV record to domain Incident model
+                incident_data = transform_csv_record_to_incident_dict(row)
+                incident = Incident.from_dict(incident_data)
+                repo.save(incident)
+                inserted_count += 1
+            except Exception as row_err:
                 invalid_count += 1
+                reason = f"Unexpected row processing failure: {row_err}"
                 invalid_records.append({
                     "row": row_num,
-                    "id": row.get("id", "N/A"),
+                    "id": row.get("id", "N/A") if isinstance(row, dict) else "N/A",
                     "reason": reason
                 })
+                print(f"[ERROR] Row {row_num}: Skipped due to error: {row_err}", file=sys.stderr)
                 continue
-
-            legacy_id = str(row.get("id", "")).strip()
-
-            # Idempotency check: verify if record with legacy_id already exists in database
-            existing = repo.find_by_legacy_id(legacy_id)
-            if existing:
-                skipped_duplicate_count += 1
-                continue
-
-            # Transform CSV record to domain Incident model
-            incident_data = transform_csv_record_to_incident_dict(row)
-            incident = Incident.from_dict(incident_data)
-            repo.save(incident)
-            inserted_count += 1
 
     return {
         "total_processed": inserted_count + skipped_duplicate_count + invalid_count,
@@ -90,8 +102,14 @@ def main():
     try:
         results = seed_incidents_from_csv(args.csv_file)
         print_summary(results)
+    except FileNotFoundError as fnf_err:
+        print(f"[ERROR] File not found: {fnf_err}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] Seeding process interrupted by user.", file=sys.stderr)
+        sys.exit(130)
     except Exception as e:
-        print(f"[ERROR] Failed to seed incidents: {e}")
+        print(f"[ERROR] Failed to seed incidents: {e}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -41,18 +41,21 @@ def print_summary(results: dict):
 
 def export_to_csv(results: dict, output_path: str = "results.csv"):
     m = results["metrics"]
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Metric", "Value"])
-        writer.writerow(["Total Elements Processed", m["total_processed"]])
-        writer.writerow(["Valid Records", m["valid_records"]])
-        writer.writerow(["Invalid Records", m["invalid_records"]])
-        for cat, count in m["category_breakdown"].items():
-            writer.writerow([f"Category: {cat}", count])
-        for status, count in m["status_breakdown"].items():
-            writer.writerow([f"Status: {status}", count])
-        writer.writerow(["Average Satisfaction Index", m["average_satisfaction_index"]])
-    print(f"\nResults successfully exported to {output_path}")
+    try:
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Metric", "Value"])
+            writer.writerow(["Total Elements Processed", m["total_processed"]])
+            writer.writerow(["Valid Records", m["valid_records"]])
+            writer.writerow(["Invalid Records", m["invalid_records"]])
+            for cat, count in m["category_breakdown"].items():
+                writer.writerow([f"Category: {cat}", count])
+            for status, count in m["status_breakdown"].items():
+                writer.writerow([f"Status: {status}", count])
+            writer.writerow(["Average Satisfaction Index", m["average_satisfaction_index"]])
+        print(f"\nResults successfully exported to {output_path}")
+    except Exception as e:
+        print(f"Error writing CSV export file '{output_path}': {e}", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze incidents CSV.")
@@ -60,7 +63,7 @@ def main():
     args = parser.parse_args()
     
     if not os.path.exists(args.csv_file):
-        print(f"Error: File '{args.csv_file}' not found.")
+        print(f"Error: File '{args.csv_file}' not found.", file=sys.stderr)
         sys.exit(1)
         
     print(f"Analyzing {args.csv_file}...")
@@ -68,7 +71,7 @@ def main():
         with open(args.csv_file, "r", encoding="utf-8") as f:
             results = analyze_csv_stream(f)
     except Exception as e:
-        print(f"Failed to process file: {e}")
+        print(f"Failed to process file: {e}", file=sys.stderr)
         sys.exit(1)
         
     print_summary(results)
@@ -79,7 +82,8 @@ def main():
         if choice == 'y':
             export_to_csv(results)
     except KeyboardInterrupt:
-        pass
+        print("\nOperation cancelled by user.", file=sys.stderr)
+        sys.exit(130)
 
 if __name__ == "__main__":
     main()
