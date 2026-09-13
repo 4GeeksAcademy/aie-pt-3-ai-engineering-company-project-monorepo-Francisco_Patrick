@@ -2,6 +2,16 @@ from typing import Optional
 from domain.ports import UserRepositoryPort, SecurityPort
 from domain.exceptions import AuthenticationError, UserInactiveError
 
+def mask_email(email: str) -> str:
+    """Mask email address PII for audit logs."""
+    if not email or "@" not in email:
+        return "***"
+    parts = email.split("@", 1)
+    name = parts[0]
+    domain = parts[1]
+    masked_name = name[0] + "***" + name[-1] if len(name) > 2 else name[0] + "***"
+    return f"{masked_name}@{domain}"
+
 class AuthService:
     def __init__(
         self,
@@ -42,23 +52,27 @@ class AuthService:
         """
         Processes password reset request. Always returns a generic success message (anti-enumeration).
         """
+        masked = mask_email(email)
         if rate_limiter.is_rate_limited(email):
-            audit_repo.log_event("forgot_password_request_rate_limited", None, ip_address, f"Email: {email}")
+            audit_repo.log_event("forgot_password_request_rate_limited", None, ip_address, f"Email: {masked}")
             # Anti-enumeration requirement: do not fail explicitly or leak, but limit execution
             return {"message": "If that email is registered, you will receive a reset link shortly."}
 
         user_data = self.user_repo.get_by_email(email)
         if not user_data:
-            audit_repo.log_event("forgot_password_request_unregistered", None, ip_address, f"Email: {email}")
+            audit_repo.log_event("forgot_password_request_unregistered", None, ip_address, f"Email: {masked}")
             return {"message": "If that email is registered, you will receive a reset link shortly."}
 
         import secrets
         raw_token = secrets.token_urlsafe(32)
         token_repo.create_token(user_id=user_data["id"], raw_token=raw_token, expires_in_minutes=30)
-        audit_repo.log_event("forgot_password_request_success", user_data["id"], ip_address, f"Email: {email}")
+        audit_repo.log_event("forgot_password_request_success", user_data["id"], ip_address, f"Email: {masked}")
 
         reset_link = f"{base_url}/reset-password?token={raw_token}"
-        email_service.send_password_reset_email(email, reset_link)
+        try:
+            email_service.send_password_reset_email(email, reset_link)
+        except Exception as e:
+            audit_repo.log_event("forgot_password_email_dispatch_failed", user_data["id"], ip_address, f"Email dispatch failed for {masked}")
 
         return {"message": "If that email is registered, you will receive a reset link shortly."}
 

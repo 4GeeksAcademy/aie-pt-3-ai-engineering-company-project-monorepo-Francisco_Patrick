@@ -5,29 +5,34 @@ import { useRouter } from 'next/navigation';
 import { setToken } from '../../lib/auth';
 import Link from 'next/link';
 
-export default function RegisterPage() {
+/**
+ * Registration page component allowing new users to sign up for backoffice access.
+ *
+ * @returns JSX Element rendering the registration form.
+ */
+export default function RegisterPage(): React.ReactElement {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     name: '',
     phone: '',
-    address: ''
+    address: '',
   });
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const router = useRouter();
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const baseUrl = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000';
       
       // Step 1: Create user
       const registerResponse = await fetch(`${baseUrl}/users`, {
@@ -40,13 +45,14 @@ export default function RegisterPage() {
           password: formData.password,
           name: formData.name,
           ...(formData.phone ? { phone: formData.phone } : {}),
-          ...(formData.address ? { address: formData.address } : {})
+          ...(formData.address ? { address: formData.address } : {}),
         }),
       });
 
       if (!registerResponse.ok) {
         const errorData = await registerResponse.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Registration failed');
+        const message = errorData?.detail?.[0]?.msg ?? errorData?.detail ?? errorData?.message ?? 'Registration failed.';
+        throw new Error(String(message));
       }
 
       // Step 2: Login to get token
@@ -66,15 +72,17 @@ export default function RegisterPage() {
         throw new Error('Registration succeeded, but auto-login failed. Please log in manually.');
       }
 
-      const data = await loginResponse.json();
-      if (data.access_token) {
+      const data = await loginResponse.json().catch(() => ({}));
+      if (data?.access_token) {
         setToken(data.access_token);
         router.push('/');
       } else {
-        throw new Error('No token received');
+        throw new Error('Registration succeeded but no access token was returned.');
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred during registration');
+    } catch (err: unknown) {
+      console.error('[Register Error]:', err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : 'An error occurred during registration.';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
