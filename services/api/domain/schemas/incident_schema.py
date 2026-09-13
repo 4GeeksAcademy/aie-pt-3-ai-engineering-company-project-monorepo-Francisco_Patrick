@@ -17,7 +17,11 @@ class IncidentCreateSchema(BaseModel):
             raise ValueError("Field cannot be empty or blank whitespace")
         return value.strip()
 
+class IncidentStatusUpdateSchema(BaseModel):
+    status: IncidentStatus = Field(..., description="New status: open, in_progress, resolved, discarded")
+
 class IncidentResponseSchema(BaseModel):
+
     id: str
     title: str
     description: str

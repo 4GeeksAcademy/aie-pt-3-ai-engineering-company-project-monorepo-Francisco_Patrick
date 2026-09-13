@@ -17,8 +17,8 @@
 
 **Purpose**: Verification of shared imports and module layout
 
-- [ ] T001 [P] Verify domain exceptions module `services/api/domain/exceptions.py`
-- [ ] T002 [P] Verify incident schemas in `services/api/domain/schemas/incident_schema.py`
+- [x] T001 [P] Verify domain exceptions module `services/api/domain/exceptions.py`
+- [x] T002 [P] Verify incident schemas in `services/api/domain/schemas/incident_schema.py`
 
 ---
 
@@ -26,9 +26,9 @@
 
 **Purpose**: Core exception mapping and repository search capabilities
 
-- [ ] T003 [P] Add `InvalidStatusTransitionError` and `IncidentNotFoundError` in `services/api/domain/exceptions.py`
-- [ ] T004 [P] Extend repository search and 4-dimension summary in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
-- [ ] T005 Register exception handlers for domain errors in `services/api/main.py`
+- [x] T003 [P] Add `InvalidStatusTransitionError` and `IncidentNotFoundError` in `services/api/domain/exceptions.py`
+- [x] T004 [P] Extend repository search and 4-dimension summary in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
+- [x] T005 Register exception handlers for domain errors in `services/api/main.py`
 
 ---
 
@@ -38,10 +38,10 @@
 
 **Independent Test**: Transitioning `open` -> `in_progress` succeeds; attempting `open` -> `resolved` or `resolved` -> `open` returns HTTP 400.
 
-- [ ] T006 [P] [US1] Add status transition validation logic to `domain/incident_model.py`
-- [ ] T007 [US1] Implement `update_incident_status` method in `services/api/application/services/incident_service.py`
-- [ ] T008 [US1] Create route handler `PATCH /api/incidents/{id}/status` in `services/api/presentation/api/incident_routes.py`
-- [ ] T009 [P] [US1] Add automated tests for status lifecycle transitions in `services/api/tests/test_incident_status_lifecycle.py`
+- [x] T006 [P] [US1] Add status transition validation logic to `domain/incident_model.py`
+- [x] T007 [US1] Implement `update_incident_status` method in `services/api/application/services/incident_service.py`
+- [x] T008 [US1] Create route handler `PATCH /api/incidents/{id}/status` in `services/api/presentation/api/incident_routes.py`
+- [x] T009 [P] [US1] Add automated tests for status lifecycle transitions in `services/api/tests/test_incident_status_lifecycle.py`
 
 ---
 
@@ -51,9 +51,9 @@
 
 **Independent Test**: Valid creation payload returns HTTP 201; invalid payload with missing/blank fields returns HTTP 400 specifying field name.
 
-- [ ] T010 [P] [US2] Update `IncidentCreateSchema` validation rules in `services/api/domain/schemas/incident_schema.py`
-- [ ] T011 [US2] Wire creation route `POST /api/incidents` returning HTTP 201 in `services/api/presentation/api/incident_routes.py`
-- [ ] T012 [P] [US2] Add automated validation tests for HTTP 400 error payloads in `services/api/tests/test_incident_creation_api.py`
+- [x] T010 [P] [US2] Update `IncidentCreateSchema` validation rules in `services/api/domain/schemas/incident_schema.py`
+- [x] T011 [US2] Wire creation route `POST /api/incidents` returning HTTP 201 in `services/api/presentation/api/incident_routes.py`
+- [x] T012 [P] [US2] Add automated validation tests for HTTP 400 error payloads in `services/api/tests/test_incident_creation_api.py`
 
 ---
 
@@ -63,11 +63,11 @@
 
 **Independent Test**: Filtering returns matching subsets; `GET /api/incidents/nonexistent` returns HTTP 404; `/summary` returns 4-dimension metric maps on empty and seeded DBs.
 
-- [ ] T013 [P] [US3] Implement multi-attribute repository filtering (`status`, `origin`, `branch`, `category`) in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
-- [ ] T014 [US3] Implement 4-dimension summary counts (`by_status`, `by_category`, `by_origin`, `by_branch`) in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
-- [ ] T015 [US3] Implement detail lookup and list filtering in `services/api/application/services/incident_service.py`
-- [ ] T016 [US3] Wire route handlers `GET /api/incidents`, `GET /api/incidents/{id}`, and `GET /api/incidents/summary` in `services/api/presentation/api/incident_routes.py`
-- [ ] T017 [P] [US3] Add automated tests for list filtering, detail 404, and empty database summary in `services/api/tests/test_incident_management_api.py`
+- [x] T013 [P] [US3] Implement multi-attribute repository filtering (`status`, `origin`, `branch`, `category`) in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
+- [x] T014 [US3] Implement 4-dimension summary counts (`by_status`, `by_category`, `by_origin`, `by_branch`) in `services/api/infrastructure/adapters/tiny_db_incident_repository.py`
+- [x] T015 [US3] Implement detail lookup and list filtering in `services/api/application/services/incident_service.py`
+- [x] T016 [US3] Wire route handlers `GET /api/incidents`, `GET /api/incidents/{id}`, and `GET /api/incidents/summary` in `services/api/presentation/api/incident_routes.py`
+- [x] T017 [P] [US3] Add automated tests for list filtering, detail 404, and empty database summary in `services/api/tests/test_incident_management_api.py`
 
 ---
 
@@ -75,8 +75,8 @@
 
 **Purpose**: Verification and complete test suite pass
 
-- [ ] T018 Execute full quickstart verification steps in `specs/006-centralized-incident-manager-backend/quickstart.md`
-- [ ] T019 [P] Run full pytest suite across `services/api/tests` verifying 100% pass rate
+- [x] T018 Execute full quickstart verification steps in `specs/006-centralized-incident-manager-backend/quickstart.md`
+- [x] T019 [P] Run full pytest suite across `services/api/tests` verifying 100% pass rate
 
 ---
 

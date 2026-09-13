@@ -12,7 +12,7 @@ def test_create_user_short_password():
             "password": "short"
         }
     )
-    assert response.status_code == 422 # Pydantic validation error for min_length=8
+    assert response.status_code == 400 # Pydantic validation error returns 400 with custom handler
 
 def test_list_users_unauthorized():
     response = client.get("/users")

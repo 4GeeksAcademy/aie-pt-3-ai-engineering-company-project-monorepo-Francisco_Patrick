@@ -3,6 +3,14 @@ from datetime import datetime, timezone
 import uuid
 from typing import Optional
 from shared.incidents.enums import IncidentCategory, IncidentStatus, IncidentOrigin
+from domain.exceptions import InvalidStatusTransitionError
+
+ALLOWED_TRANSITIONS = {
+    IncidentStatus.OPEN: {IncidentStatus.IN_PROGRESS, IncidentStatus.DISCARDED},
+    IncidentStatus.IN_PROGRESS: {IncidentStatus.RESOLVED, IncidentStatus.DISCARDED},
+    IncidentStatus.RESOLVED: set(),
+    IncidentStatus.DISCARDED: set(),
+}
 
 @dataclass
 class Incident:
@@ -16,6 +24,24 @@ class Incident:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     legacy_id: Optional[str] = None
+
+    def update_status(self, new_status: IncidentStatus) -> None:
+        """Enforces status lifecycle state transition rules."""
+        if isinstance(new_status, str):
+            new_status = IncidentStatus(new_status)
+
+        current_allowed = ALLOWED_TRANSITIONS.get(self.status, set())
+        if new_status not in current_allowed:
+            if self.status in (IncidentStatus.RESOLVED, IncidentStatus.DISCARDED):
+                raise InvalidStatusTransitionError(
+                    f"Incident is in terminal state '{self.status.value}' and cannot be modified."
+                )
+            raise InvalidStatusTransitionError(
+                f"Cannot transition incident status from '{self.status.value}' to '{new_status.value}'."
+            )
+
+        self.status = new_status
+        self.updated_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict:
         return {

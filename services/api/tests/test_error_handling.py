@@ -25,11 +25,11 @@ def test_validation_error_format_no_stack_trace():
     }
 
     response = client.post("/api/incidents", json=invalid_payload)
-    assert response.status_code == 422
+    assert response.status_code == 400
     data = response.json()
 
     assert data["error"] == "Validation Error"
-    assert "One or more fields failed validation" in data["message"]
+    assert "Validation failed" in data["message"]
     assert "details" in data
     assert isinstance(data["details"], list)
     # Ensure no raw python traceback strings exist in response body

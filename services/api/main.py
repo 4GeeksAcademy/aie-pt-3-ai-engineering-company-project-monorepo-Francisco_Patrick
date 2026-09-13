@@ -14,16 +14,18 @@ app = FastAPI(title="Incident Analyzer API")
 async def validation_exception_handler(request, exc):
     errors = []
     for err in exc.errors():
-        field_name = " -> ".join(str(loc) for loc in err.get("loc", []))
+        locs = [str(l) for l in err.get("loc", []) if str(l) != "body"]
+        field_name = " -> ".join(locs) if locs else "payload"
         errors.append({"field": field_name, "issue": err.get("msg")})
     return JSONResponse(
-        status_code=422,
+        status_code=400,
         content={
             "error": "Validation Error",
-            "message": "One or more fields failed validation requirements.",
+            "message": f"Validation failed for field '{errors[0]['field']}': {errors[0]['issue']}" if errors else "Validation failed",
             "details": errors
         }
     )
+
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
@@ -37,6 +39,30 @@ async def http_exception_handler(request, exc):
     )
 
 
+from domain.exceptions import InvalidStatusTransitionError, IncidentNotFoundError, DomainException
+
+@app.exception_handler(InvalidStatusTransitionError)
+async def invalid_status_transition_handler(request, exc):
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "Invalid Status Transition",
+            "message": str(exc),
+            "detail": str(exc)
+        }
+    )
+
+@app.exception_handler(IncidentNotFoundError)
+async def incident_not_found_handler(request, exc):
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not Found",
+            "message": str(exc),
+            "detail": str(exc)
+        }
+    )
+
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):
     return JSONResponse(
@@ -46,6 +72,7 @@ async def generic_exception_handler(request, exc):
             "message": "An unexpected error occurred. Please try again or contact support."
         }
     )
+
 
 
 # Add monorepo root to sys.path so we can import shared module
