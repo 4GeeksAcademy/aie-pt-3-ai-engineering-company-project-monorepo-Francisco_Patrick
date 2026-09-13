@@ -1,24 +1,15 @@
-import csv
-import io
-from typing import Dict, Any, Tuple, List, TextIO
-
-ALLOWED_CATEGORIES = {"warehouse", "reverse_logistics", "last_mile", "customer_experience"}
-ALLOWED_STATUSES = {"open", "closed", "discarded"}
-REQUIRED_FIELDS = {"id", "date", "category", "status"}
+from shared.incidents.transformation import (
+    validate_csv_record,
+    transform_csv_record_to_incident_dict,
+    ALLOWED_CATEGORIES,
+    ALLOWED_STATUSES,
+    REQUIRED_CSV_FIELDS
+)
 
 def validate_record(record: Dict[str, str]) -> Tuple[bool, str]:
     """Validates a single record and returns (is_valid, error_reason)."""
-    for field in REQUIRED_FIELDS:
-        if field not in record or not record[field].strip():
-            return False, f"Missing or empty required field: {field}"
-    
-    if record["category"] not in ALLOWED_CATEGORIES:
-        return False, f"Invalid category: {record.get('category')}"
-    
-    if record["status"] not in ALLOWED_STATUSES:
-        return False, f"Invalid status: {record.get('status')}"
-        
-    return True, ""
+    return validate_csv_record(record)
+
 
 def analyze_csv_stream(file_stream: TextIO) -> Dict[str, Any]:
     """

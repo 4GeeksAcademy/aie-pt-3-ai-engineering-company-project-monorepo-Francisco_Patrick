@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 from datetime import datetime
+from domain.incident_model import Incident
+
 
 class SupplierBase(BaseModel):
     name: str = Field(..., min_length=1)
