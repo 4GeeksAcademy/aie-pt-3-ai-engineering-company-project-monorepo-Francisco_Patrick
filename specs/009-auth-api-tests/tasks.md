@@ -15,8 +15,8 @@
 
 **Purpose**: Test directory structure and environment initialization
 
-- [ ] T001 Create test directory structure in services/api/tests/unit/ and services/api/tests/api/
-- [ ] T002 Verify pytest, pytest-cov, and httpx test dependencies in services/api/pyproject.toml
+- [X] T001 Create test directory structure in services/api/tests/unit/ and services/api/tests/api/
+- [X] T002 Verify pytest, pytest-cov, and httpx test dependencies in services/api/pyproject.toml
 
 ---
 
@@ -24,8 +24,8 @@
 
 **Purpose**: Shared test fixtures and TestClient configuration MUST be complete before endpoint testing begins
 
-- [ ] T003 [P] Create mock repository fixtures and test user datasets in services/api/tests/conftest.py
-- [ ] T004 [P] Configure FastAPI TestClient and dependency override fixtures in services/api/tests/conftest.py
+- [X] T003 [P] Create mock repository fixtures and test user datasets in services/api/tests/conftest.py
+- [X] T004 [P] Configure FastAPI TestClient and dependency override fixtures in services/api/tests/conftest.py
 
 **Checkpoint**: Foundation ready - user story testing can now proceed in parallel
 
@@ -39,12 +39,12 @@
 
 ### Implementation for User Story 1
 
-- [ ] T005 [P] [US1] Unit test JwtSecurityAdapter token creation, expiration, and bcrypt hashing in services/api/tests/unit/test_security_adapter.py
-- [ ] T006 [P] [US1] Unit test AuthService.authenticate_user credential verification and inactive user lockout in services/api/tests/unit/test_auth_service.py
-- [ ] T007 [P] [US1] Endpoint business logic tests for POST /auth/login (Happy Path 200, Edge Case inactive user 403 / empty password 400, Failure Mode 401) in services/api/tests/api/test_login_api.py
-- [ ] T008 [P] [US1] Endpoint business logic tests for GET /auth/me (Happy Path 200, Edge Case expired token 401, Failure Mode missing auth header) in services/api/tests/api/test_me_api.py
-- [ ] T009 [P] [US1] Endpoint business logic tests for POST /auth/change-password (Happy Path 200, Edge Case wrong current password 400, Failure Mode unauthenticated) in services/api/tests/api/test_change_password_api.py
-- [ ] T010 [P] [US1] Endpoint business logic tests for POST /users (Happy Path 201, Edge Case duplicate email 400, Failure Mode missing fields) in services/api/tests/api/test_user_registration_api.py
+- [X] T005 [P] [US1] Unit test JwtSecurityAdapter token creation, expiration, and bcrypt hashing in services/api/tests/unit/test_security_adapter.py
+- [X] T006 [P] [US1] Unit test AuthService.authenticate_user credential verification and inactive user lockout in services/api/tests/unit/test_auth_service.py
+- [X] T007 [P] [US1] Endpoint business logic tests for POST /auth/login (Happy Path 200, Edge Case inactive user 403 / empty password 400, Failure Mode 401) in services/api/tests/api/test_login_api.py
+- [X] T008 [P] [US1] Endpoint business logic tests for GET /auth/me (Happy Path 200, Edge Case expired token 401, Failure Mode missing auth header) in services/api/tests/api/test_me_api.py
+- [X] T009 [P] [US1] Endpoint business logic tests for POST /auth/change-password (Happy Path 200, Edge Case wrong current password 400, Failure Mode unauthenticated) in services/api/tests/api/test_change_password_api.py
+- [X] T010 [P] [US1] Endpoint business logic tests for POST /users (Happy Path 201, Edge Case duplicate email 400, Failure Mode missing fields) in services/api/tests/api/test_user_registration_api.py
 
 **Checkpoint**: User Story 1 fully functional and testable independently.
 
@@ -58,9 +58,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Unit test AuthService password reset request and token consumption logic in services/api/tests/unit/test_auth_service.py
-- [ ] T012 [P] [US2] Endpoint tests for POST /auth/forgot-password (Happy Path 200, Edge Case anti-enumeration & rate limiting 200, Failure Mode invalid format) in services/api/tests/api/test_password_reset_api.py
-- [ ] T013 [US2] Endpoint tests for POST /auth/reset-password (Happy Path 200, Edge Case reused token 400, Failure Mode expired/invalid token) in services/api/tests/api/test_password_reset_api.py
+- [X] T011 [P] [US2] Unit test AuthService password reset request and token consumption logic in services/api/tests/unit/test_auth_service.py
+- [X] T012 [P] [US2] Endpoint tests for POST /auth/forgot-password (Happy Path 200, Edge Case anti-enumeration & rate limiting 200, Failure Mode invalid format) in services/api/tests/api/test_password_reset_api.py
+- [X] T013 [US2] Endpoint tests for POST /auth/reset-password (Happy Path 200, Edge Case reused token 400, Failure Mode expired/invalid token) in services/api/tests/api/test_password_reset_api.py
 
 **Checkpoint**: User Stories 1 AND 2 work independently.
 
@@ -74,9 +74,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T014 [P] [US3] Configure Jest test runner in uis/backoffice/package.json and uis/backoffice/jest.config.js
-- [ ] T015 [P] [US3] Implement Jest tests for lib/auth.ts token storage and SSR window safety in uis/backoffice/__tests__/auth.test.ts
-- [ ] T016 [P] [US3] Implement Jest tests for lib/authApi.ts fetch wrappers and error detail parsing in uis/backoffice/__tests__/authApi.test.ts
+- [X] T014 [P] [US3] Configure Jest test runner in uis/backoffice/package.json and uis/backoffice/jest.config.js
+- [X] T015 [P] [US3] Implement Jest tests for lib/auth.ts token storage and SSR window safety in uis/backoffice/__tests__/auth.test.ts
+- [X] T016 [P] [US3] Implement Jest tests for lib/authApi.ts fetch wrappers and error detail parsing in uis/backoffice/__tests__/authApi.test.ts
 
 **Checkpoint**: TypeScript client authentication utilities tested with coverage.
 
@@ -90,7 +90,7 @@
 
 ### Implementation for User Story 4
 
-- [ ] T017 [P] [US4] Document test strategy, execution commands, coverage stats, and AI-assisted bug notes in TESTING.md
+- [X] T017 [P] [US4] Document test strategy, execution commands, coverage stats, and AI-assisted bug notes in TESTING.md
 
 ---
 
@@ -98,9 +98,9 @@
 
 **Purpose**: Final verification, coverage gates, and quickstart validation
 
-- [ ] T018 Execute uv run pytest --cov in services/api/ and confirm >= 70% code coverage
-- [ ] T019 Execute npm test -- --coverage in uis/backoffice/ and confirm 100% test pass rate
-- [ ] T020 Run end-to-end quickstart validation guide in specs/009-auth-api-tests/quickstart.md
+- [X] T018 Execute uv run pytest --cov in services/api/ and confirm >= 70% code coverage
+- [X] T019 Execute npm test -- --coverage in uis/backoffice/ and confirm 100% test pass rate
+- [X] T020 Run end-to-end quickstart validation guide in specs/009-auth-api-tests/quickstart.md
 
 ---
 
