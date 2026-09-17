@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from domain.models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus, User
-from infrastructure.database import get_db
+from infrastructure.database import get_tinydb
 from presentation.dependencies import get_current_user
 from fastapi import Depends
 
@@ -20,7 +20,7 @@ def get_current_time_str() -> str:
 @router.post("", response_model=Supplier, status_code=201)
 def create_supplier(supplier_in: SupplierCreate):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         supplier_dict = supplier_in.model_dump()
@@ -41,7 +41,7 @@ def list_suppliers(
     category: Optional[str] = Query(None, description="Filter by category")
 ):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         SupplierQuery = TinyQuery()
@@ -78,7 +78,7 @@ def list_suppliers(
 @router.get("/{id}", response_model=Supplier)
 def get_supplier(id: int):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         result = table.get(doc_id=id)
@@ -96,7 +96,7 @@ def get_supplier(id: int):
 @router.patch("/{id}/rate", response_model=Supplier)
 def update_supplier_rate(id: int, update_data: SupplierUpdateRate):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         result = table.get(doc_id=id)
@@ -120,7 +120,7 @@ def update_supplier_rate(id: int, update_data: SupplierUpdateRate):
 @router.patch("/{id}/status", response_model=Supplier)
 def update_supplier_status(id: int, update_data: SupplierUpdateStatus):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         result = table.get(doc_id=id)
@@ -144,7 +144,7 @@ def update_supplier_status(id: int, update_data: SupplierUpdateStatus):
 @router.delete("/{id}", status_code=204)
 def delete_supplier(id: int):
     try:
-        db = get_db()
+        db = get_tinydb()
         table = db.table('suppliers')
         
         result = table.get(doc_id=id)

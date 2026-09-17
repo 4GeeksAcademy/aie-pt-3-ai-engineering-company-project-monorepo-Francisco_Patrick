@@ -1,0 +1,68 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TrackFlow Inventory API",
+    "version": "1.0.0",
+    "description": "API contracts for Dual Database Architecture and Inventory ORM."
+  },
+  "paths": {
+    "/inventory/products": {
+      "get": {
+        "summary": "List all products with calculated current_stock",
+        "responses": {
+          "200": { "description": "List of products with derived stock" }
+        }
+      },
+      "post": {
+        "summary": "Create a new product (Requires Bearer Auth)",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "responses": {
+          "201": { "description": "Product created with current_stock = 0" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/inventory/products/{id}": {
+      "get": {
+        "summary": "Get a product by ID with calculated current_stock",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Product details with current_stock" },
+          "404": { "description": "Product not found" }
+        }
+      }
+    },
+    "/inventory/orders/inbound": {
+      "post": {
+        "summary": "Register an inbound stock entry (Requires Bearer Auth)",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "responses": {
+          "201": { "description": "Inbound order recorded, stock incremented" },
+          "400": { "description": "Bad Request" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/inventory/orders/outbound": {
+      "post": {
+        "summary": "Register an outbound stock exit (Requires Bearer Auth)",
+        "security": [{ "OAuth2PasswordBearer": [] }],
+        "responses": {
+          "201": { "description": "Outbound order recorded, stock decremented" },
+          "400": { "description": "Insufficient stock available" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/inventory/orders": {
+      "get": {
+        "summary": "List all inventory orders (inbound & outbound) with creator user_uuid",
+        "responses": {
+          "200": { "description": "List of all orders" }
+        }
+      }
+    }
+  }
+}
