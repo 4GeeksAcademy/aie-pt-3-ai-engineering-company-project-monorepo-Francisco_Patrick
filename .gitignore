@@ -1,5 +1,11 @@
 node_modules/
 dist/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -7,3 +13,6 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+*.db
+.pytest_cache/
+.coverage

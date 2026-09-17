@@ -50,12 +50,12 @@ def forgot_password(
     payload: ForgotPasswordRequestModel,
     auth_service: AuthService = Depends(get_auth_service_dep)
 ):
-    from infrastructure.database import get_db
+    from infrastructure.database import get_tinydb
     from infrastructure.adapters.tiny_db_repository import TinyDBPasswordResetTokenRepository, TinyDBAuditLogRepository
     from infrastructure.middleware.rate_limiter import RateLimiter
     from application.services.email_service import EmailService
 
-    db = get_db()
+    db = get_tinydb()
     token_repo = TinyDBPasswordResetTokenRepository(db)
     audit_repo = TinyDBAuditLogRepository(db)
     email_service = EmailService()
@@ -79,10 +79,10 @@ def reset_password(
     payload: ResetPasswordRequestModel,
     auth_service: AuthService = Depends(get_auth_service_dep)
 ):
-    from infrastructure.database import get_db
+    from infrastructure.database import get_tinydb
     from infrastructure.adapters.tiny_db_repository import TinyDBPasswordResetTokenRepository, TinyDBAuditLogRepository
 
-    db = get_db()
+    db = get_tinydb()
     token_repo = TinyDBPasswordResetTokenRepository(db)
     audit_repo = TinyDBAuditLogRepository(db)
 
@@ -110,10 +110,10 @@ def change_password(
     current_user: User = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service_dep)
 ):
-    from infrastructure.database import get_db
+    from infrastructure.database import get_tinydb
     from infrastructure.adapters.tiny_db_repository import TinyDBAuditLogRepository
 
-    db = get_db()
+    db = get_tinydb()
     audit_repo = TinyDBAuditLogRepository(db)
 
     try:

@@ -16,10 +16,10 @@ def get_profile_service_dep():
     pass
 
 def get_incident_service_dep() -> IncidentService:
-    from infrastructure.database import get_db
+    from infrastructure.database import get_tinydb
     from infrastructure.adapters.tiny_db_incident_repository import TinyDBIncidentRepository
     from application.services.incident_service import IncidentService
-    return IncidentService(TinyDBIncidentRepository(get_db()))
+    return IncidentService(TinyDBIncidentRepository(get_tinydb()))
 
 
 
