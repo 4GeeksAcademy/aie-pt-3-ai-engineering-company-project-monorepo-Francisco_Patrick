@@ -16,9 +16,9 @@
 
 **Purpose**: Establish centralized API client layer and interface definitions for all `/inventory` operations.
 
-- [ ] T001 Define TypeScript interfaces (`InventoryProduct`, `InboundOrderPayload`, `OutboundOrderPayload`, `InventoryOrderRecord`) in `uis/backoffice/lib/inventory.ts`
-- [ ] T002 Implement centralized API client functions (`getInventoryProducts`, `getInventoryProductById`, `createInboundOrder`, `createOutboundOrder`, `getInventoryOrders`) using `fetchWithAuth` in `uis/backoffice/lib/inventory.ts`
-- [ ] T003 [P] Update navigation header links in `uis/backoffice/components/Header.tsx` to include inventory routes (`/inventory/products`, `/inventory/orders/inbound`, `/inventory/orders/outbound`, `/inventory/orders`)
+- [x] T001 Define TypeScript interfaces (`InventoryProduct`, `InboundOrderPayload`, `OutboundOrderPayload`, `InventoryOrderRecord`) in `uis/backoffice/lib/inventory.ts`
+- [x] T002 Implement centralized API client functions (`getInventoryProducts`, `getInventoryProductById`, `createInboundOrder`, `createOutboundOrder`, `getInventoryOrders`) using `fetchWithAuth` in `uis/backoffice/lib/inventory.ts`
+- [x] T003 [P] Update navigation header links in `uis/backoffice/components/Header.tsx` to include inventory routes (`/inventory/products`, `/inventory/orders/inbound`, `/inventory/orders/outbound`, `/inventory/orders`)
 
 ---
 
@@ -26,8 +26,8 @@
 
 **Purpose**: Core UI components and route authentication prerequisites required by all inventory views.
 
-- [ ] T004 Verify and update route protection rules in `uis/backoffice/components/AuthGuard.tsx` to enforce authentication for all `/inventory/**` paths
-- [ ] T005 [P] Create visual stock status badge component (`StockStatusBadge`) in `uis/backoffice/components/inventory/StockStatusBadge.tsx` displaying healthy (green), low stock (amber), and out of stock (red) status badges
+- [x] T004 Verify and update route protection rules in `uis/backoffice/components/AuthGuard.tsx` to enforce authentication for all `/inventory/**` paths
+- [x] T005 [P] Create visual stock status badge component (`StockStatusBadge`) in `uis/backoffice/components/inventory/StockStatusBadge.tsx` displaying healthy (green), low stock (amber), and out of stock (red) status badges
 
 **Checkpoint**: Foundation ready — user story implementation can begin in parallel.
 
@@ -39,8 +39,8 @@
 
 **Independent Test**: Navigate to `/inventory/products` as an authenticated user, verify live products render with correct stock status badges and quick order action buttons.
 
-- [ ] T006 [P] [US1] Create product table component (`ProductTable`) in `uis/backoffice/components/inventory/ProductTable.tsx` displaying product rows, stock badges, and direct action links to inbound/outbound forms
-- [ ] T007 [US1] Implement products page view in `uis/backoffice/app/inventory/products/page.tsx` fetching data via `getInventoryProducts` with loading spinner and error alert fallback
+- [x] T006 [P] [US1] Create product table component (`ProductTable`) in `uis/backoffice/components/inventory/ProductTable.tsx` displaying product rows, stock badges, and direct action links to inbound/outbound forms
+- [x] T007 [US1] Implement products page view in `uis/backoffice/app/inventory/products/page.tsx` fetching data via `getInventoryProducts` with loading spinner and error alert fallback
 
 **Checkpoint**: User Story 1 (MVP) is fully functional and testable independently.
 
@@ -52,8 +52,8 @@
 
 **Independent Test**: Select a product in `/inventory/orders/outbound`, verify available stock displays reactively, enter a quantity exceeding stock to view the warning banner, and submit to verify inline 400 error rendering.
 
-- [ ] T008 [P] [US2] Create outbound order form component (`OutboundOrderForm`) in `uis/backoffice/components/inventory/OutboundOrderForm.tsx` with reactive stock lookup, client-side stock warning, and inline quantity error rendering
-- [ ] T009 [US2] Implement outbound order form page in `uis/backoffice/app/inventory/orders/outbound/page.tsx` submitting via `createOutboundOrder` and handling pre-selected product query parameter (`?sku_id=...`)
+- [x] T008 [P] [US2] Create outbound order form component (`OutboundOrderForm`) in `uis/backoffice/components/inventory/OutboundOrderForm.tsx` with reactive stock lookup, client-side stock warning, and inline quantity error rendering
+- [x] T009 [US2] Implement outbound order form page in `uis/backoffice/app/inventory/orders/outbound/page.tsx` submitting via `createOutboundOrder` and handling pre-selected product query parameter (`?sku_id=...`)
 
 **Checkpoint**: User Stories 1 and 2 work independently.
 
@@ -65,8 +65,8 @@
 
 **Independent Test**: Submit a valid inbound order at `/inventory/orders/inbound`, verify success notification and form field reset, and confirm product stock increases on `/inventory/products`.
 
-- [ ] T010 [P] [US3] Create inbound order form component (`InboundOrderForm`) in `uis/backoffice/components/inventory/InboundOrderForm.tsx` with human-readable product selection, form reset on success, and visible error alerts
-- [ ] T011 [US3] Implement inbound order form page in `uis/backoffice/app/inventory/orders/inbound/page.tsx` submitting via `createInboundOrder` and handling pre-selected product query parameter (`?sku_id=...`)
+- [x] T010 [P] [US3] Create inbound order form component (`InboundOrderForm`) in `uis/backoffice/components/inventory/InboundOrderForm.tsx` with human-readable product selection, form reset on success, and visible error alerts
+- [x] T011 [US3] Implement inbound order form page in `uis/backoffice/app/inventory/orders/inbound/page.tsx` submitting via `createInboundOrder` and handling pre-selected product query parameter (`?sku_id=...`)
 
 **Checkpoint**: User Stories 1, 2, and 3 work independently.
 
@@ -78,8 +78,8 @@
 
 **Independent Test**: Navigate to `/inventory/orders`, verify table renders historical orders with color-coded order type badges (`inbound` vs `outbound`), quantity, creation date, and `user_uuid`.
 
-- [ ] T012 [P] [US4] Create orders history table component (`OrdersHistoryTable`) in `uis/backoffice/components/inventory/OrdersHistoryTable.tsx` displaying order type badges, product code, quantity, creation timestamp, and `user_uuid`
-- [ ] T013 [US4] Implement orders history page view in `uis/backoffice/app/inventory/orders/page.tsx` fetching data via `getInventoryOrders` with error alert handling
+- [x] T012 [P] [US4] Create orders history table component (`OrdersHistoryTable`) in `uis/backoffice/components/inventory/OrdersHistoryTable.tsx` displaying order type badges, product code, quantity, creation timestamp, and `user_uuid`
+- [x] T013 [US4] Implement orders history page view in `uis/backoffice/app/inventory/orders/page.tsx` fetching data via `getInventoryOrders` with error alert handling
 
 **Checkpoint**: All 4 user stories are independently functional.
 
@@ -89,9 +89,9 @@
 
 **Purpose**: Quality assurance, automated testing, and build integrity verification.
 
-- [ ] T014 [P] Add unit and component integration tests for inventory client and views in `uis/backoffice/__tests__/inventory.test.tsx`
-- [ ] T015 Verify TypeScript build integrity and zero compiler errors with `npm run build` in `uis/backoffice`
-- [ ] T016 Perform end-to-end verification against `quickstart.md` scenarios across all 4 inventory pages
+- [x] T014 [P] Add unit and component integration tests for inventory client and views in `uis/backoffice/__tests__/inventory.test.ts`
+- [x] T015 Verify TypeScript build integrity and zero compiler errors with `npm run build` in `uis/backoffice`
+- [x] T016 Perform end-to-end verification against `quickstart.md` scenarios across all 4 inventory pages
 
 ---
 
