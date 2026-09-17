@@ -84,6 +84,7 @@ from presentation.api.user_routes import router as user_router
 from presentation.api.auth_routes import router as auth_router
 from presentation.api.profile_routes import router as profile_router
 from presentation.api.incident_routes import router as incident_router
+from routers.inventory import router as inventory_router
 from presentation.dependencies import get_security_adapter_dep, get_user_service_dep, get_auth_service_dep, get_profile_service_dep, get_incident_service_dep
 from application.services.user_service import UserService
 from application.services.auth_service import AuthService
@@ -91,14 +92,18 @@ from application.services.profile_service import ProfileService
 from application.services.incident_service import IncidentService
 
 # Auth & Users infrastructure wiring
-from infrastructure.database import get_db
+from infrastructure.database import get_tinydb, init_db
 from infrastructure.adapters.tiny_db_repository import TinyDBUserRepository, TinyDBProfileRepository
 from infrastructure.adapters.tiny_db_incident_repository import TinyDBIncidentRepository
 from infrastructure.adapters.security_adapter import JwtSecurityAdapter
 
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
 # Initialize adapters (will crash if JWT_SECRET_KEY is missing, fulfilling the requirement)
 security_adapter = JwtSecurityAdapter()
-db_instance = get_db()
+db_instance = get_tinydb()
 user_repository = TinyDBUserRepository(db_instance)
 profile_repository = TinyDBProfileRepository(db_instance)
 incident_repository = TinyDBIncidentRepository(db_instance)
@@ -141,6 +146,7 @@ app.include_router(user_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(incident_router)
+app.include_router(inventory_router)
 
 
 # Enable CORS for the frontend

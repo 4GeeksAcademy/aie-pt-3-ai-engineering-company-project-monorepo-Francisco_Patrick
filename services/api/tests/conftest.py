@@ -14,8 +14,11 @@ if API_DIR not in sys.path:
 from tinydb import TinyDB
 from tinydb.storages import MemoryStorage
 from fastapi.testclient import TestClient
+from sqlmodel import SQLModel, create_engine, Session
 
+import models  # noqa: F401
 from main import app
+from infrastructure.database import get_db, init_db, engine
 from infrastructure.adapters.security_adapter import JwtSecurityAdapter
 from infrastructure.adapters.tiny_db_repository import (
     TinyDBUserRepository,
@@ -35,17 +38,27 @@ from presentation.dependencies import (
 
 
 @pytest.fixture(autouse=True)
-def override_get_db(memory_db, monkeypatch):
-    """Overrides infrastructure.database.get_db unless TINYDB_PATH is explicitly set."""
+def override_get_tinydb(memory_db, monkeypatch):
+    """Overrides infrastructure.database.get_tinydb unless TINYDB_PATH is explicitly set."""
     import infrastructure.database
-    original_get_db = infrastructure.database.get_db
+    original_get_tinydb = infrastructure.database.get_tinydb
 
-    def smart_get_db():
+    def smart_get_tinydb():
         if "TINYDB_PATH" in os.environ:
-            return original_get_db()
+            return original_get_tinydb()
         return memory_db
 
-    monkeypatch.setattr(infrastructure.database, "get_db", smart_get_db)
+    monkeypatch.setattr(infrastructure.database, "get_tinydb", smart_get_tinydb)
+
+
+@pytest.fixture(autouse=True)
+def override_inventory_db():
+    """Ensures SQLModel database tables exist and are clean for all test runs."""
+    SQLModel.metadata.drop_all(engine)
+    SQLModel.metadata.create_all(engine)
+    yield
+    SQLModel.metadata.drop_all(engine)
+
 
 
 @pytest.fixture
@@ -167,6 +180,7 @@ def client(user_service, auth_service, profile_service, security_adapter, test_u
     """
     Provides FastAPI TestClient with dependency overrides wired to in-memory fixtures.
     """
+    old_overrides = dict(app.dependency_overrides)
     app.dependency_overrides[get_security_adapter_dep] = lambda: security_adapter
     app.dependency_overrides[get_user_service_dep] = lambda: user_service
     app.dependency_overrides[get_auth_service_dep] = lambda: auth_service
@@ -175,4 +189,4 @@ def client(user_service, auth_service, profile_service, security_adapter, test_u
     with TestClient(app) as test_client:
         yield test_client
 
-    app.dependency_overrides.clear()
+    app.dependency_overrides = old_overrides

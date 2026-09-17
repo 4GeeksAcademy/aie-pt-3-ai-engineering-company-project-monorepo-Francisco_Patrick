@@ -13,7 +13,7 @@ if API_DIR not in sys.path:
     sys.path.insert(0, API_DIR)
 
 from shared.incidents.transformation import validate_csv_record, transform_csv_record_to_incident_dict
-from infrastructure.database import get_db
+from infrastructure.database import get_tinydb
 from infrastructure.adapters.tiny_db_incident_repository import TinyDBIncidentRepository
 from domain.incident_model import Incident
 
@@ -22,7 +22,7 @@ def seed_incidents_from_csv(csv_path: str) -> dict:
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV file not found at: {csv_path}")
 
-    db = get_db()
+    db = get_tinydb()
     repo = TinyDBIncidentRepository(db)
 
     inserted_count = 0
