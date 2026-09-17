@@ -68,6 +68,50 @@ export default function Header(): React.ReactElement | null {
               </Link>
 
               <Link
+                href="/inventory/products"
+                className={`${
+                  pathname?.startsWith('/inventory/products')
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Inventory
+              </Link>
+
+              <Link
+                href="/inventory/orders/inbound"
+                className={`${
+                  pathname === '/inventory/orders/inbound'
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Inbound Order
+              </Link>
+
+              <Link
+                href="/inventory/orders/outbound"
+                className={`${
+                  pathname === '/inventory/orders/outbound'
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Outbound Order
+              </Link>
+
+              <Link
+                href="/inventory/orders"
+                className={`${
+                  pathname === '/inventory/orders'
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Orders History
+              </Link>
+
+              <Link
                 href="/account/profile"
                 className={`${
                   pathname === '/account/profile'
