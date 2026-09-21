@@ -1,0 +1,44 @@
+services:
+  ui:
+    build:
+      context: ./uis
+      dockerfile: Dockerfile
+    container_name: trackflow-ui
+    ports:
+      - "${WEBSITE_PORT:-3000}:3000"
+      - "${BACKOFFICE_PORT:-3001}:3001"
+    volumes:
+      - ./uis:/app/uis
+      - /app/uis/website/node_modules
+      - /app/uis/website/.next
+      - /app/uis/backoffice/node_modules
+      - /app/uis/backoffice/.next
+    env_file:
+      - .env
+    environment:
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    networks:
+      - trackflow-net
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+    container_name: trackflow-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./services:/app/services
+      - /app/services/api/__pycache__
+    env_file:
+      - .env
+    networks:
+      - trackflow-net
+    restart: unless-stopped
+
+networks:
+  trackflow-net:
+    name: trackflow-net
+    driver: bridge
