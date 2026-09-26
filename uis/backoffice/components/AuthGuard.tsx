@@ -25,7 +25,7 @@ export default function AuthGuard(props: AuthGuardProps): React.ReactElement {
   const { children } = props;
   const router = useRouter();
   const pathname = usePathname();
-  const [authorized, setAuthorized] = useState<boolean>(false);
+  const [authorized, setAuthorized] = useState<boolean>(true);
 
   useEffect(() => {
     const isPublic = PUBLIC_PATHS.some(
@@ -47,8 +47,8 @@ export default function AuthGuard(props: AuthGuardProps): React.ReactElement {
 
   if (!authorized) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-100">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" />
       </div>
     );
   }
