@@ -34,10 +34,11 @@ const ACTION_CARDS: readonly ActionCardItem[] = [
 
 /**
  * Quick action cards component for backoffice operations.
+ * Memoized to eliminate re-render overhead on state changes.
  *
  * @returns JSX element rendering operational quick access cards
  */
-export function QuickActionCards(): React.ReactElement {
+export const QuickActionCards = React.memo(function QuickActionCards(): React.ReactElement {
   return (
     <section className="mt-8 grid gap-6 md:grid-cols-3">
       {ACTION_CARDS.map((card) => (
@@ -63,4 +64,4 @@ export function QuickActionCards(): React.ReactElement {
       ))}
     </section>
   );
-}
+});

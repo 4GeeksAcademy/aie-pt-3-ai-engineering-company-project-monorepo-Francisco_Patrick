@@ -1,6 +1,14 @@
 import React from 'react';
 import type { Metadata } from 'next';
-import { ApplicationForm } from '../components/home/ApplicationForm';
+import dynamic from 'next/dynamic';
+
+const ApplicationForm = dynamic(
+  () =>
+    import('../components/home/ApplicationForm').then(
+      (mod) => mod.ApplicationForm
+    ),
+  { ssr: true }
+);
 
 export const metadata: Metadata = {
   title: 'TrackFlow | Application Form',
@@ -8,7 +16,7 @@ export const metadata: Metadata = {
     'Solicita tu implementación con TrackFlow para digitalizar inventario, última milla y devoluciones en Estados Unidos y España.',
 };
 
-const APPLICATION_PAGE_SCHEMA = {
+const APPLICATION_PAGE_SCHEMA_JSON = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'WebPage',
   name: 'TrackFlow Application Form',
@@ -20,7 +28,7 @@ const APPLICATION_PAGE_SCHEMA = {
     name: 'TrackFlow',
     url: 'https://www.trackflow.example',
   },
-};
+});
 
 /**
  * Application intake form page (`/application`) for prospective e-commerce clients.
@@ -32,7 +40,7 @@ export default function ApplicationPage(): React.ReactElement {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(APPLICATION_PAGE_SCHEMA) }}
+        dangerouslySetInnerHTML={{ __html: APPLICATION_PAGE_SCHEMA_JSON }}
       />
       <section
         className="relative overflow-hidden border-b border-slate-800"
