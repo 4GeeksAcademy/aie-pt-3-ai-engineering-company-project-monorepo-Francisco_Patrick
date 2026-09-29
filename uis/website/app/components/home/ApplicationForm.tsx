@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
+import { useFormState } from '../../hooks/useFormState';
 
-export interface ApplicationFormData {
+export interface ApplicationFormData extends Record<string, unknown> {
   readonly fullName: string;
   readonly workEmail: string;
   readonly companyName: string;
@@ -15,18 +16,7 @@ export interface ApplicationFormData {
   readonly consent: boolean;
 }
 
-export interface FormErrors {
-  readonly fullName?: string;
-  readonly workEmail?: string;
-  readonly companyName?: string;
-  readonly jobTitle?: string;
-  readonly primaryMarket?: string;
-  readonly monthlyOrders?: string;
-  readonly services?: string;
-  readonly launchTimeline?: string;
-  readonly operationSummary?: string;
-  readonly consent?: string;
-}
+export type FormErrors = Partial<Record<keyof ApplicationFormData, string>>;
 
 const INITIAL_FORM_DATA: ApplicationFormData = {
   fullName: '',
@@ -43,81 +33,66 @@ const INITIAL_FORM_DATA: ApplicationFormData = {
 
 /**
  * Interactive Client Component application intake form with field validations and accessibility attributes.
+ * Refactored to use the useFormState custom hook.
  *
  * @returns JSX element rendering the application intake form
  */
 export function ApplicationForm(): React.ReactElement {
-  const [formData, setFormData] = useState<ApplicationFormData>(INITIAL_FORM_DATA);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [statusMessage, setStatusMessage] = useState<string>('');
-  const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const {
+    formData,
+    errors,
+    statusMessage,
+    isSuccess,
+    handleChange,
+    validateForm,
+    setStatus,
+    resetForm,
+    setFormData,
+  } = useFormState<ApplicationFormData>(INITIAL_FORM_DATA);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
-  ): void => {
-    const { name, value, type } = e.target;
-    if (type === 'checkbox') {
-      const target = e.target as HTMLInputElement;
-      if (name === 'consent') {
-        setFormData((prev) => ({ ...prev, consent: target.checked }));
-      } else if (name === 'services') {
-        const selected = target.value;
-        setFormData((prev) => {
-          const currentServices = prev.services;
-          const nextServices = target.checked
-            ? [...currentServices, selected]
-            : currentServices.filter((s) => s !== selected);
-          return { ...prev, services: nextServices };
-        });
-      }
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
-  };
-
-  const validate = (): FormErrors => {
+  const validate = (data: ApplicationFormData): FormErrors => {
     const newErrors: Record<string, string> = {};
 
-    if (formData.fullName.trim() === '') {
+    if (data.fullName.trim() === '') {
       newErrors['fullName'] = 'El nombre completo es obligatorio.';
     }
 
-    if (formData.workEmail.trim() === '') {
+    if (data.workEmail.trim() === '') {
       newErrors['workEmail'] = 'El email corporativo es obligatorio.';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.workEmail)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.workEmail)) {
       newErrors['workEmail'] = 'Introduce una dirección de correo válida.';
     }
 
-    if (formData.companyName.trim() === '') {
+    if (data.companyName.trim() === '') {
       newErrors['companyName'] = 'El nombre de la empresa es obligatorio.';
     }
 
-    if (formData.jobTitle.trim() === '') {
+    if (data.jobTitle.trim() === '') {
       newErrors['jobTitle'] = 'El cargo es obligatorio.';
     }
 
-    if (formData.primaryMarket === '') {
+    if (data.primaryMarket === '') {
       newErrors['primaryMarket'] = 'Selecciona un mercado principal.';
     }
 
-    const orders = Number(formData.monthlyOrders);
-    if (formData.monthlyOrders === '' || Number.isNaN(orders) || orders < 100 || orders > 1000000) {
+    const orders = Number(data.monthlyOrders);
+    if (data.monthlyOrders === '' || Number.isNaN(orders) || orders < 100 || orders > 1000000) {
       newErrors['monthlyOrders'] = 'Introduce un valor entre 100 y 1.000.000 pedidos.';
     }
 
-    if (formData.services.length === 0) {
+    if (data.services.length === 0) {
       newErrors['services'] = 'Selecciona al menos un servicio prioritario.';
     }
 
-    if (formData.launchTimeline === '') {
+    if (data.launchTimeline === '') {
       newErrors['launchTimeline'] = 'Selecciona un timeline de implementación.';
     }
 
-    if (formData.operationSummary.trim() === '') {
+    if (data.operationSummary.trim() === '') {
       newErrors['operationSummary'] = 'Describe brevemente tu operación actual.';
     }
 
-    if (!formData.consent) {
+    if (!data.consent) {
       newErrors['consent'] = 'Debes aceptar los términos para enviar la solicitud.';
     }
 
@@ -127,28 +102,17 @@ export function ApplicationForm(): React.ReactElement {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     try {
-      const validationErrors = validate();
-      setErrors(validationErrors);
-
-      if (Object.keys(validationErrors).length === 0) {
-        setIsSuccess(true);
-        setStatusMessage('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.');
+      const isValid = validateForm(validate);
+      if (isValid) {
+        setStatus('¡Solicitud enviada con éxito! Nos pondremos en contacto pronto.', true);
         setFormData(INITIAL_FORM_DATA);
       } else {
-        setIsSuccess(false);
-        setStatusMessage('Por favor, corrige los errores destacados en el formulario.');
+        setStatus('Por favor, corrige los errores destacados en el formulario.', false);
       }
     } catch (err: unknown) {
       console.error('[Application Form Error]:', err instanceof Error ? err.message : err);
-      setIsSuccess(false);
-      setStatusMessage('Ocurrió un error inesperado al procesar la solicitud. Por favor, inténtalo de nuevo.');
+      setStatus('Ocurrió un error inesperado al procesar la solicitud. Por favor, inténtalo de nuevo.', false);
     }
-  };
-
-  const handleReset = (): void => {
-    setFormData(INITIAL_FORM_DATA);
-    setErrors({});
-    setStatusMessage('');
   };
 
   return (
@@ -445,7 +409,7 @@ export function ApplicationForm(): React.ReactElement {
         </button>
         <button
           type="button"
-          onClick={handleReset}
+          onClick={resetForm}
           className="rounded-md border border-slate-500 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:border-slate-300 hover:bg-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
         >
           Limpiar formulario
