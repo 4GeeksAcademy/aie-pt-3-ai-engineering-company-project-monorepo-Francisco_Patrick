@@ -39,7 +39,13 @@ async def http_exception_handler(request, exc):
     )
 
 
+# Add monorepo root and api dir to sys.path so we can import shared and local modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 from domain.exceptions import InvalidStatusTransitionError, IncidentNotFoundError, DomainException
+from domain.schemas.incident_schema import IncidentAnalysisResponse
+from shared.analyzer.engine import analyze_csv_stream
 
 @app.exception_handler(InvalidStatusTransitionError)
 async def invalid_status_transition_handler(request, exc):
@@ -72,13 +78,6 @@ async def generic_exception_handler(request, exc):
             "message": "An unexpected error occurred. Please try again or contact support."
         }
     )
-
-
-
-# Add monorepo root to sys.path so we can import shared module
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-from shared.analyzer.engine import analyze_csv_stream
 from routes.suppliers import router as suppliers_router
 from presentation.api.user_routes import router as user_router
 from presentation.api.auth_routes import router as auth_router
@@ -162,7 +161,7 @@ app.add_middleware(
 # In a real system, this would be stored in a DB or cache
 last_analysis_result = None
 
-@app.post("/api/incidents/analyze")
+@app.post("/api/incidents/analyze", response_model=IncidentAnalysisResponse)
 async def analyze_incidents(file: UploadFile = File(...)):
     global last_analysis_result
     

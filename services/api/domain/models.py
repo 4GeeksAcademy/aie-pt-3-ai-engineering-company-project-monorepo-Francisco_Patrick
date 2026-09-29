@@ -46,3 +46,10 @@ class User(UserBase):
     id: str
     hashed_password: str
     created_at: str
+
+class UserResponse(UserBase):
+    id: str
+    created_at: str
+
+class MessageResponse(BaseModel):
+    message: str
