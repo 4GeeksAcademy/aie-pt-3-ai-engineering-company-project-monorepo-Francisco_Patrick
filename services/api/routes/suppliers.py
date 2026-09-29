@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from domain.models import SupplierCreate, Supplier, SupplierUpdateRate, SupplierUpdateStatus, User
 from infrastructure.database import get_tinydb
+from infrastructure.cache import response_cache
 from presentation.dependencies import get_current_user
 from fastapi import Depends
 
@@ -29,6 +30,9 @@ def create_supplier(supplier_in: SupplierCreate):
         doc_id = table.insert(supplier_dict)
         supplier_dict["id"] = doc_id
         
+        # Invalidate suppliers cache namespace upon write
+        response_cache.invalidate_prefix("suppliers:")
+        
         return supplier_dict
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -40,6 +44,12 @@ def list_suppliers(
     country: Optional[str] = Query(None, description="Filter by country"),
     category: Optional[str] = Query(None, description="Filter by category")
 ):
+    # Check cache with composite parameter key
+    cache_key = f"suppliers:country={country or ''}&category={category or ''}"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         db = get_tinydb()
         table = db.table('suppliers')
@@ -69,6 +79,8 @@ def list_suppliers(
             data["id"] = r.doc_id
             response.append(data)
             
+        # Cache results for 60 seconds
+        response_cache.set(cache_key, response, ttl_seconds=60)
         return response
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -77,6 +89,11 @@ def list_suppliers(
 
 @router.get("/{id}", response_model=Supplier)
 def get_supplier(id: int):
+    cache_key = f"suppliers:{id}"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         db = get_tinydb()
         table = db.table('suppliers')
@@ -87,6 +104,7 @@ def get_supplier(id: int):
             
         data = dict(result)
         data["id"] = result.doc_id
+        response_cache.set(cache_key, data, ttl_seconds=60)
         return data
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -111,6 +129,9 @@ def update_supplier_rate(id: int, update_data: SupplierUpdateRate):
             raise HTTPException(status_code=404, detail="Supplier not found after update")
         data = dict(updated)
         data["id"] = updated.doc_id
+        
+        # Invalidate suppliers cache namespace
+        response_cache.invalidate_prefix("suppliers:")
         return data
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -135,6 +156,9 @@ def update_supplier_status(id: int, update_data: SupplierUpdateStatus):
             raise HTTPException(status_code=404, detail="Supplier not found after update")
         data = dict(updated)
         data["id"] = updated.doc_id
+        
+        # Invalidate suppliers cache namespace
+        response_cache.invalidate_prefix("suppliers:")
         return data
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -152,6 +176,9 @@ def delete_supplier(id: int):
             raise HTTPException(status_code=404, detail="Supplier not found")
             
         table.remove(doc_ids=[id])
+        
+        # Invalidate suppliers cache namespace
+        response_cache.invalidate_prefix("suppliers:")
         return
     except Exception as e:
         if isinstance(e, HTTPException):

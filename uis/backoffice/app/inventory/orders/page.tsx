@@ -2,9 +2,32 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import type { InventoryOrderRecord } from '../../../lib/inventory';
 import { getInventoryOrders } from '../../../lib/inventory';
-import { OrdersHistoryTable } from '../../../components/inventory/OrdersHistoryTable';
+
+/**
+ * Lazy-loaded OrdersHistoryTable with animated loading skeleton fallback.
+ */
+const DynamicOrdersHistoryTable = dynamic(
+  () =>
+    import('../../../components/inventory/OrdersHistoryTable').then(
+      (mod) => mod.OrdersHistoryTable
+    ),
+  {
+    loading: () => (
+      <div className="space-y-6 animate-pulse">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-24 rounded-xl border border-slate-800 bg-slate-900/60 p-4" />
+          ))}
+        </div>
+        <div className="h-64 rounded-xl border border-slate-800 bg-slate-900/60" />
+      </div>
+    ),
+    ssr: false,
+  }
+);
 
 /**
  * Backoffice Inventory Orders History Ledger Page Component.
@@ -93,7 +116,7 @@ export default function InventoryOrdersHistoryPage(): React.ReactElement {
             <p className="text-sm font-medium text-slate-400">Loading historical inventory orders ledger...</p>
           </div>
         ) : (
-          <OrdersHistoryTable orders={orders} />
+          <DynamicOrdersHistoryTable orders={orders} />
         )}
       </div>
     </main>

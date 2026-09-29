@@ -9,15 +9,23 @@ from domain.schemas.incident_schema import (
 from application.services.incident_service import IncidentService
 from presentation.dependencies import get_incident_service_dep
 from domain.exceptions import IncidentNotFoundError
+from infrastructure.cache import response_cache
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
 @router.get("/summary", response_model=IncidentSummaryResponse)
 def get_incident_summary(
     incident_service: IncidentService = Depends(get_incident_service_dep)
-):
-    """Returns aggregated summary metrics of incidents grouped by status, category, origin, and branch."""
-    return incident_service.get_summary()
+) -> Any:
+    """Returns aggregated summary metrics of incidents grouped by status, category, origin, and branch with TTL caching."""
+    cache_key = "incident_summary:global"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    summary = incident_service.get_summary()
+    response_cache.set(cache_key, summary, ttl_seconds=30)
+    return summary
 
 @router.get("", response_model=List[IncidentResponseSchema])
 def list_incidents(
@@ -38,8 +46,9 @@ def create_incident(
     schema: IncidentCreateSchema,
     incident_service: IncidentService = Depends(get_incident_service_dep)
 ) -> IncidentResponseSchema:
-    """Creates a new incident record from form entry."""
+    """Creates a new incident record from form entry and invalidates summary cache."""
     created = incident_service.create_incident(schema)
+    response_cache.invalidate_prefix("incident_summary:")
     return IncidentResponseSchema(**created.to_dict())
 
 @router.get("/{incident_id}", response_model=IncidentResponseSchema)
@@ -59,6 +68,7 @@ def update_incident_status(
     schema: IncidentStatusUpdateSchema,
     incident_service: IncidentService = Depends(get_incident_service_dep)
 ) -> IncidentResponseSchema:
-    """Updates only the status of an incident adhering to lifecycle transition rules."""
+    """Updates only the status of an incident adhering to lifecycle transition rules and invalidates summary cache."""
     updated = incident_service.update_incident_status(incident_id, schema.status)
+    response_cache.invalidate_prefix("incident_summary:")
     return IncidentResponseSchema(**updated.to_dict())
