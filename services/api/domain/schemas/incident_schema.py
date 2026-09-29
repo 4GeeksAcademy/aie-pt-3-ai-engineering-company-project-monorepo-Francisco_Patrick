@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional
+from typing import Optional, List, Dict
 from shared.incidents.enums import IncidentCategory, IncidentStatus, IncidentOrigin
 
 class IncidentCreateSchema(BaseModel):
@@ -32,3 +32,30 @@ class IncidentResponseSchema(BaseModel):
     created_at: str
     updated_at: str
     legacy_id: Optional[str] = None
+
+class IncidentSummaryResponse(BaseModel):
+    total_incidents: int
+    by_status: Dict[str, int]
+    by_category: Dict[str, int]
+    by_origin: Dict[str, int]
+    by_branch: Dict[str, int]
+
+class InvalidRecordDetail(BaseModel):
+    row: int
+    id: str
+    reason: str
+
+class IncidentMetrics(BaseModel):
+    total_processed: int
+    valid_records: int
+    invalid_records: int
+    category_breakdown: Dict[str, int]
+    status_breakdown: Dict[str, int]
+    average_satisfaction_index: float
+
+class IncidentDiagnostics(BaseModel):
+    invalid_sample: List[InvalidRecordDetail]
+
+class IncidentAnalysisResponse(BaseModel):
+    metrics: IncidentMetrics
+    diagnostics: IncidentDiagnostics

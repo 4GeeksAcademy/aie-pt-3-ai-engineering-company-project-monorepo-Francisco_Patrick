@@ -22,6 +22,7 @@ def test_register_user_happy_path(client: TestClient):
     assert data["email"] == "newsignup@example.com"
     assert data["is_active"] is True
     assert "id" in data
+    assert "hashed_password" not in data
 
 
 def test_register_user_duplicate_email_returns_400(client: TestClient, test_users):
