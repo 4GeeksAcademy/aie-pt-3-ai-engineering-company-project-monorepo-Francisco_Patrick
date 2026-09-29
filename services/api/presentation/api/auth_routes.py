@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from application.services.auth_service import AuthService
 from domain.exceptions import AuthenticationError, UserInactiveError
-from domain.models import User
+from domain.models import User, UserResponse, MessageResponse
 from presentation.dependencies import get_current_user, get_auth_service_dep
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -34,7 +34,7 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-@router.get("/me", response_model=User)
+@router.get("/me", response_model=UserResponse)
 def get_current_user_info(current_user: User = Depends(get_current_user)):
     """
     Returns the currently authenticated user's information.
@@ -45,7 +45,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
 class ForgotPasswordRequestModel(BaseModel):
     email: str
 
-@router.post("/forgot-password")
+@router.post("/forgot-password", response_model=MessageResponse)
 def forgot_password(
     payload: ForgotPasswordRequestModel,
     auth_service: AuthService = Depends(get_auth_service_dep)
@@ -74,7 +74,7 @@ class ResetPasswordRequestModel(BaseModel):
     token: str
     new_password: str
 
-@router.post("/reset-password")
+@router.post("/reset-password", response_model=MessageResponse)
 def reset_password(
     payload: ResetPasswordRequestModel,
     auth_service: AuthService = Depends(get_auth_service_dep)
@@ -104,7 +104,7 @@ class ChangePasswordRequestModel(BaseModel):
     current_password: str
     new_password: str
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=MessageResponse)
 def change_password(
     payload: ChangePasswordRequestModel,
     current_user: User = Depends(get_current_user),

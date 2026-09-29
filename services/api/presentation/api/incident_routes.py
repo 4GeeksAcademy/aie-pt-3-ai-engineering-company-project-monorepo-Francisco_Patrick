@@ -1,16 +1,21 @@
 from fastapi import APIRouter, Depends, status, Query as QueryParam
 from typing import List, Dict, Any, Optional
-from domain.schemas.incident_schema import IncidentCreateSchema, IncidentResponseSchema, IncidentStatusUpdateSchema
+from domain.schemas.incident_schema import (
+    IncidentCreateSchema,
+    IncidentResponseSchema,
+    IncidentStatusUpdateSchema,
+    IncidentSummaryResponse
+)
 from application.services.incident_service import IncidentService
 from presentation.dependencies import get_incident_service_dep
 from domain.exceptions import IncidentNotFoundError
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
-@router.get("/summary", response_model=Dict[str, Any])
+@router.get("/summary", response_model=IncidentSummaryResponse)
 def get_incident_summary(
     incident_service: IncidentService = Depends(get_incident_service_dep)
-) -> Dict[str, Any]:
+):
     """Returns aggregated summary metrics of incidents grouped by status, category, origin, and branch."""
     return incident_service.get_summary()
 
