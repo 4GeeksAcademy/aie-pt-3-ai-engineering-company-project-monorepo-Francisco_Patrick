@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
-from domain.models import UserCreate, User
+from domain.models import UserCreate, User, UserResponse
 from application.services.user_service import UserService
 
 from presentation.dependencies import get_user_service_dep
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-@router.post("", response_model=User, status_code=201)
+@router.post("", response_model=UserResponse, status_code=201)
 def create_user(
     user_in: UserCreate,
     user_service: UserService = Depends(get_user_service_dep)
@@ -21,14 +21,14 @@ from typing import List
 from presentation.dependencies import get_current_admin_user
 from domain.models import UserBase
 
-@router.get("", response_model=List[User])
+@router.get("", response_model=List[UserResponse])
 def list_users(
     user_service: UserService = Depends(get_user_service_dep),
     admin_user: User = Depends(get_current_admin_user)
 ):
     return user_service.list_users()
 
-@router.get("/{user_id}", response_model=User)
+@router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: str,
     user_service: UserService = Depends(get_user_service_dep),
@@ -39,7 +39,7 @@ def get_user(
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-@router.put("/{user_id}", response_model=User)
+@router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: str,
     update_data: dict, # Using dict to accept any partial update like role or is_active

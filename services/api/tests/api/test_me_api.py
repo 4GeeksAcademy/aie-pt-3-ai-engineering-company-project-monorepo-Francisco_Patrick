@@ -16,6 +16,7 @@ def test_get_current_user_happy_path(client: TestClient, test_users):
     assert data["id"] == test_users["active"].id
     assert data["email"] == test_users["active"].email
     assert data["is_active"] is True
+    assert "hashed_password" not in data
 
 
 def test_get_current_user_expired_token_returns_401(client: TestClient, test_users):
