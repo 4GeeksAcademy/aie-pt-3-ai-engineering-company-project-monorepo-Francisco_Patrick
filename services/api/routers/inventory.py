@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from infrastructure.database import get_db
+from infrastructure.cache import response_cache
 from presentation.dependencies import get_current_user
 from domain.models import User
 from models import SKU
@@ -49,6 +50,9 @@ def create_product(
 
     stock = compute_sku_stock(session, sku_obj.id, sku_obj.warehouse_id)
 
+    # Invalidate inventory products cache namespace
+    response_cache.invalidate_prefix("inventory_products:")
+
     return ProductResponse(
         id=sku_obj.id,
         sku=sku_obj.sku,
@@ -62,7 +66,12 @@ def create_product(
 
 @router.get("/products", response_model=List[ProductResponse])
 def list_products(session: Session = Depends(get_db)):
-    """Lists all products with calculated current_stock."""
+    """Lists all products with calculated current_stock (with 30s TTL caching)."""
+    cache_key = "inventory_products:all"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     skus = session.exec(select(SKU)).all()
     results = []
     for s in skus:
@@ -78,12 +87,19 @@ def list_products(session: Session = Depends(get_db)):
                 created_at=s.created_at
             )
         )
+
+    response_cache.set(cache_key, results, ttl_seconds=30)
     return results
 
 
 @router.get("/products/{id}", response_model=ProductResponse)
 def get_product(id: int, session: Session = Depends(get_db)):
-    """Gets a product by ID with its calculated current_stock."""
+    """Gets a product by ID with its calculated current_stock (with 30s TTL caching)."""
+    cache_key = f"inventory_products:{id}"
+    cached = response_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     sku_obj = session.get(SKU, id)
     if not sku_obj:
         raise HTTPException(
@@ -92,7 +108,7 @@ def get_product(id: int, session: Session = Depends(get_db)):
         )
     
     stock = compute_sku_stock(session, sku_obj.id, sku_obj.warehouse_id)
-    return ProductResponse(
+    result = ProductResponse(
         id=sku_obj.id,
         sku=sku_obj.sku,
         name=sku_obj.name,
@@ -101,6 +117,8 @@ def get_product(id: int, session: Session = Depends(get_db)):
         current_stock=stock,
         created_at=sku_obj.created_at
     )
+    response_cache.set(cache_key, result, ttl_seconds=30)
+    return result
 
 
 @router.post("/orders/inbound", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
@@ -118,6 +136,9 @@ def create_inbound_order(
         )
 
     entry = InventoryService.create_inbound_order(session, order_in, current_user.id)
+
+    # Invalidate inventory products cache namespace
+    response_cache.invalidate_prefix("inventory_products:")
 
     return OrderResponse(
         id=entry.id,
@@ -159,6 +180,9 @@ def create_outbound_order(
 
     exit_rec = InventoryService.create_outbound_order(session, order_in, current_user.id)
 
+    # Invalidate inventory products cache namespace
+    response_cache.invalidate_prefix("inventory_products:")
+
     return OrderResponse(
         id=exit_rec.id,
         order_type="outbound",
@@ -171,7 +195,6 @@ def create_outbound_order(
     )
 
 
-
 @router.get("/orders", response_model=List[OrderResponse])
 def list_orders(
     session: Session = Depends(get_db),
@@ -179,4 +202,3 @@ def list_orders(
 ):
     """Lists all inbound and outbound inventory orders."""
     return InventoryService.list_orders(session)
-

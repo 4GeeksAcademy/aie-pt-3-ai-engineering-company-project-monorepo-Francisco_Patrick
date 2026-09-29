@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{}";
+self.__REACT_LOADABLE_MANIFEST='{"app\\\\inventory\\\\orders\\\\page.tsx -> ../../../components/inventory/OrdersHistoryTable":{"id":8047,"files":["static/chunks/47.2b743758cf9632ea.js"]},"app\\\\inventory\\\\products\\\\page.tsx -> ../../../components/inventory/ProductTable":{"id":4246,"files":["static/chunks/246.ade9e94f397dc71c.js"]}}';

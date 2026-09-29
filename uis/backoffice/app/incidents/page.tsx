@@ -1,7 +1,42 @@
 import React from 'react';
 import Link from 'next/link';
-import { IncidentSummaryPanel } from '../../components/incidents/IncidentSummaryPanel';
-import { IncidentListPanel } from '../../components/incidents/IncidentListPanel';
+import dynamic from 'next/dynamic';
+
+const DynamicIncidentSummaryPanel = dynamic(
+  () =>
+    import('../../components/incidents/IncidentSummaryPanel').then(
+      (mod) => mod.IncidentSummaryPanel
+    ),
+  {
+    loading: () => (
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-6 animate-pulse">
+        <div className="h-6 bg-slate-800 rounded w-1/4" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-slate-950/60 rounded-lg border border-slate-800 p-4" />
+          ))}
+        </div>
+      </div>
+    ),
+    ssr: false,
+  }
+);
+
+const DynamicIncidentListPanel = dynamic(
+  () =>
+    import('../../components/incidents/IncidentListPanel').then(
+      (mod) => mod.IncidentListPanel
+    ),
+  {
+    loading: () => (
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-6 animate-pulse">
+        <div className="h-6 bg-slate-800 rounded w-1/4" />
+        <div className="h-48 bg-slate-950/60 rounded-lg border border-slate-800" />
+      </div>
+    ),
+    ssr: false,
+  }
+);
 
 export const metadata = {
   title: 'Centralized Incident Manager | Backoffice',
@@ -9,7 +44,7 @@ export const metadata = {
 };
 
 /**
- * Incident Management Dashboard Page.
+ * Incident Management Dashboard Page with lazy-loaded summary metrics and list panels.
  *
  * @returns JSX Element rendering summary metrics and list panel components.
  */
@@ -37,10 +72,10 @@ export default function IncidentsPage(): React.ReactElement {
         </div>
 
         {/* Summary Metrics Panel */}
-        <IncidentSummaryPanel />
+        <DynamicIncidentSummaryPanel />
 
         {/* Incidents List Panel */}
-        <IncidentListPanel />
+        <DynamicIncidentListPanel />
       </div>
     </main>
   );

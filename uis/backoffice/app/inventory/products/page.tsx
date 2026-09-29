@@ -2,9 +2,30 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import type { InventoryProduct } from '../../../lib/inventory';
 import { getInventoryProducts } from '../../../lib/inventory';
-import { ProductTable } from '../../../components/inventory/ProductTable';
+
+/**
+ * Lazy-loaded ProductTable with animated skeleton fallback.
+ */
+const DynamicProductTable = dynamic(
+  () =>
+    import('../../../components/inventory/ProductTable').then(
+      (mod) => mod.ProductTable
+    ),
+  {
+    loading: () => (
+      <div className="h-64 rounded-xl border border-slate-800 bg-slate-900/60 animate-pulse p-6 space-y-4">
+        <div className="h-6 bg-slate-800/60 rounded w-1/3" />
+        <div className="h-10 bg-slate-800/40 rounded w-full" />
+        <div className="h-10 bg-slate-800/40 rounded w-full" />
+        <div className="h-10 bg-slate-800/40 rounded w-full" />
+      </div>
+    ),
+    ssr: false,
+  }
+);
 
 /**
  * Backoffice Inventory Products Listing Page Component.
@@ -93,7 +114,7 @@ export default function InventoryProductsPage(): React.ReactElement {
             <p className="text-sm font-medium text-slate-400">Fetching live inventory stock levels...</p>
           </div>
         ) : (
-          <ProductTable products={products} />
+          <DynamicProductTable products={products} />
         )}
       </div>
     </main>
