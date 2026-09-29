@@ -1,17 +1,19 @@
 #!/bin/sh
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "Starting TrackFlow UI applications..."
 
 # Start Next.js Website application on port 3000
 echo "Starting Website on port 3000..."
-cd /app/uis/website
+cd "$SCRIPT_DIR/website"
 npm run dev -- -p 3000 &
 WEBSITE_PID=$!
 
 # Start Next.js Backoffice application on port 3001
 echo "Starting Backoffice on port 3001..."
-cd /app/uis/backoffice
+cd "$SCRIPT_DIR/backoffice"
 npm run dev -- -p 3001 &
 BACKOFFICE_PID=$!
 
@@ -23,4 +25,5 @@ cleanup() {
 
 trap cleanup INT TERM
 
-wait -n "$WEBSITE_PID" "$BACKOFFICE_PID"
+wait "$WEBSITE_PID" "$BACKOFFICE_PID"
+

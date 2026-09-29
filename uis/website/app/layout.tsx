@@ -15,7 +15,7 @@ export interface RootLayoutProps {
   readonly children: React.ReactNode;
 }
 
-const ORGANIZATION_SCHEMA = {
+const ORGANIZATION_SCHEMA_JSON = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'TrackFlow',
@@ -42,15 +42,15 @@ const ORGANIZATION_SCHEMA = {
     availableLanguage: ['es', 'en'],
   },
   sameAs: ['https://www.linkedin.com/company/trackflow'],
-};
+});
 
-const WEBSITE_SCHEMA = {
+const WEBSITE_SCHEMA_JSON = JSON.stringify({
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   name: 'TrackFlow',
   url: 'https://www.trackflow.example',
   inLanguage: ['es-ES', 'en-US'],
-};
+});
 
 /**
  * Root public layout component providing sticky header, footer, accessibility skip links,
@@ -63,13 +63,15 @@ export default function RootLayout(props: RootLayoutProps): React.ReactElement {
   return (
     <html lang="es">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_SCHEMA) }}
+          dangerouslySetInnerHTML={{ __html: ORGANIZATION_SCHEMA_JSON }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_SCHEMA) }}
+          dangerouslySetInnerHTML={{ __html: WEBSITE_SCHEMA_JSON }}
         />
       </head>
       <body className="bg-slate-950 text-slate-100 antialiased">

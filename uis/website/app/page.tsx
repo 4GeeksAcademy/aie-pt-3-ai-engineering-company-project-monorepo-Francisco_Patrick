@@ -1,8 +1,30 @@
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { HeroSection } from './components/home/HeroSection';
-import { BenefitsSection } from './components/home/BenefitsSection';
-import { HowItWorksSection } from './components/home/HowItWorksSection';
-import { ExperienceSection } from './components/home/ExperienceSection';
+
+const BenefitsSection = dynamic(
+  () =>
+    import('./components/home/BenefitsSection').then(
+      (mod) => mod.BenefitsSection
+    ),
+  { ssr: true }
+);
+
+const HowItWorksSection = dynamic(
+  () =>
+    import('./components/home/HowItWorksSection').then(
+      (mod) => mod.HowItWorksSection
+    ),
+  { ssr: true }
+);
+
+const ExperienceSection = dynamic(
+  () =>
+    import('./components/home/ExperienceSection').then(
+      (mod) => mod.ExperienceSection
+    ),
+  { ssr: true }
+);
 
 /**
  * Corporate landing page (Home Route `/`) assembling all sections from Milestone 1
