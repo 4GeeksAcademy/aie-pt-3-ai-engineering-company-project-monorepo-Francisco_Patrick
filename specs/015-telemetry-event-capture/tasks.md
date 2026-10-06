@@ -15,8 +15,8 @@
 
 **Purpose**: Environment configuration and shared telemetry types setup
 
-- [ ] T001 [P] Configure environment variables `NEXT_PUBLIC_TELEMETRY_ENDPOINT` in `uis/backoffice/.env.local` and `TELEMETRY_ENDPOINT` in `services/api/.env`
-- [ ] T002 [P] Create telemetry schemas, standard envelope types, and allowlist payload definitions in `uis/backoffice/app/services/telemetry-types.ts`
+- [X] T001 [P] Configure environment variables `NEXT_PUBLIC_TELEMETRY_ENDPOINT` in `uis/backoffice/.env.local` and `TELEMETRY_ENDPOINT` in `services/api/.env`
+- [X] T002 [P] Create telemetry schemas, standard envelope types, and allowlist payload definitions in `uis/backoffice/app/services/telemetry-types.ts`
 
 ---
 
@@ -24,8 +24,8 @@
 
 **Purpose**: Core backend Pydantic models and router registration blocking ingestion
 
-- [ ] T003 Define Pydantic `TelemetryEvent` and `TelemetryBatch` envelope models with strict regex and validation rules in `services/api/routers/telemetry.py`
-- [ ] T004 Register telemetry router in `services/api/main.py` and mount `POST /telemetry/events`
+- [X] T003 Define Pydantic `TelemetryEvent` and `TelemetryBatch` envelope models with strict regex and validation rules in `services/api/routers/telemetry.py`
+- [X] T004 Register telemetry router in `services/api/main.py` and mount `POST /telemetry/events`
 
 **Checkpoint**: Foundation ready - user stories can now be implemented independently.
 
@@ -38,13 +38,13 @@
 **Independent Test**: Trigger multiple `track()` calls in the frontend, verify events accumulate in memory without immediate network calls, flush automatically upon reaching 20 events or 10 seconds, flush on tab visibility change to hidden, and retry on failure with backoff.
 
 ### Tests for User Story 1
-- [ ] T005 [P] [US1] Create frontend unit test suite for TelemetryService queue, batching, `sendBeacon`, and exponential retry backoff in `uis/backoffice/__tests__/services/telemetry.test.ts`
+- [X] T005 [P] [US1] Create frontend unit test suite for TelemetryService queue, batching, `sendBeacon`, and exponential retry backoff in `uis/backoffice/__tests__/services/telemetry.test.ts`
 
 ### Implementation for User Story 1
-- [ ] T006 [US1] Implement in-memory queue, batching timer (10s), and batch threshold (20 events) in `uis/backoffice/app/services/telemetry.ts`
-- [ ] T007 [US1] Implement automatic envelope enrichment (`eventId`, `sessionId`, `userId`, `timestamp`, `schemaVersion`, `requestId`) and single public `track()` function in `uis/backoffice/app/services/telemetry.ts`
-- [ ] T008 [US1] Implement `visibilitychange` and unload lifecycle listener with `navigator.sendBeacon` and keepalive fetch fallback in `uis/backoffice/app/services/telemetry.ts`
-- [ ] T009 [US1] Implement exponential backoff retry handler (up to 3 attempts with 1s, 2s, 4s delay) in `uis/backoffice/app/services/telemetry.ts`
+- [X] T006 [US1] Implement in-memory queue, batching timer (10s), and batch threshold (20 events) in `uis/backoffice/app/services/telemetry.ts`
+- [X] T007 [US1] Implement automatic envelope enrichment (`eventId`, `sessionId`, `userId`, `timestamp`, `schemaVersion`, `requestId`) and single public `track()` function in `uis/backoffice/app/services/telemetry.ts`
+- [X] T008 [US1] Implement `visibilitychange` and unload lifecycle listener with `navigator.sendBeacon` and keepalive fetch fallback in `uis/backoffice/app/services/telemetry.ts`
+- [X] T009 [US1] Implement exponential backoff retry handler (up to 3 attempts with 1s, 2s, 4s delay) in `uis/backoffice/app/services/telemetry.ts`
 
 **Checkpoint**: User Story 1 is fully functional and testable independently.
 
@@ -57,11 +57,11 @@
 **Independent Test**: Post valid and invalid batch payloads via curl/pytest, verify schema validation, log entries, and response codes (200 for valid batches, 422 for invalid envelopes).
 
 ### Tests for User Story 2
-- [ ] T010 [P] [US2] Create backend pytest suite verifying schema validation, 200 OK receipt response, and 422 error cases in `services/api/tests/api/test_telemetry.py`
+- [X] T010 [P] [US2] Create backend pytest suite verifying schema validation, 200 OK receipt response, and 422 error cases in `services/api/tests/api/test_telemetry.py`
 
 ### Implementation for User Story 2
-- [ ] T011 [US2] Implement `POST /telemetry/events` endpoint handler, logging event counts and `event_type` of each item in `services/api/routers/telemetry.py`
-- [ ] T012 [US2] Wire `TELEMETRY_ENDPOINT` configuration lookup and route registration in `services/api/routers/telemetry.py`
+- [X] T011 [US2] Implement `POST /telemetry/events` endpoint handler, logging event counts and `event_type` of each item in `services/api/routers/telemetry.py`
+- [X] T012 [US2] Wire `TELEMETRY_ENDPOINT` configuration lookup and route registration in `services/api/routers/telemetry.py`
 
 **Checkpoint**: User Stories 1 and 2 are complete, establishing full end-to-end telemetry transport.
 
@@ -74,12 +74,12 @@
 **Independent Test**: Trigger an unhandled error, perform page navigation, and execute an API call in the backoffice UI, verifying corresponding telemetry events are captured with allowlisted properties.
 
 ### Tests for User Story 3
-- [ ] T013 [P] [US3] Create test suite for technical telemetry capture (errors, API latency, navigation) in `uis/backoffice/__tests__/services/technical-telemetry.test.ts`
+- [X] T013 [P] [US3] Create test suite for technical telemetry capture (errors, API latency, navigation) in `uis/backoffice/__tests__/services/technical-telemetry.test.ts`
 
 ### Implementation for User Story 3
-- [ ] T014 [P] [US3] Create `TelemetryProvider` component with global error boundaries and `window.onerror` / `unhandledrejection` handlers emitting `frontend_error_captured` in `uis/backoffice/app/components/TelemetryProvider.tsx`
-- [ ] T015 [US3] Mount `TelemetryProvider` and instrument route change navigation tracker emitting `section_navigation_tracked` in `uis/backoffice/app/layout.tsx`
-- [ ] T016 [US3] Instrument central API client / fetch wrapper to record duration and emit `api_latency_recorded` in `uis/backoffice/lib/api.ts`
+- [X] T014 [P] [US3] Create `TelemetryProvider` component with global error boundaries and `window.onerror` / `unhandledrejection` handlers emitting `frontend_error_captured` in `uis/backoffice/app/components/TelemetryProvider.tsx`
+- [X] T015 [US3] Mount `TelemetryProvider` and instrument route change navigation tracker emitting `section_navigation_tracked` in `uis/backoffice/app/layout.tsx`
+- [X] T016 [US3] Instrument central API client / fetch wrapper to record duration and emit `api_latency_recorded` in `uis/backoffice/lib/api.ts`
 
 **Checkpoint**: Cross-cutting technical observability is active across the backoffice application.
 
@@ -92,11 +92,11 @@
 **Independent Test**: Perform inventory actions (inbound receipt, stock adjustment, direct edit attempt, threshold alert), and verify emitted events contain exact allowlisted keys and zero PII.
 
 ### Tests for User Story 4
-- [ ] T017 [P] [US4] Create test suite verifying inventory business event emission and zero-PII allowlist conformity in `uis/backoffice/__tests__/services/inventory-telemetry.test.ts`
+- [X] T017 [P] [US4] Create test suite verifying inventory business event emission and zero-PII allowlist conformity in `uis/backoffice/__tests__/services/inventory-telemetry.test.ts`
 
 ### Implementation for User Story 4
-- [ ] T018 [US4] Instrument inbound order creation (`inbound_order_created`) and direct stock edit rejection (`direct_stock_edit_rejected`) in `uis/backoffice/app/inventory/page.tsx`
-- [ ] T019 [US4] Instrument low-stock threshold triggers (`stock_threshold_triggered`) and stock picking validation / fulfillment (`stock_validation_failed`, `outbound_order_fulfilled`) in `uis/backoffice/app/inventory/components/StockAdjustmentModal.tsx`
+- [X] T018 [US4] Instrument inbound order creation (`inbound_order_created`) and direct stock edit rejection (`direct_stock_edit_rejected`) in `uis/backoffice/app/inventory/page.tsx`
+- [X] T019 [US4] Instrument low-stock threshold triggers (`stock_threshold_triggered`) and stock picking validation / fulfillment (`stock_validation_failed`, `outbound_order_fulfilled`) in `uis/backoffice/app/inventory/components/StockAdjustmentModal.tsx`
 
 **Checkpoint**: All business operational flows are instrumented in full accordance with the approved plan.
 
@@ -106,8 +106,8 @@
 
 **Purpose**: Final verification, PII audit, and end-to-end execution
 
-- [ ] T020 [P] Validate zero-PII audit and property allowlist adherence across all telemetry calls in `uis/backoffice/app/`
-- [ ] T021 Run complete quickstart validation scenarios and automated test verification per `specs/015-telemetry-event-capture/quickstart.md`
+- [X] T020 [P] Validate zero-PII audit and property allowlist adherence across all telemetry calls in `uis/backoffice/app/`
+- [X] T021 Run complete quickstart validation scenarios and automated test verification per `specs/015-telemetry-event-capture/quickstart.md`
 
 ---
 

@@ -84,6 +84,7 @@ from presentation.api.auth_routes import router as auth_router
 from presentation.api.profile_routes import router as profile_router
 from presentation.api.incident_routes import router as incident_router
 from routers.inventory import router as inventory_router
+from routers.telemetry import router as telemetry_router
 from presentation.dependencies import get_security_adapter_dep, get_user_service_dep, get_auth_service_dep, get_profile_service_dep, get_incident_service_dep
 from application.services.user_service import UserService
 from application.services.auth_service import AuthService
@@ -146,6 +147,7 @@ app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(incident_router)
 app.include_router(inventory_router)
+app.include_router(telemetry_router)
 
 
 # Enable CORS for the frontend
