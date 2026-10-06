@@ -1,4 +1,5 @@
 import { getToken, removeToken } from './auth';
+import { track } from '../app/services/telemetry';
 
 const API_BASE_URL: string = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -50,7 +51,8 @@ export interface FetchOptions extends Omit<RequestInit, 'headers'> {
 }
 
 /**
- * Centralized fetch wrapper adding authorization headers and handling 401 token invalidation.
+ * Centralized fetch wrapper adding authorization headers, handling 401 token invalidation,
+ * and emitting api_latency_recorded telemetry.
  *
  * @param endpoint - Relative API path starting with slash (e.g. '/api/incidents').
  * @param options - Standard fetch request initialization options.
@@ -67,6 +69,10 @@ export async function fetchWithAuth(endpoint: string, options: FetchOptions = {}
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" = 
+    ((options.method?.toUpperCase() as "GET" | "POST" | "PUT" | "DELETE" | "PATCH") || "GET");
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -74,12 +80,34 @@ export async function fetchWithAuth(endpoint: string, options: FetchOptions = {}
       headers,
     });
   } catch (err: unknown) {
+    const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+    if (!endpoint.includes('/telemetry/')) {
+      track('api_latency_recorded', {
+        endpointPath: endpoint,
+        httpMethod: method,
+        durationMs: Math.round(elapsed * 100) / 100,
+        httpStatusCode: 0,
+        success: false,
+      });
+    }
+
     if (err instanceof ApiNetworkError) {
       throw err;
     }
     throw new ApiNetworkError(
       'Unable to connect to the backend server. Please check your network connection.'
     );
+  }
+
+  const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
+  if (!endpoint.includes('/telemetry/')) {
+    track('api_latency_recorded', {
+      endpointPath: endpoint,
+      httpMethod: method,
+      durationMs: Math.round(elapsed * 100) / 100,
+      httpStatusCode: response.status,
+      success: response.ok,
+    });
   }
 
   if (response.status === 401) {

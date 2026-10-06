@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import AuthGuard from "../components/AuthGuard";
 import Header from "../components/Header";
+import TelemetryProvider from "./components/TelemetryProvider";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
@@ -23,12 +24,14 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 font-sans selection:bg-cyan-500 selection:text-white">
-        <AuthGuard>
-          <Header />
-          <main className="flex-1 bg-slate-950 text-slate-100">
-            {children}
-          </main>
-        </AuthGuard>
+        <TelemetryProvider>
+          <AuthGuard>
+            <Header />
+            <main className="flex-1 bg-slate-950 text-slate-100">
+              {children}
+            </main>
+          </AuthGuard>
+        </TelemetryProvider>
       </body>
     </html>
   );
