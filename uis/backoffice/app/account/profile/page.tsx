@@ -99,12 +99,12 @@ export default function ProfilePage(): React.ReactElement {
 
   return (
     <div className="max-w-3xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+      <div className="bg-slate-900/90 shadow overflow-hidden sm:rounded-lg border border-slate-800 backdrop-blur-xl">
         <div className="px-4 py-5 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Personal Information</h3>
-          <p className="mt-1 max-w-2xl text-sm text-gray-500">Update your account details and contact information.</p>
+          <h3 className="text-lg leading-6 font-medium text-slate-100">Personal Information</h3>
+          <p className="mt-1 max-w-2xl text-sm text-slate-400">Update your account details and contact information.</p>
         </div>
-        <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+        <div className="border-t border-slate-800 px-4 py-5 sm:px-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="bg-red-50 p-4 rounded-md flex items-center justify-between gap-4">
@@ -126,31 +126,31 @@ export default function ProfilePage(): React.ReactElement {
             
             <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
               <div className="sm:col-span-4">
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
+                <label htmlFor="email" className="block text-sm font-medium text-slate-200">Email address</label>
                 <div className="mt-1">
-                  <input type="email" name="email" id="email" disabled value={email} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md bg-gray-100 cursor-not-allowed px-3 py-2 border" />
+                  <input type="email" name="email" id="email" disabled value={email} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-700 rounded-md bg-slate-800/50 text-slate-400 cursor-not-allowed px-3 py-2 border" />
                 </div>
-                <p className="mt-2 text-sm text-gray-500">Email cannot be changed.</p>
+                <p className="mt-2 text-sm text-slate-400">Email cannot be changed.</p>
               </div>
 
               <div className="sm:col-span-4">
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full name</label>
+                <label htmlFor="name" className="block text-sm font-medium text-slate-200">Full name</label>
                 <div className="mt-1">
-                  <input type="text" name="name" id="name" required value={profile.name} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md px-3 py-2 border" />
+                  <input type="text" name="name" id="name" required value={profile.name} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md px-3 py-2 border" />
                 </div>
               </div>
 
               <div className="sm:col-span-4">
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700">Phone number</label>
+                <label htmlFor="phone" className="block text-sm font-medium text-slate-200">Phone number</label>
                 <div className="mt-1">
-                  <input type="tel" name="phone" id="phone" value={profile.phone} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md px-3 py-2 border" />
+                  <input type="tel" name="phone" id="phone" value={profile.phone} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md px-3 py-2 border" />
                 </div>
               </div>
 
               <div className="sm:col-span-6">
-                <label htmlFor="address" className="block text-sm font-medium text-gray-700">Address</label>
+                <label htmlFor="address" className="block text-sm font-medium text-slate-200">Address</label>
                 <div className="mt-1">
-                  <input type="text" name="address" id="address" value={profile.address} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md px-3 py-2 border" />
+                  <input type="text" name="address" id="address" value={profile.address} onChange={handleChange} className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md px-3 py-2 border" />
                 </div>
               </div>
             </div>

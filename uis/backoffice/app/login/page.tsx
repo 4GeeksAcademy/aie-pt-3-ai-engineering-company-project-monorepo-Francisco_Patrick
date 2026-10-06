@@ -88,7 +88,7 @@ export default function LoginPage(): React.ReactElement {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Email address"
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
@@ -102,7 +102,7 @@ export default function LoginPage(): React.ReactElement {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
                 value={password}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
@@ -121,12 +121,12 @@ export default function LoginPage(): React.ReactElement {
           </div>
           <div className="text-sm text-center space-y-2">
             <div>
-              <Link href="/forgot-password" className="font-medium text-indigo-600 hover:text-indigo-500">
+              <Link href="/forgot-password" className="font-medium text-indigo-400 hover:text-indigo-300">
                 ¿Olvidaste tu contraseña?
               </Link>
             </div>
             <div>
-              <Link href="/register" className="font-medium text-gray-500 hover:text-gray-700">
+              <Link href="/register" className="font-medium text-slate-400 hover:text-slate-200">
                 Don't have an account? Register here
               </Link>
             </div>
