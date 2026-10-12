@@ -6,19 +6,22 @@ from domain.models import User
 from domain.exceptions import AuthenticationError
 from domain.ports import SecurityPort
 from application.services.user_service import UserService
+from application.services.auth_service import AuthService
+from application.services.profile_service import ProfileService
+from application.services.incident_service import IncidentService
+
 def get_user_service_dep() -> UserService:
     pass
 
-def get_auth_service_dep():
+def get_auth_service_dep() -> AuthService:
     pass
 
-def get_profile_service_dep():
+def get_profile_service_dep() -> ProfileService:
     pass
 
 def get_incident_service_dep() -> IncidentService:
     from infrastructure.database import get_tinydb
     from infrastructure.adapters.tiny_db_incident_repository import TinyDBIncidentRepository
-    from application.services.incident_service import IncidentService
     return IncidentService(TinyDBIncidentRepository(get_tinydb()))
 
 

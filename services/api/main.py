@@ -130,12 +130,16 @@ auth_service = AuthService(
 profile_service = ProfileService(
     profile_repo=profile_repository
 )
+incident_service = IncidentService(
+    repo=incident_repository
+)
 
 # Dependency overrides for routing
 app.dependency_overrides[get_security_adapter_dep] = lambda: security_adapter
 app.dependency_overrides[get_user_service_dep] = lambda: user_service
 app.dependency_overrides[get_auth_service_dep] = lambda: auth_service
 app.dependency_overrides[get_profile_service_dep] = lambda: profile_service
+app.dependency_overrides[get_incident_service_dep] = lambda: incident_service
 
 
 

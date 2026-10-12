@@ -2,19 +2,24 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -d "$SCRIPT_DIR/website" ]; then
+  UI_BASE_DIR="$SCRIPT_DIR"
+else
+  UI_BASE_DIR="/app/uis"
+fi
 
 echo "Starting TrackFlow UI applications..."
 
-# Start Next.js Website application on port 3000
+# Start Next.js Website application on port 3000 (bind to 0.0.0.0 for external container access)
 echo "Starting Website on port 3000..."
-cd "$SCRIPT_DIR/website"
-npm run dev -- -p 3000 &
+cd "$UI_BASE_DIR/website"
+npm run dev -- -H 0.0.0.0 -p 3000 &
 WEBSITE_PID=$!
 
-# Start Next.js Backoffice application on port 3001
+# Start Next.js Backoffice application on port 3001 (bind to 0.0.0.0 for external container access)
 echo "Starting Backoffice on port 3001..."
-cd "$SCRIPT_DIR/backoffice"
-npm run dev -- -p 3001 &
+cd "$UI_BASE_DIR/backoffice"
+npm run dev -- -H 0.0.0.0 -p 3001 &
 BACKOFFICE_PID=$!
 
 cleanup() {
@@ -26,4 +31,3 @@ cleanup() {
 trap cleanup INT TERM
 
 wait "$WEBSITE_PID" "$BACKOFFICE_PID"
-
