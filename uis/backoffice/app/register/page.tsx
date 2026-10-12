@@ -107,23 +107,23 @@ export default function RegisterPage(): React.ReactElement {
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="name" className="sr-only">Full Name</label>
-              <input id="name" name="name" type="text" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Full Name" value={formData.name} onChange={handleChange} />
+              <input id="name" name="name" type="text" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Full Name" value={formData.name} onChange={handleChange} />
             </div>
             <div>
               <label htmlFor="email-address" className="sr-only">Email address</label>
-              <input id="email-address" name="email" type="email" autoComplete="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Email address" value={formData.email} onChange={handleChange} />
+              <input id="email-address" name="email" type="email" autoComplete="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Email address" value={formData.email} onChange={handleChange} />
             </div>
             <div>
               <label htmlFor="phone" className="sr-only">Phone (Optional)</label>
-              <input id="phone" name="phone" type="tel" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Phone (Optional)" value={formData.phone} onChange={handleChange} />
+              <input id="phone" name="phone" type="tel" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Phone (Optional)" value={formData.phone} onChange={handleChange} />
             </div>
             <div>
               <label htmlFor="address" className="sr-only">Address (Optional)</label>
-              <input id="address" name="address" type="text" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Address (Optional)" value={formData.address} onChange={handleChange} />
+              <input id="address" name="address" type="text" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Address (Optional)" value={formData.address} onChange={handleChange} />
             </div>
             <div>
               <label htmlFor="password" className="sr-only">Password</label>
-              <input id="password" name="password" type="password" autoComplete="new-password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Password" value={formData.password} onChange={handleChange} />
+              <input id="password" name="password" type="password" autoComplete="new-password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Password" value={formData.password} onChange={handleChange} />
             </div>
           </div>
 
@@ -133,7 +133,7 @@ export default function RegisterPage(): React.ReactElement {
             </button>
           </div>
           <div className="text-sm text-center">
-            <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            <Link href="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
               Already have an account? Sign in
             </Link>
           </div>
