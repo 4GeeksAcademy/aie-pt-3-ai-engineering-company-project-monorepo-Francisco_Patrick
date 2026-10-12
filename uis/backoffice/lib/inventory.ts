@@ -1,4 +1,5 @@
 import { fetchWithAuth } from './api';
+import { track } from '../app/services/telemetry';
 
 /**
  * Domain entity representing an inventory product (SKU) stored in a warehouse.
@@ -78,6 +79,7 @@ function extractErrorMessage(body: ApiErrorBody, fallbackMessage: string): strin
 
 /**
  * Fetches all inventory product SKUs from the backend API.
+ * Emits stock_threshold_triggered for SKUs with low stock levels.
  *
  * @returns Promise resolving to an array of inventory product records.
  * @throws Error when the backend returns a non-2xx status or network failure occurs.
@@ -97,6 +99,20 @@ export async function getInventoryProducts(): Promise<readonly InventoryProduct[
   }
 
   const data = (await response.json()) as readonly InventoryProduct[];
+
+  // Emit stock threshold telemetry for any products at or below safety threshold
+  for (const product of data) {
+    if (product.current_stock <= product.low_stock_threshold) {
+      track('stock_threshold_triggered', {
+        skuId: product.sku,
+        warehouseCode: product.warehouse_id,
+        currentAvailableQuantity: product.current_stock,
+        safetyThresholdQuantity: product.low_stock_threshold,
+        triggerSeverity: product.current_stock === 0 ? 'CRITICAL' : 'WARNING',
+      });
+    }
+  }
+
   return data;
 }
 
@@ -127,6 +143,7 @@ export async function getInventoryProductById(id: number): Promise<InventoryProd
 
 /**
  * Registers an inbound inventory order (supplier delivery) in the backend.
+ * Emits inbound_order_created telemetry on success.
  *
  * @param payload - Inbound order details including sku_id, warehouse_id, and quantity.
  * @returns Promise resolving to the created order record.
@@ -149,11 +166,22 @@ export async function createInboundOrder(payload: InboundOrderPayload): Promise<
   }
 
   const data = (await response.json()) as InventoryOrderRecord;
+
+  track('inbound_order_created', {
+    inboundOrderId: String(data.id),
+    clientId: data.user_uuid,
+    warehouseCode: data.warehouse_id,
+    totalSkus: 1,
+    totalUnits: data.quantity,
+    sourceChannel: 'PORTAL',
+  });
+
   return data;
 }
 
 /**
  * Registers an outbound inventory order (stock exit or consumption) in the backend.
+ * Emits outbound_order_fulfilled on success or stock_validation_failed on error.
  *
  * @param payload - Outbound order details including sku_id, warehouse_id, and quantity.
  * @returns Promise resolving to the created order record.
@@ -172,10 +200,30 @@ export async function createOutboundOrder(payload: OutboundOrderPayload): Promis
   if (!response.ok) {
     const errorBody = (await response.json().catch(() => ({}))) as ApiErrorBody;
     const message = extractErrorMessage(errorBody, 'Failed to submit outbound inventory order.');
+
+    track('stock_validation_failed', {
+      orderId: 'PENDING',
+      warehouseCode: payload.warehouse_id,
+      skuId: String(payload.sku_id),
+      expectedQuantity: payload.quantity,
+      actualQuantity: 0,
+      failureReason: message,
+    });
+
     throw new Error(message);
   }
 
   const data = (await response.json()) as InventoryOrderRecord;
+
+  track('outbound_order_fulfilled', {
+    orderId: String(data.id),
+    clientId: data.user_uuid,
+    warehouseCode: data.warehouse_id,
+    carrierCode: 'FEDEX',
+    fulfillmentDurationSeconds: 1.5,
+    totalItems: data.quantity,
+  });
+
   return data;
 }
 

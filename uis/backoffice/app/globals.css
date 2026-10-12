@@ -4,4 +4,7 @@
   body {
     @apply bg-slate-950 text-slate-100 antialiased;
   }
+  input, select, textarea {
+    @apply text-slate-100 placeholder-slate-400;
+  }
 }

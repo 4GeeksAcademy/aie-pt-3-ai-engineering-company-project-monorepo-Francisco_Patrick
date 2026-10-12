@@ -27,17 +27,17 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-slate-900/90 p-8 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-xl">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Recuperación de contraseña</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-100">Recuperación de contraseña</h2>
+          <p className="mt-2 text-center text-sm text-slate-400">
             Introduce tu correo electrónico para recibir un enlace de restablecimiento.
           </p>
         </div>
 
         {submitted ? (
-          <div className="rounded-md bg-blue-50 p-4 border border-blue-200">
+          <div className="rounded-md bg-blue-950/60 p-4 border border-blue-800">
             <div className="flex">
               <div className="flex-shrink-0">
                 <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
@@ -45,11 +45,11 @@ export default function ForgotPasswordPage() {
                 </svg>
               </div>
               <div className="ml-3 flex-1 md:flex md:justify-between">
-                <p className="text-sm text-blue-700">{message}</p>
+                <p className="text-sm text-blue-200">{message}</p>
               </div>
             </div>
             <div className="mt-6 text-center">
-              <Link href="/login" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+              <Link href="/login" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">
                 Volver a Iniciar Sesión
               </Link>
             </div>
@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
         ) : (
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label htmlFor="email-address" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email-address" className="block text-sm font-medium text-slate-200">
                 Correo Electrónico
               </label>
               <input
@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
                 type="email"
                 autoComplete="email"
                 required
-                className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                className="mt-1 appearance-none block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 rounded-md shadow-sm placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                 placeholder="ejemplo@trackflow.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -86,7 +86,7 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="text-sm text-center">
-              <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+              <Link href="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
                 ¿Recordaste tu contraseña? Iniciar sesión
               </Link>
             </div>

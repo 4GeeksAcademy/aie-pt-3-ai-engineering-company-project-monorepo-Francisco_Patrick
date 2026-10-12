@@ -4,16 +4,21 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { changePassword } from '../../../lib/authApi';
 
-export default function ChangePasswordPage() {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+/**
+ * Change password page component allowing users to update their credentials.
+ *
+ * @returns JSX Element rendering the change password form.
+ */
+export default function ChangePasswordPage(): React.ReactElement {
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
 
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
@@ -36,19 +41,20 @@ export default function ChangePasswordPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
-      setError(err.message || 'La contraseña actual es incorrecta o la sesión no es válida.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'La contraseña actual es incorrecta o la sesión no es válida.';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md mx-auto bg-slate-900/90 p-8 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-xl space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 text-center">Cambiar Contraseña</h2>
-          <p className="mt-2 text-sm text-gray-600 text-center">
+          <h2 className="text-2xl font-bold text-slate-100 text-center">Cambiar Contraseña</h2>
+          <p className="mt-2 text-sm text-slate-400 text-center">
             Actualiza la contraseña de tu cuenta de usuario.
           </p>
         </div>
@@ -60,14 +66,14 @@ export default function ChangePasswordPage() {
         )}
 
         {successMessage && (
-          <div className="bg-green-50 border-l-4 border-green-400 p-4">
-            <p className="text-sm text-green-700">{successMessage}</p>
+          <div className="bg-green-950/60 border-l-4 border-green-500 p-4 rounded-md">
+            <p className="text-sm text-green-200">{successMessage}</p>
           </div>
         )}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label htmlFor="current-password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="current-password" className="block text-sm font-medium text-slate-200">
               Contraseña Actual
             </label>
             <input
@@ -75,15 +81,15 @@ export default function ChangePasswordPage() {
               name="current_password"
               type="password"
               required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              className="mt-1 block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               placeholder="••••••••"
               value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPassword(e.target.value)}
             />
           </div>
 
           <div>
-            <label htmlFor="new-password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="new-password" className="block text-sm font-medium text-slate-200">
               Nueva Contraseña
             </label>
             <input
@@ -91,15 +97,15 @@ export default function ChangePasswordPage() {
               name="new_password"
               type="password"
               required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              className="mt-1 block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               placeholder="••••••••"
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
             />
           </div>
 
           <div>
-            <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="confirm-password" className="block text-sm font-medium text-slate-200">
               Confirmar Nueva Contraseña
             </label>
             <input
@@ -107,10 +113,10 @@ export default function ChangePasswordPage() {
               name="confirm_password"
               type="password"
               required
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              className="mt-1 block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 text-slate-100 placeholder-slate-400 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
               placeholder="••••••••"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
             />
           </div>
 
@@ -127,7 +133,7 @@ export default function ChangePasswordPage() {
           </div>
 
           <div className="text-center pt-2">
-            <Link href="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+            <Link href="/" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">
               Volver al Panel Principal
             </Link>
           </div>

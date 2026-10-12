@@ -58,8 +58,9 @@ export function SupplierForm({ onSubmit, isSubmitting }: SupplierFormProps): Rea
       setCategoriesStr('');
       setCost('');
       setStatus('active');
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while saving.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An error occurred while saving.';
+      setError(message);
     }
   };
 
