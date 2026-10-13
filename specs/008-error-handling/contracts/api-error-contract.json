@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "APIErrorContract",
+  "type": "object",
+  "required": ["error", "message"],
+  "properties": {
+    "error": {
+      "type": "string",
+      "description": "High-level classification of the error.",
+      "enum": [
+        "Validation Error",
+        "Authentication Error",
+        "Permission Denied",
+        "Not Found",
+        "Invalid Status Transition",
+        "Server Error"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "description": "A human-readable explanation of the error suitable for end users."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Optional user-safe detailed message."
+    },
+    "details": {
+      "type": "array",
+      "description": "Optional list of field-level validation errors.",
+      "items": {
+        "type": "object",
+        "required": ["field", "issue"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The request field or property name."
+          },
+          "issue": {
+            "type": "string",
+            "description": "Description of the validation failure."
+          }
+        }
+      }
+    }
+  }
+}

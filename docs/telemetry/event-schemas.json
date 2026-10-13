@@ -1,0 +1,1060 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TrackFlowTelemetryEventSchemaRegistry",
+  "description": "Standardized JSON Schema definitions for TrackFlow Event Envelope and all allowlisted event payloads.",
+  "version": "1.0.0",
+  "type": "object",
+  "definitions": {
+    "EventEnvelope": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "timestamp",
+        "sessionId",
+        "userId",
+        "event_type",
+        "schemaVersion",
+        "requestId",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Globally unique UUIDv4 identifying this specific event instance."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp recording when the event occurred."
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Unique session identifier grouping user or agent activity."
+        },
+        "userId": {
+          "type": ["string", "null"],
+          "description": "Pseudonymized identifier of the authenticated operator, client, or system actor."
+        },
+        "event_type": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(_[a-z0-9]+)+$",
+          "description": "Event name conforming strictly to entity_action taxonomy in snake_case."
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Semantic version of the event schema definition."
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Distributed tracing correlation identifier bridging frontend, backend, and database spans."
+        },
+        "properties": {
+          "type": "object",
+          "description": "Event-specific domain payload validated against the strict property allowlist."
+        }
+      }
+    },
+    "inbound_order_created": {
+      "type": "object",
+      "required": [
+        "inboundOrderId",
+        "clientId",
+        "warehouseCode",
+        "totalSkus",
+        "totalUnits",
+        "sourceChannel"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "inboundOrderId": {
+          "type": "string",
+          "description": "Unique inbound shipment identifier."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Identifier of the merchant/brand owning the inventory."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Destination warehouse hub."
+        },
+        "totalSkus": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of distinct SKU lines in the manifest."
+        },
+        "totalUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total physical units expected."
+        },
+        "sourceChannel": {
+          "type": "string",
+          "enum": ["EMAIL_AUTO_PARSED", "MANUAL_ENTRY", "EDI_IMPORT", "API_SYNC"],
+          "description": "Channel through which order was created."
+        },
+        "supplierIdHash": {
+          "type": "string",
+          "description": "SHA-256 pseudonymized hash of the external supplier ID."
+        }
+      }
+    },
+    "stock_threshold_triggered": {
+      "type": "object",
+      "required": [
+        "sku",
+        "clientId",
+        "warehouseCode",
+        "currentStock",
+        "thresholdLimit",
+        "triggerReason",
+        "automatedRestockNoticeSent"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sku": {
+          "type": "string",
+          "description": "Stock Keeping Unit string."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "B2B client owner identifier."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Hub location."
+        },
+        "currentStock": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Real-time on-hand available inventory count."
+        },
+        "thresholdLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Configured minimum stock trigger level."
+        },
+        "triggerReason": {
+          "type": "string",
+          "enum": ["OUTBOUND_FULFILLMENT", "CYCLE_COUNT_ADJUSTMENT", "DAMAGED_DISPOSAL"],
+          "description": "Cause of stock decrease."
+        },
+        "automatedRestockNoticeSent": {
+          "type": "boolean",
+          "description": "Whether an automated email/webhook alert was dispatched to the client."
+        }
+      }
+    },
+    "direct_stock_edit_rejected": {
+      "type": "object",
+      "required": [
+        "operatorIdHash",
+        "sku",
+        "warehouseCode",
+        "attemptedQuantityDelta",
+        "rejectionReason",
+        "uiComponentId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "operatorIdHash": {
+          "type": "string",
+          "description": "SHA-256 hash of operator identifier."
+        },
+        "sku": {
+          "type": "string",
+          "description": "Targeted SKU."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Warehouse hub."
+        },
+        "attemptedQuantityDelta": {
+          "type": "integer",
+          "description": "Quantity attempted to be added/subtracted directly."
+        },
+        "rejectionReason": {
+          "type": "string",
+          "description": "System violation reason code."
+        },
+        "uiComponentId": {
+          "type": "string",
+          "description": "Interface element where action originated."
+        }
+      }
+    },
+    "stock_validation_failed": {
+      "type": "object",
+      "required": [
+        "orderId",
+        "sku",
+        "warehouseCode",
+        "binLocation",
+        "expectedUnits",
+        "foundUnits",
+        "discrepancyType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "description": "Outbound order reference."
+        },
+        "sku": {
+          "type": "string",
+          "description": "SKU failing validation."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Hub location."
+        },
+        "binLocation": {
+          "type": "string",
+          "description": "Physical rack/bin aisle identifier."
+        },
+        "expectedUnits": {
+          "type": "integer",
+          "description": "Units recorded in digital inventory."
+        },
+        "foundUnits": {
+          "type": "integer",
+          "description": "Units physically confirmed present by operator."
+        },
+        "discrepancyType": {
+          "type": "string",
+          "enum": ["SHORTAGE", "LOCATION_MISMATCH", "DAMAGED_ITEM", "BARCODE_MISREAD"],
+          "description": "Classification of stock failure."
+        }
+      }
+    },
+    "outbound_order_fulfilled": {
+      "type": "object",
+      "required": [
+        "orderId",
+        "clientId",
+        "warehouseCode",
+        "packageWeightKg",
+        "itemCount",
+        "pickDurationSeconds",
+        "destinationCountry",
+        "destinationPostalCodeMasked"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "description": "Outbound fulfillment order ID."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Merchant owner ID."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Hub fulfilling order."
+        },
+        "packageWeightKg": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Total physical package weight in kilograms."
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Quantity of units fulfilled."
+        },
+        "pickDurationSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent from pick list dispatch to pack finish."
+        },
+        "destinationCountry": {
+          "type": "string",
+          "enum": ["US", "ES", "EU", "INTL"],
+          "description": "Country destination zone."
+        },
+        "destinationPostalCodeMasked": {
+          "type": "string",
+          "description": "Masked postal code prefix."
+        }
+      }
+    },
+    "carrier_recommendation_selected": {
+      "type": "object",
+      "required": [
+        "orderId",
+        "recommendedCarrier",
+        "selectedCarrier",
+        "isOverride",
+        "estimatedCostEur",
+        "estimatedTransitHours"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "description": "Fulfillment order ID."
+        },
+        "recommendedCarrier": {
+          "type": "string",
+          "enum": ["UPS", "FEDEX", "DHL_US", "DHL_ES", "MRW", "SEUR", "LOCAL_COURIER"],
+          "description": "AI/Rules engine suggested carrier."
+        },
+        "selectedCarrier": {
+          "type": "string",
+          "enum": ["UPS", "FEDEX", "DHL_US", "DHL_ES", "MRW", "SEUR", "LOCAL_COURIER"],
+          "description": "Final carrier assigned to parcel."
+        },
+        "isOverride": {
+          "type": "boolean",
+          "description": "True if dispatcher manually selected a different carrier."
+        },
+        "overrideReason": {
+          "type": "string",
+          "description": "Mandatory explanation if recommendation was overridden."
+        },
+        "estimatedCostEur": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Estimated transit cost in EUR."
+        },
+        "estimatedTransitHours": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "SLA promised transit window in hours."
+        }
+      }
+    },
+    "shipment_tracking_updated": {
+      "type": "object",
+      "required": [
+        "trackingNumberHash",
+        "carrierCode",
+        "normalizedStatus",
+        "rawCarrierStatus",
+        "locationCountry"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trackingNumberHash": {
+          "type": "string",
+          "description": "SHA-256 hash of carrier tracking number."
+        },
+        "carrierCode": {
+          "type": "string",
+          "enum": ["UPS", "FEDEX", "DHL", "MRW", "SEUR"],
+          "description": "Carrier handling the shipment."
+        },
+        "normalizedStatus": {
+          "type": "string",
+          "enum": [
+            "LABEL_CREATED",
+            "PICKED_UP",
+            "IN_TRANSIT",
+            "OUT_FOR_DELIVERY",
+            "DELIVERED",
+            "EXCEPTION",
+            "FAILED_ATTEMPT"
+          ],
+          "description": "TrackFlow standard transit milestone status."
+        },
+        "rawCarrierStatus": {
+          "type": "string",
+          "description": "Exact string provided by carrier API."
+        },
+        "locationCity": {
+          "type": "string",
+          "description": "Transit checkpoint city name."
+        },
+        "locationCountry": {
+          "type": "string",
+          "description": "2-letter ISO country code."
+        },
+        "isDeliveredOnTime": {
+          "type": "boolean",
+          "description": "Calculated against original SLA target."
+        }
+      }
+    },
+    "shipment_incident_recorded": {
+      "type": "object",
+      "required": [
+        "trackingNumberHash",
+        "orderId",
+        "carrierCode",
+        "incidentType",
+        "incidentSeverity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trackingNumberHash": {
+          "type": "string",
+          "description": "Hashed tracking ID."
+        },
+        "orderId": {
+          "type": "string",
+          "description": "TrackFlow internal order reference."
+        },
+        "carrierCode": {
+          "type": "string",
+          "enum": ["UPS", "FEDEX", "DHL", "MRW", "SEUR"],
+          "description": "Carrier handling the package."
+        },
+        "incidentType": {
+          "type": "string",
+          "enum": [
+            "LOST_IN_TRANSIT",
+            "DAMAGED_GOODS",
+            "ADDRESS_INCORRECT",
+            "REFUSED_BY_RECIPIENT",
+            "CUSTOMS_HOLD"
+          ],
+          "description": "Classification of delivery incident."
+        },
+        "incidentSeverity": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "Operational severity level."
+        },
+        "estimatedClaimValueEur": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Declared item value for insurance claims."
+        }
+      }
+    },
+    "return_request_evaluated": {
+      "type": "object",
+      "required": [
+        "returnId",
+        "clientId",
+        "sku",
+        "evaluationOutcome",
+        "ruleTriggered",
+        "declaredReason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "returnId": {
+          "type": "string",
+          "description": "Return authorization number (RMA)."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "Merchant owner ID."
+        },
+        "sku": {
+          "type": "string",
+          "description": "Returned SKU."
+        },
+        "evaluationOutcome": {
+          "type": "string",
+          "enum": ["AUTO_APPROVED", "AUTO_REJECTED", "ESCALATED_MANUAL_REVIEW"],
+          "description": "Decision outcome."
+        },
+        "ruleTriggered": {
+          "type": "string",
+          "description": "Specific business rule triggered."
+        },
+        "declaredReason": {
+          "type": "string",
+          "enum": [
+            "DEFECTIVE",
+            "WRONG_SIZE",
+            "UNWANTED",
+            "NOT_AS_DESCRIBED",
+            "LATE_DELIVERY"
+          ],
+          "description": "Customer declared return reason."
+        }
+      }
+    },
+    "return_item_inspected": {
+      "type": "object",
+      "required": [
+        "returnId",
+        "warehouseCode",
+        "sku",
+        "aiConditionClassification",
+        "aiConfidenceScore",
+        "aiModelVersion",
+        "operatorOverrodeAi",
+        "finalGrade"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "returnId": {
+          "type": "string",
+          "description": "RMA identifier."
+        },
+        "warehouseCode": {
+          "type": "string",
+          "enum": ["US-LAX-01", "ES-ZAZ-01"],
+          "description": "Warehouse hub receiving return."
+        },
+        "sku": {
+          "type": "string",
+          "description": "SKU inspected."
+        },
+        "aiConditionClassification": {
+          "type": "string",
+          "enum": [
+            "A_GRADE_NEW",
+            "B_GRADE_REFURBISH",
+            "C_GRADE_DAMAGED",
+            "SCRAP_DISPOSAL"
+          ],
+          "description": "AI model prediction."
+        },
+        "aiConfidenceScore": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Confidence score of AI classification."
+        },
+        "aiModelVersion": {
+          "type": "string",
+          "description": "Model release version identifier."
+        },
+        "operatorOverrodeAi": {
+          "type": "boolean",
+          "description": "True if operator modified the grade."
+        },
+        "finalGrade": {
+          "type": "string",
+          "enum": [
+            "A_GRADE_NEW",
+            "B_GRADE_REFURBISH",
+            "C_GRADE_DAMAGED",
+            "SCRAP_DISPOSAL"
+          ],
+          "description": "Final confirmed product grade."
+        }
+      }
+    },
+    "cx_inquiry_resolved": {
+      "type": "object",
+      "required": [
+        "ticketId",
+        "inquiryChannel",
+        "inquiryCategory",
+        "resolvedBy",
+        "handlingTimeSeconds",
+        "firstContactResolution",
+        "customerType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "description": "Support ticket identifier."
+        },
+        "inquiryChannel": {
+          "type": "string",
+          "enum": ["EMAIL", "WHATSAPP", "PHONE", "PORTAL_CHAT"],
+          "description": "Contact channel."
+        },
+        "inquiryCategory": {
+          "type": "string",
+          "enum": [
+            "WHERE_IS_MY_ORDER",
+            "RETURN_STATUS",
+            "INVENTORY_QUERY",
+            "BILLING",
+            "CARRIER_CLAIM"
+          ],
+          "description": "Primary inquiry intent."
+        },
+        "resolvedBy": {
+          "type": "string",
+          "enum": [
+            "AI_AGENT_AUTONOMOUS",
+            "HUMAN_AGENT_SOLO",
+            "HYBRID_AI_ASSISTED"
+          ],
+          "description": "Entity resolving ticket."
+        },
+        "handlingTimeSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Handling duration in seconds."
+        },
+        "firstContactResolution": {
+          "type": "boolean",
+          "description": "True if resolved in first contact without customer re-open."
+        },
+        "customerType": {
+          "type": "string",
+          "enum": ["B2B_BRAND", "B2C_CONSUMER"],
+          "description": "Customer tier."
+        }
+      }
+    },
+    "cx_sentiment_flagged": {
+      "type": "object",
+      "required": [
+        "ticketId",
+        "sentimentScore",
+        "escalationCategory",
+        "autoEscalatedToSupervisor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ticketId": {
+          "type": "string",
+          "description": "Ticket reference."
+        },
+        "sentimentScore": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0,
+          "description": "NLP sentiment polarity score."
+        },
+        "escalationCategory": {
+          "type": "string",
+          "enum": [
+            "DELIVERY_DELAY_FRUSTRATION",
+            "DAMAGED_GOODS_ANGER",
+            "REPEATED_CONTACT_FATIGUE",
+            "THREATENED_LEGAL_CHURN"
+          ],
+          "description": "Escalation reason."
+        },
+        "autoEscalatedToSupervisor": {
+          "type": "boolean",
+          "description": "True if ticket was automatically prioritized."
+        }
+      }
+    },
+    "client_health_score_calculated": {
+      "type": "object",
+      "required": [
+        "clientId",
+        "healthScore",
+        "churnRiskTier",
+        "daysToContractRenewal",
+        "monthlyShipmentVolumeVariance",
+        "slaAdherenceRate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "description": "Merchant identifier."
+        },
+        "healthScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Calculated score from 0 to 100."
+        },
+        "churnRiskTier": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "Retention risk level."
+        },
+        "daysToContractRenewal": {
+          "type": "integer",
+          "description": "Days remaining on annual B2B contract."
+        },
+        "monthlyShipmentVolumeVariance": {
+          "type": "number",
+          "description": "Percentage variance vs rolling 3-month average."
+        },
+        "slaAdherenceRate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fulfillment SLA compliance rate."
+        }
+      }
+    },
+    "executive_kpi_snapshot_generated": {
+      "type": "object",
+      "required": [
+        "reportingPeriodStart",
+        "reportingPeriodEnd",
+        "totalShipmentsFulfilledUs",
+        "totalShipmentsFulfilledEs",
+        "onTimeDeliveryRateGlobal",
+        "globalReturnRatePercentage",
+        "avgCostPerKgEur",
+        "reportGenerationStatus"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reportingPeriodStart": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start timestamp of period."
+        },
+        "reportingPeriodEnd": {
+          "type": "string",
+          "format": "date-time",
+          "description": "End timestamp of period."
+        },
+        "totalShipmentsFulfilledUs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Weekly US shipments fulfilled."
+        },
+        "totalShipmentsFulfilledEs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Weekly Spain shipments fulfilled."
+        },
+        "onTimeDeliveryRateGlobal": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Global on-time delivery rate."
+        },
+        "globalReturnRatePercentage": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0,
+          "description": "Total returns as a percentage of total volume."
+        },
+        "avgCostPerKgEur": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Blended logistics cost per kg."
+        },
+        "reportGenerationStatus": {
+          "type": "string",
+          "enum": ["SUCCESS", "PARTIAL_DATA", "FAILED"],
+          "description": "Status of Monday 07:00 executive report run."
+        }
+      }
+    },
+    "api_latency_recorded": {
+      "type": "object",
+      "required": [
+        "httpMethod",
+        "routeTemplate",
+        "statusCode",
+        "durationMs",
+        "serverRegion",
+        "targetService"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "httpMethod": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+          "description": "HTTP method."
+        },
+        "routeTemplate": {
+          "type": "string",
+          "description": "Parameterized endpoint path template."
+        },
+        "statusCode": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599,
+          "description": "HTTP response code."
+        },
+        "durationMs": {
+          "type": "number",
+          "minimum": 0.0,
+          "description": "Elapsed request time in milliseconds."
+        },
+        "serverRegion": {
+          "type": "string",
+          "enum": ["us-west-2-lax", "eu-west-3-zaz"],
+          "description": "Hosting region."
+        },
+        "targetService": {
+          "type": "string",
+          "enum": [
+            "inventory-service",
+            "carrier-service",
+            "returns-service",
+            "cx-gateway"
+          ],
+          "description": "Target backend microservice."
+        }
+      }
+    },
+    "frontend_error_captured": {
+      "type": "object",
+      "required": [
+        "errorName",
+        "sanitizedMessage",
+        "pageUrl",
+        "browserUserAgent",
+        "releaseVersion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "errorName": {
+          "type": "string",
+          "description": "Exception class/type."
+        },
+        "sanitizedMessage": {
+          "type": "string",
+          "description": "Sanitized error message without PII."
+        },
+        "componentStack": {
+          "type": "string",
+          "description": "Component tree hierarchy."
+        },
+        "pageUrl": {
+          "type": "string",
+          "description": "URL route where error occurred."
+        },
+        "browserUserAgent": {
+          "type": "string",
+          "description": "Browser user-agent string."
+        },
+        "releaseVersion": {
+          "type": "string",
+          "description": "Release commit SHA or version tag."
+        }
+      }
+    },
+    "email_order_parse_failed": {
+      "type": "object",
+      "required": [
+        "senderEmailHash",
+        "clientId",
+        "parseFailureReason",
+        "rawAttachmentExtension"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "senderEmailHash": {
+          "type": "string",
+          "description": "SHA-256 hash of sender email."
+        },
+        "clientId": {
+          "type": "string",
+          "description": "B2B client identifier."
+        },
+        "parseFailureReason": {
+          "type": "string",
+          "enum": [
+            "UNKNOWN_FORMAT",
+            "MISSING_SKU_COLUMN",
+            "MALFORMED_CSV",
+            "CORRUPTED_PDF",
+            "ENCRYPTED_FILE"
+          ],
+          "description": "Reason parsing failed."
+        },
+        "rawAttachmentExtension": {
+          "type": "string",
+          "description": "Extension of attached manifest file (e.g., .xlsx, .pdf, .csv)."
+        }
+      }
+    },
+    "user_login_attempted": {
+      "type": "object",
+      "required": [
+        "accountType",
+        "usernameHash",
+        "attemptStatus",
+        "clientIpMasked",
+        "authMethod"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accountType": {
+          "type": "string",
+          "enum": [
+            "OPERATOR",
+            "WAREHOUSE_ADMIN",
+            "BRAND_CLIENT",
+            "SYSTEM_SERVICE"
+          ],
+          "description": "Account role category."
+        },
+        "usernameHash": {
+          "type": "string",
+          "description": "SHA-256 hash of attempted username."
+        },
+        "attemptStatus": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "INVALID_CREDENTIALS",
+            "LOCKED_OUT",
+            "MFA_REQUIRED",
+            "MFA_FAILED"
+          ],
+          "description": "Result of authentication challenge."
+        },
+        "clientIpMasked": {
+          "type": "string",
+          "description": "Masked IP address (/24 subnet)."
+        },
+        "authMethod": {
+          "type": "string",
+          "enum": ["PASSWORD", "SSO_OIDC", "MFA_TOTP", "API_KEY"],
+          "description": "Authentication mechanism used."
+        }
+      }
+    },
+    "session_expired": {
+      "type": "object",
+      "required": [
+        "sessionDurationMinutes",
+        "expirationReason",
+        "lastActiveRoute",
+        "deviceType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sessionDurationMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Elapsed session duration in minutes."
+        },
+        "expirationReason": {
+          "type": "string",
+          "enum": [
+            "IDLE_TIMEOUT",
+            "TOKEN_TTL_EXPIRED",
+            "CONCURRENT_LOGIN_INVALIDATION",
+            "ADMIN_REVOKED"
+          ],
+          "description": "Cause of session expiration."
+        },
+        "lastActiveRoute": {
+          "type": "string",
+          "description": "Route where session expired."
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": [
+            "DESKTOP_WORKSTATION",
+            "RF_BARCODE_SCANNER",
+            "TABLET",
+            "MOBILE"
+          ],
+          "description": "Physical terminal device type."
+        }
+      }
+    },
+    "carrier_webhook_failed": {
+      "type": "object",
+      "required": [
+        "carrierCode",
+        "failureType",
+        "httpResponseCode",
+        "routedToDeadLetterQueue"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "carrierCode": {
+          "type": "string",
+          "enum": ["UPS", "FEDEX", "DHL", "MRW", "SEUR"],
+          "description": "Carrier transmitting webhook."
+        },
+        "failureType": {
+          "type": "string",
+          "enum": [
+            "INVALID_SIGNATURE",
+            "SCHEMA_MISMATCH",
+            "TIMEOUT",
+            "UNKNOWN_PARCEL_ID"
+          ],
+          "description": "Webhook ingestion failure classification."
+        },
+        "httpResponseCode": {
+          "type": "integer",
+          "description": "HTTP response returned to carrier webhook."
+        },
+        "routedToDeadLetterQueue": {
+          "type": "boolean",
+          "description": "Whether payload was queued for dead-letter processing."
+        }
+      }
+    },
+    "section_navigation_tracked": {
+      "type": "object",
+      "required": [
+        "fromRoute",
+        "toRoute",
+        "navigationType"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fromRoute": {
+          "type": "string",
+          "description": "Origin URL route path."
+        },
+        "toRoute": {
+          "type": "string",
+          "description": "Destination URL route path."
+        },
+        "navigationType": {
+          "type": "string",
+          "enum": [
+            "SIDEBAR_CLICK",
+            "BREADCRUMB",
+            "DIRECT_URL",
+            "IN_PAGE_BUTTON"
+          ],
+          "description": "UI interaction mechanism."
+        },
+        "dwellTimePreviousSectionSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent in seconds in the preceding section."
+        }
+      }
+    },
+    "flow_abandonment_detected": {
+      "type": "object",
+      "required": [
+        "flowName",
+        "lastCompletedStep",
+        "totalSteps",
+        "timeSpentSeconds",
+        "abandonmentTrigger"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "flowName": {
+          "type": "string",
+          "enum": [
+            "INBOUND_PO_CREATION",
+            "MANUAL_CARRIER_OVERRIDE",
+            "RETURN_AI_OVERRIDE",
+            "CLIENT_REPORT_BUILDER"
+          ],
+          "description": "Name of the multi-step workflow."
+        },
+        "lastCompletedStep": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Index of the last step completed before exit."
+        },
+        "totalSteps": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Total steps in the workflow."
+        },
+        "timeSpentSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent in the workflow before exit."
+        },
+        "abandonmentTrigger": {
+          "type": "string",
+          "enum": ["NAVIGATED_AWAY", "BROWSER_CLOSED", "SESSION_TIMED_OUT", "CANCEL_BUTTON"],
+          "description": "Mechanism that triggered workflow abandonment."
+        }
+      }
+    }
+  }
+}

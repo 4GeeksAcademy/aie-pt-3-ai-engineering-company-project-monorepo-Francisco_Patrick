@@ -1,10 +1,37 @@
-# `uis` folder
+# TrackFlow User Interfaces (`/uis`)
 
-This folder contains **all the user interfaces** related to the company for the cross-functional AI Engineering project (for example: web applications, internal dashboards, customer portals, Streamlit/Gradio apps, etc.).
+This directory contains the user interface applications for TrackFlow.
 
-Each subfolder inside `uis/` must correspond to **one specific user interface** (for example: `web-portal`, `backoffice-dashboard`) and include its own technical and functional documentation.
+## Applications Overview
 
-- **Main purpose**: to centralize in a single place all the frontend applications that support the company's use cases.
-- **Recommendation**: document in this file (or in sub-READMEs) the applications you add, their objective, the technology used, and how to run them.
+| Application | Path | Type | Purpose | Target Audience |
+| --- | --- | --- | --- | --- |
+| **Corporate Website** | `./website` | Next.js (App Router) + TypeScript | Public corporate website, logistics overview, value proposition, and intake form | External e-commerce brands, prospective clients |
+| **Internal Backoffice** | `./backoffice` | Next.js (App Router) + TypeScript | Operations dashboard, hub status monitoring, and interactive execution suite for core business logic (`src/utils`) | Internal warehouse managers, logisticians, account leads |
 
-> _Spanish version: [README.es.md](./README.es.md)._
+## Setup & Running Locally
+
+### 1. Corporate Website (`./uis/website`)
+```bash
+cd uis/website
+npm install
+npm run dev
+```
+
+### 2. Internal Backoffice (`./uis/backoffice`)
+```bash
+cd uis/backoffice
+npm install
+npm run dev
+```
+
+## TypeScript & Build Validation
+
+```bash
+# Typecheck monorepo domain logic
+npm run typecheck
+
+# Build individual applications
+cd uis/website && npm run build
+cd ../backoffice && npm run build
+```

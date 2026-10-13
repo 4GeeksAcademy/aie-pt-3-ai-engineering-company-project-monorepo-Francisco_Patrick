@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: TrackFlow Telemetry Ingestion API
+  description: Ingestion endpoint for batched TrackFlow telemetry events conforming to the standardized event envelope.
+  version: 1.0.0
+paths:
+  /telemetry/events:
+    post:
+      summary: Ingest Telemetry Event Batch
+      description: Ingests, validates, and logs an array of structured telemetry events.
+      operationId: ingestTelemetryEvents
+      tags:
+        - Telemetry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryBatch'
+      responses:
+        '200':
+          description: Batch successfully received and validated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestReceipt'
+              example:
+                received: 5
+        '400':
+          description: Bad request or malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error (Missing or invalid envelope fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorResponse'
+
+components:
+  schemas:
+    TelemetryBatch:
+      type: object
+      required:
+        - events
+      properties:
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TelemetryEvent'
+
+    TelemetryEvent:
+      type: object
+      required:
+        - eventId
+        - timestamp
+        - sessionId
+        - userId
+        - event_type
+        - schemaVersion
+        - requestId
+        - properties
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Globally unique UUIDv4 identifier for the event.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC timestamp of the event capture.
+          example: "2026-10-06T10:30:00.000Z"
+        sessionId:
+          type: string
+          description: Session identifier.
+          example: "sess_7a8b9c0d1e2f"
+        userId:
+          type: string
+          nullable: true
+          description: Pseudonymized authenticated user identifier, or null if unauthenticated.
+          example: "usr_998877"
+        event_type:
+          type: string
+          pattern: "^[a-z0-9]+(_[a-z0-9]+)+$"
+          description: Standardized snake_case taxonomy identifier conforming to entity_action.
+          example: "inbound_order_created"
+        schemaVersion:
+          type: string
+          pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          description: Semantic version of the schema.
+          example: "1.0.0"
+        requestId:
+          type: string
+          description: Distributed tracing correlation identifier.
+          example: "req_11223344"
+        properties:
+          type: object
+          description: Domain-specific payload conforming to event allowlist.
+          example:
+            warehouseCode: "LA-01"
+            totalSkus: 12
+            totalUnits: 150
+
+    IngestReceipt:
+      type: object
+      required:
+        - received
+      properties:
+        received:
+          type: integer
+          description: Number of events successfully received and validated in the batch.
+          example: 5
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Invalid payload format"
+
+    ValidationErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - details
+      properties:
+        error:
+          type: string
+          example: "Validation Error"
+        message:
+          type: string
+          example: "Validation failed for field 'events -> 0 -> eventId'"
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              issue:
+                type: string

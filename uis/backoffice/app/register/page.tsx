@@ -1,0 +1,144 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { setToken } from '../../lib/auth';
+import Link from 'next/link';
+
+/**
+ * Registration page component allowing new users to sign up for backoffice access.
+ *
+ * @returns JSX Element rendering the registration form.
+ */
+export default function RegisterPage(): React.ReactElement {
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    name: '',
+    phone: '',
+    address: '',
+  });
+  const [error, setError] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const router = useRouter();
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const baseUrl = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8000';
+      
+      // Step 1: Create user
+      const registerResponse = await fetch(`${baseUrl}/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          ...(formData.phone ? { phone: formData.phone } : {}),
+          ...(formData.address ? { address: formData.address } : {}),
+        }),
+      });
+
+      if (!registerResponse.ok) {
+        const errorData = await registerResponse.json().catch(() => ({}));
+        const message = errorData?.detail?.[0]?.msg ?? errorData?.detail ?? errorData?.message ?? 'Registration failed.';
+        throw new Error(String(message));
+      }
+
+      // Step 2: Login to get token
+      const loginData = new URLSearchParams();
+      loginData.append('username', formData.email);
+      loginData.append('password', formData.password);
+
+      const loginResponse = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: loginData.toString(),
+      });
+
+      if (!loginResponse.ok) {
+        throw new Error('Registration succeeded, but auto-login failed. Please log in manually.');
+      }
+
+      const data = await loginResponse.json().catch(() => ({}));
+      if (data?.access_token) {
+        setToken(data.access_token);
+        router.push('/');
+      } else {
+        throw new Error('Registration succeeded but no access token was returned.');
+      }
+    } catch (err: unknown) {
+      console.error('[Register Error]:', err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : 'An error occurred during registration.';
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8 bg-slate-900/90 p-8 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-xl">
+        <div>
+          <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-100">Create a new account</h2>
+        </div>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+              <div className="flex">
+                <div className="ml-3">
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <label htmlFor="name" className="sr-only">Full Name</label>
+              <input id="name" name="name" type="text" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Full Name" value={formData.name} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="email-address" className="sr-only">Email address</label>
+              <input id="email-address" name="email" type="email" autoComplete="email" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Email address" value={formData.email} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="phone" className="sr-only">Phone (Optional)</label>
+              <input id="phone" name="phone" type="tel" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Phone (Optional)" value={formData.phone} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="address" className="sr-only">Address (Optional)</label>
+              <input id="address" name="address" type="text" className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Address (Optional)" value={formData.address} onChange={handleChange} />
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">Password</label>
+              <input id="password" name="password" type="password" autoComplete="new-password" required className="appearance-none rounded-none relative block w-full px-3 py-2 border border-slate-700 bg-slate-800/80 placeholder-slate-400 text-slate-100 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm" placeholder="Password" value={formData.password} onChange={handleChange} />
+            </div>
+          </div>
+
+          <div>
+            <button type="submit" disabled={isLoading} className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              {isLoading ? 'Registering...' : 'Register'}
+            </button>
+          </div>
+          <div className="text-sm text-center">
+            <Link href="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
+              Already have an account? Sign in
+            </Link>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,11 @@
+id,date,category,status,satisfaction_index
+1,2023-10-01,warehouse,closed,4.5
+2,2023-10-02,reverse_logistics,open,
+3,2023-10-02,last_mile,closed,5.0
+4,2023-10-03,customer_experience,closed,1.2
+5,2023-10-03,warehouse,open,
+6,2023-10-04,invalid_category,open,
+7,2023-10-05,,closed,
+8,2023-10-05,last_mile,invalid_status,
+9,2023-10-06,reverse_logistics,discarded,
+10,2023-10-06,customer_experience,closed,3.3
