@@ -25,8 +25,7 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
 - [x] **Initialize Memory Bank:** Complete `projectbrief.md`, `techContext.md`, and `progress.md` with business and technical context.
 - [x] **Create `AGENTS.md`:** Define mandatory operational and delivery workflow for all AI agents working in this repository (pre-commit checks, verification requirements, delivery process).
 - [x] **Configure `.agents/` Folder:** Establish directory-level conventions and scoped rules to prevent regressions and maintain code standards across monorepo modules.
-- [x] **Formalize Reusable Skill(s):** Create reusable skills for library integrations, TRP3 Extended APIs, build integrity, accessibility audits, and domain payload validations.
-- [x] **001-Types-Models Domain Models (APPROVED & Implemented):** Transpiled and implemented pure Lua 5.1 domain models (`Character`, `Armor`, `Weapon`, `Shield`, `Combat`, `Heroic`, `Pet`, `Skill`, `Spell`, `Profession`) in `src/main/domain/models/` matching `specs/001-Types-Models/*.ts` schemas, registered in `models.xml`.
+- [x] **Formalize Reusable Skill(s):** Create at least one reusable skill with explicit, verifiable acceptance criteria for recurring development tasks.
 
 ### Phase 2: Application Restructuring (`uis/`)
 - [x] **Application Specification:** Created and updated `specs/nextjs-typescript-application/SPEC.md` detailing frontend structure, Next.js applications (`./uis/website` and `./uis/backoffice`), component specs, layout separation, Milestone 2 business logic integration, and a 5-step consolidated implementation guide.
@@ -38,9 +37,9 @@ Based on the **Next Step Brief**, the immediate priorities focus on governance, 
   - Integrated Milestone 2 TypeScript business logic (`src/utils`) directly into `/business-logic` route, rendering execution outputs dynamically in the web UI.
 
 ### Phase 3: Backend Services & Integrations (`/services`)
-- [x] **Backend Architecture Proposal:** Created `docs/ARCHITECTURE_PROPOSAL.md` based on Hexagonal Architecture and Domain-Driven Design (FastAPI).
-- [ ] **Services Layer (`/services`):**
-  - Create backend microservices and API endpoints under `/services` (Inventory API, Carrier Aggregator, Returns Engine, CX Gateway).
+- [x] **Password Reset & Account Auth (AUTH-03):**
+  - Implemented `/auth/forgot-password` (anti-enumeration, email delivery via Resend, rate limiting), `/auth/reset-password` (token-based 30-min window, single-use invalidation), and `/auth/change-password` (authenticated session flow).
+  - Created Next.js UI views in `./uis/backoffice` (`/forgot-password`, `/reset-password`, `/account/change-password`, login link).
 
 ### Phase 4: Delivery
 - [ ] **Pull Request:** Open a PR summarizing all governance, application, and skill additions once complete.

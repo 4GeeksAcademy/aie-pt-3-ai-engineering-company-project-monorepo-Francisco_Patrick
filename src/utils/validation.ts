@@ -321,6 +321,10 @@ function getRequiredElementById<T extends HTMLElement>(id: string): T {
 }
 
 function bootstrapApplicationFormValidation(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
   const form = document.getElementById("application-form");
 
   if (!(form instanceof HTMLFormElement)) {
