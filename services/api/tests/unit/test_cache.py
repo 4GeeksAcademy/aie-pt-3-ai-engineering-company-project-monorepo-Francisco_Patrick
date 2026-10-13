@@ -76,3 +76,39 @@ def test_cache_size_with_expired_entries() -> None:
     time.sleep(1.1)
     assert cache.size() == 1
     assert cache.get("live_key") == "live_val"
+
+
+def test_memory_cache_adapter_conformance() -> None:
+    from domain.common.ports import CachePort
+    from infrastructure.cache import MemoryCacheAdapter, ResponseCache
+
+    custom_backend = ResponseCache()
+    adapter = MemoryCacheAdapter(backend=custom_backend)
+
+    assert isinstance(adapter, CachePort)
+
+    # Test set and get
+    adapter.set("test:port:key", {"status": "ok"}, ttl_seconds=60)
+    assert adapter.get("test:port:key") == {"status": "ok"}
+
+    # Test invalidate
+    assert adapter.invalidate("test:port:key") is True
+    assert adapter.get("test:port:key") is None
+    assert adapter.invalidate("test:port:key") is False
+
+    # Test invalidate_prefix
+    adapter.set("test:prefix:1", 1, ttl_seconds=60)
+    adapter.set("test:prefix:2", 2, ttl_seconds=60)
+    adapter.set("other:prefix:3", 3, ttl_seconds=60)
+    assert adapter.size() == 3
+
+    invalidated = adapter.invalidate_prefix("test:prefix:")
+    assert invalidated == 2
+    assert adapter.get("test:prefix:1") is None
+    assert adapter.get("test:prefix:2") is None
+    assert adapter.get("other:prefix:3") == 3
+
+    # Test clear
+    adapter.clear()
+    assert adapter.size() == 0
+
