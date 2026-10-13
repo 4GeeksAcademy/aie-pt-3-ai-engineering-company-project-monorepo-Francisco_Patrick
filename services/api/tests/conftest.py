@@ -41,6 +41,7 @@ from presentation.dependencies import (
 def override_get_tinydb(memory_db, monkeypatch):
     """Overrides infrastructure.database.get_tinydb unless TINYDB_PATH is explicitly set."""
     import infrastructure.database
+    import infrastructure.persistence.tinydb.client
     original_get_tinydb = infrastructure.database.get_tinydb
 
     def smart_get_tinydb():
@@ -49,6 +50,16 @@ def override_get_tinydb(memory_db, monkeypatch):
         return memory_db
 
     monkeypatch.setattr(infrastructure.database, "get_tinydb", smart_get_tinydb)
+    monkeypatch.setattr(infrastructure.persistence.tinydb.client, "get_tinydb", smart_get_tinydb)
+
+
+@pytest.fixture(autouse=True)
+def reset_response_cache():
+    """Ensures in-memory cache is purged between tests to prevent cross-test pollution."""
+    from infrastructure.cache import response_cache
+    response_cache.clear()
+    yield
+    response_cache.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -58,6 +69,7 @@ def override_inventory_db():
     SQLModel.metadata.create_all(engine)
     yield
     SQLModel.metadata.drop_all(engine)
+
 
 
 
