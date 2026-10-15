@@ -10,6 +10,7 @@ services:
     volumes:
       - ./uis:/app/uis
       - ./packages:/app/packages
+      - ./src:/app/src
       - /app/uis/website/node_modules
       - /app/uis/website/.next
       - /app/uis/backoffice/node_modules
@@ -40,9 +41,10 @@ services:
       - ./shared:/app/shared
       - /app/services/api/__pycache__
     environment:
-      - PYTHONPATH=/app:/app/services
+      - PYTHONPATH=/app:/app/services:/app/services/api
     env_file:
       - .env
+      - services/api/.env
     dns:
       - 8.8.8.8
       - 1.1.1.1

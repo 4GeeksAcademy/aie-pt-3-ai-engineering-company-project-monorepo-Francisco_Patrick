@@ -43,3 +43,41 @@ def test_sqlmodel_session_generator() -> None:
         next(session_gen)
     except StopIteration:
         pass  # expected generator exhaustion
+
+
+def test_sqlmodel_manager_custom_port(monkeypatch) -> None:
+    monkeypatch.setenv("user", "test_user")
+    monkeypatch.setenv("password", "test_pass")
+    monkeypatch.setenv("host", "custom.pooler.supabase.com")
+    monkeypatch.setenv("port", "6543")
+    monkeypatch.setenv("dbname", "test_db")
+
+    manager = SQLModelClientManager()
+    url = manager.build_database_url()
+    assert "@custom.pooler.supabase.com:6543/test_db" in url
+
+
+def test_sqlmodel_manager_db_port_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("user", "test_user")
+    monkeypatch.setenv("password", "test_pass")
+    monkeypatch.setenv("host", "custom.pooler.supabase.com")
+    monkeypatch.delenv("port", raising=False)
+    monkeypatch.setenv("DB_PORT", "7654")
+    monkeypatch.setenv("dbname", "test_db")
+
+    manager = SQLModelClientManager()
+    url = manager.build_database_url()
+    assert "@custom.pooler.supabase.com:7654/test_db" in url
+
+
+def test_sqlmodel_manager_default_port_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("user", "test_user")
+    monkeypatch.setenv("password", "test_pass")
+    monkeypatch.setenv("host", "custom.pooler.supabase.com")
+    monkeypatch.delenv("port", raising=False)
+    monkeypatch.delenv("DB_PORT", raising=False)
+    monkeypatch.setenv("dbname", "test_db")
+
+    manager = SQLModelClientManager()
+    url = manager.build_database_url()
+    assert "@custom.pooler.supabase.com:5432/test_db" in url
