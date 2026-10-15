@@ -2,8 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# 1. Copy shared packages to satisfy @repo/shared-types monorepo references
+# 1. Copy shared packages and root business foundations to satisfy monorepo references
 COPY packages/ ./packages/
+COPY src/ ./src/
 
 WORKDIR /app/uis
 

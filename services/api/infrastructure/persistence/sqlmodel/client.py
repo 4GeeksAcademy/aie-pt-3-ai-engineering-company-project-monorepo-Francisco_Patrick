@@ -6,12 +6,20 @@ schema initialization, and session generator dependency for relational persisten
 
 import os
 import urllib.parse
-from typing import Generator, Optional
+from typing import Generator, Optional, Union
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, Session, create_engine
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 
-load_dotenv()
+# Anchor dotenv loading to services/api/.env
+_api_env_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
+)
+if os.path.exists(_api_env_path):
+    load_dotenv(dotenv_path=_api_env_path, override=True)
+else:
+    load_dotenv()
+
 
 
 class SQLModelClientManager:
@@ -57,19 +65,40 @@ class SQLModelClientManager:
         default_sqlite_url = f"sqlite:///{self.get_default_sqlite_path()}"
 
         if not url.startswith("sqlite"):
+            target_host = "unknown"
+            target_port: Union[int, str] = "unknown"
+            try:
+                parsed_url = make_url(url)
+                if parsed_url.host:
+                    target_host = parsed_url.host
+                if parsed_url.port:
+                    target_port = parsed_url.port
+            except Exception:
+                pass
+
+            if target_host == "unknown":
+                target_host = os.getenv("host") or os.getenv("DB_HOST") or "unknown"
+            if target_port == "unknown":
+                target_port = (
+                    os.getenv("port")
+                    or os.getenv("DB_PORT")
+                    or (5432 if "postgres" in url else "unknown")
+                )
+
             try:
                 test_engine = create_engine(
                     url, echo=False, connect_args={"connect_timeout": 3}
                 )
                 with test_engine.connect():
                     pass
+                print(
+                    f"[INFO] Database connection succeeded (host: {target_host}, port: {target_port})."
+                )
                 return test_engine
             except Exception as e:
-                db_host = os.getenv("host") or os.getenv("DB_HOST")
-                target_host = db_host or url.split("@")[-1].split("/")[0]
                 print(
-                    f"[WARNING] Database connection to {target_host} failed ({e}). "
-                    f"Proactively falling back to SQLite: {default_sqlite_url}"
+                    f"[WARNING] Database connection failed (host: {target_host}, port: {target_port}): {e}. "
+                    f"Falling back to SQLite: {default_sqlite_url}"
                 )
                 return create_engine(
                     default_sqlite_url,
@@ -101,9 +130,11 @@ class SQLModelClientManager:
             SQLModel.metadata.create_all(eng)
         except Exception as e:
             if not str(eng.url).startswith("sqlite"):
+                host = eng.url.host or os.getenv("host") or os.getenv("DB_HOST") or "unknown"
+                port = eng.url.port or os.getenv("port") or os.getenv("DB_PORT") or (5432 if "postgres" in str(eng.url) else "unknown")
                 print(
-                    f"[WARNING] Schema creation failed on "
-                    f"{eng.url.render_as_string(hide_password=True)}: {e}"
+                    f"[WARNING] Schema creation failed (host: {host}, port: {port}, "
+                    f"url: {eng.url.render_as_string(hide_password=True)}): {e}"
                 )
                 print(f"[INFO] Falling back to local SQLite engine: {default_sqlite_url}")
                 fallback_eng = create_engine(
