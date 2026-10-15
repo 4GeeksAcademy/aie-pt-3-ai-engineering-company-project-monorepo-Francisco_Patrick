@@ -33,5 +33,17 @@ class TelemetrySinkPort(ABC):
         """
         ...
 
+    @abstractmethod
+    def record_events(self, events: List[TelemetryEvent]) -> int:
+        """Persist a list of validated telemetry events in a single transaction.
+
+        Args:
+            events: List of validated domain TelemetryEvent instances.
+
+        Returns:
+            Count of events successfully recorded.
+        """
+        ...
+
 
 __all__ = ["TelemetrySinkPort"]
