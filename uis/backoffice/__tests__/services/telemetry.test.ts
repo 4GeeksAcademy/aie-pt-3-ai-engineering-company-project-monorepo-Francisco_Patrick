@@ -161,4 +161,29 @@ describe("TelemetryService", () => {
     await jest.advanceTimersByTimeAsync(10000);
     expect(global.fetch).toHaveBeenCalledTimes(4);
   });
+
+  it("should handle persistent receipt response format without triggering retry loops", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ received: 1, stored: 1, rejected: 0 }),
+    } as Response);
+
+    track("inbound_order_created", {
+      inboundOrderId: "INB-COMPAT",
+      clientId: "client-1",
+      warehouseCode: "LA-01",
+      totalSkus: 1,
+      totalUnits: 5,
+      sourceChannel: "PORTAL",
+    });
+
+    await jest.advanceTimersByTimeAsync(10000);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // Verify no retry scheduled
+    await jest.advanceTimersByTimeAsync(10000);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(telemetryService.getQueueSize()).toBe(0);
+  });
 });

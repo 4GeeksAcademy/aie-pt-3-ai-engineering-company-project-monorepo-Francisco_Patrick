@@ -122,7 +122,12 @@ class SQLModelClientManager:
 
     def init_db(self, target_engine: Optional[Engine] = None) -> None:
         """Initialize SQLModel table schemas with resilient fallback."""
-        import models  # noqa: F401
+        from infrastructure.persistence.sqlmodel.models import (  # noqa: F401
+            SKU,
+            StockEntry,
+            StockExit,
+            TelemetryEventRecord,
+        )
         eng = target_engine if target_engine is not None else self.get_engine()
         default_sqlite_url = f"sqlite:///{self.get_default_sqlite_path()}"
 

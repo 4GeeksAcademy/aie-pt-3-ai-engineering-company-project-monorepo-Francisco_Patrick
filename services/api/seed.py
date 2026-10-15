@@ -91,6 +91,12 @@ def run_seed():
 
         # 2. Seed SQLModel Inventory Products & Initial Stock Entries
         init_db(engine)
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        if "telemetry_events" not in inspector.get_table_names():
+            raise RuntimeError("Database schema validation failed: 'telemetry_events' table missing")
+        print("[INFO] Verified 'telemetry_events' table exists in database schema.")
+
         inserted_products = 0
         with Session(engine) as session:
             for p_data in INITIAL_PRODUCTS:
@@ -116,7 +122,7 @@ def run_seed():
                     session.commit()
                     inserted_products += 1
 
-        print(f"Seeder executed successfully. Inserted {inserted_suppliers} suppliers and {inserted_products} inventory products.")
+        print(f"Seeder executed successfully. Inserted {inserted_suppliers} suppliers and {inserted_products} inventory products. Verified telemetry_events table schema.")
     except KeyboardInterrupt:
         print("\n[INTERRUPT] Seeding interrupted by user.", file=sys.stderr)
         sys.exit(130)

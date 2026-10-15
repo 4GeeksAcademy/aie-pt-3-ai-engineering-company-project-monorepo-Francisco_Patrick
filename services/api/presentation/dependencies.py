@@ -164,9 +164,12 @@ def get_inventory_service_dep(
     return InventoryService(inventory_repo=inventory_repo, cache=cache)
 
 
-def get_telemetry_service_dep() -> TelemetryService:
-    """Dependency provider for TelemetryService with the default logging sink."""
-    return TelemetryService()
+def get_telemetry_service_dep(
+    session: Session = Depends(get_sqlmodel_session_dep),
+) -> TelemetryService:
+    """Dependency provider for TelemetryService wired with SQLModelTelemetrySink."""
+    from infrastructure.persistence.sqlmodel.telemetry_sink import SQLModelTelemetrySink
+    return TelemetryService(sink=SQLModelTelemetrySink(session=session))
 
 
 def get_incident_csv_report_service_dep(

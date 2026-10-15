@@ -14,7 +14,12 @@ from domain.common.exceptions import InvalidStatusTransitionError
 from domain.incidents.models import Incident
 from domain.inventory.models import SKU, InventoryProduct, StockEntry, StockExit
 from domain.suppliers.models import Supplier
-from domain.telemetry.models import TelemetryBatch, TelemetryEvent
+from domain.telemetry.models import (
+    IngestReceipt,
+    RawTelemetryBatch,
+    TelemetryBatch,
+    TelemetryEvent,
+)
 
 
 # --- Supplier Domain Model Tests ---
@@ -292,3 +297,80 @@ def test_telemetry_event_envelope_validation():
             requestId="req_1",
             unvettedField="illegal",
         )
+
+
+def test_raw_telemetry_batch_validation():
+    """T009: RawTelemetryBatch accepts raw dictionaries and forbids extra envelope fields."""
+    raw_batch = RawTelemetryBatch(
+        events=[
+            {"eventId": "550e8400-e29b-41d4-a716-446655440000", "some_key": "val"},
+            {"arbitrary": 123},
+        ]
+    )
+    assert len(raw_batch.events) == 2
+
+    # Empty events array is allowed
+    empty_batch = RawTelemetryBatch(events=[])
+    assert len(empty_batch.events) == 0
+
+    # Non-list events raises ValidationError
+    with pytest.raises(ValidationError):
+        RawTelemetryBatch(events="not_a_list")  # type: ignore[arg-type]
+
+    # Extra envelope fields are forbidden
+    with pytest.raises(ValidationError):
+        RawTelemetryBatch(events=[], extra_field="forbidden")  # type: ignore[call-arg]
+
+
+def test_ingest_receipt_defaults_and_validation():
+    """T009: IngestReceipt defaults stored and rejected counters to 0 and validates non-negative integers."""
+    receipt = IngestReceipt(received=0)
+    assert receipt.received == 0
+    assert receipt.stored == 0
+    assert receipt.rejected == 0
+
+    explicit = IngestReceipt(received=10, stored=8, rejected=2)
+    assert explicit.received == 10
+    assert explicit.stored == 8
+    assert explicit.rejected == 2
+
+    # Negative counters raise ValidationError
+    with pytest.raises(ValidationError):
+        IngestReceipt(received=-1)
+
+    with pytest.raises(ValidationError):
+        IngestReceipt(received=5, stored=-1, rejected=6)
+
+    with pytest.raises(ValidationError):
+        IngestReceipt(received=5, stored=6, rejected=-1)
+
+
+def test_ingest_receipt_invariant_received_equals_stored_plus_rejected():
+    """T025: IngestReceipt enforces the invariant received == stored + rejected across all instances."""
+    # Valid invariant receipts
+    r1 = IngestReceipt(received=5, stored=3, rejected=2)
+    assert r1.received == r1.stored + r1.rejected
+
+    r2 = IngestReceipt(received=100, stored=100, rejected=0)
+    assert r2.received == r2.stored + r2.rejected
+
+    r3 = IngestReceipt(received=4, stored=0, rejected=4)
+    assert r3.received == r3.stored + r3.rejected
+
+    r4 = IngestReceipt(received=0, stored=0, rejected=0)
+    assert r4.received == r4.stored + r4.rejected
+
+    # Invariant violations must raise ValidationError
+    with pytest.raises(ValidationError, match="invariant violated"):
+        IngestReceipt(received=5, stored=3, rejected=1)
+
+    with pytest.raises(ValidationError, match="invariant violated"):
+        IngestReceipt(received=10, stored=8, rejected=0)
+
+    with pytest.raises(ValidationError, match="invariant violated"):
+        IngestReceipt(received=0, stored=1, rejected=0)
+
+    with pytest.raises(ValidationError, match="invariant violated"):
+        IngestReceipt(received=5, stored=0, rejected=0)
+
+

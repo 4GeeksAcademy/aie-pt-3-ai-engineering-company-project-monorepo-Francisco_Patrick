@@ -15,8 +15,8 @@
 
 **Purpose**: Verify dependencies and database connection environment for telemetry storage
 
-- [ ] T001 Verify backend dependency specifications including SQLModel, Pydantic, and database drivers in `services/api/pyproject.toml`
-- [ ] T002 [P] Verify relational database connection configuration and local SQLite fallback resolution in `services/api/infrastructure/persistence/sqlmodel/client.py`
+- [X] T001 Verify backend dependency specifications including SQLModel, Pydantic, and database drivers in `services/api/pyproject.toml`
+- [X] T002 [P] Verify relational database connection configuration and local SQLite fallback resolution in `services/api/infrastructure/persistence/sqlmodel/client.py`
 
 ---
 
@@ -26,12 +26,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this foundational phase is complete.
 
-- [ ] T003 [P] Extend `IngestReceipt` with `stored` and `rejected` counter fields and define `RawTelemetryBatch` in `services/api/domain/telemetry/models.py`
-- [ ] T004 [P] Update `TelemetrySinkPort` with `record_events` method for bulk persistence in `services/api/domain/telemetry/ports.py`
-- [ ] T005 [P] Create `TelemetryEventRecord` SQLModel table entity with UUID primary key, indexed timestamp/session/user/type/request, and cross-dialect JSON properties in `services/api/infrastructure/persistence/sqlmodel/models.py`
-- [ ] T006 Wire `TelemetryEventRecord` into schema initialization in `services/api/infrastructure/persistence/sqlmodel/client.py`
-- [ ] T007 Implement `SQLModelTelemetrySink` implementing `TelemetrySinkPort` with atomic bulk insert and write-only immutability in `services/api/infrastructure/persistence/sqlmodel/telemetry_sink.py`
-- [ ] T008 Update `get_telemetry_service_dep` to wire `SQLModelTelemetrySink` into `TelemetryService` in `services/api/presentation/dependencies.py`
+- [X] T003 [P] Extend `IngestReceipt` with `stored` and `rejected` counter fields and define `RawTelemetryBatch` in `services/api/domain/telemetry/models.py`
+- [X] T004 [P] Update `TelemetrySinkPort` with `record_events` method for bulk persistence in `services/api/domain/telemetry/ports.py`
+- [X] T005 [P] Create `TelemetryEventRecord` SQLModel table entity with UUID primary key, indexed timestamp/session/user/type/request, and cross-dialect JSON properties in `services/api/infrastructure/persistence/sqlmodel/models.py`
+- [X] T006 Wire `TelemetryEventRecord` into schema initialization in `services/api/infrastructure/persistence/sqlmodel/client.py`
+- [X] T007 Implement `SQLModelTelemetrySink` implementing `TelemetrySinkPort` with atomic bulk insert and write-only immutability in `services/api/infrastructure/persistence/sqlmodel/telemetry_sink.py`
+- [X] T008 Update `get_telemetry_service_dep` to wire `SQLModelTelemetrySink` into `TelemetryService` in `services/api/presentation/dependencies.py`
 
 **Checkpoint**: Foundation ready — User Story implementation can now proceed.
 
@@ -47,16 +47,16 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Unit tests for `RawTelemetryBatch` accepting raw dictionaries and `IngestReceipt` default counts in `services/api/tests/unit/test_domain_models.py`
-- [ ] T010 [P] [US1] Unit tests for `TelemetryService` per-item validation isolating malformed items and invoking sink for valid items in `services/api/tests/unit/test_application_services.py`
-- [ ] T011 [P] [US1] API integration test for mixed batch ingestion returning HTTP 200 OK with `{ "received": 5, "stored": 3, "rejected": 2 }` in `services/api/tests/api/test_telemetry.py`
-- [ ] T012 [P] [US1] API integration test for 100% malformed batch committing zero database writes and returning `{ "received": N, "stored": 0, "rejected": N }` in `services/api/tests/api/test_telemetry.py`
+- [X] T009 [P] [US1] Unit tests for `RawTelemetryBatch` accepting raw dictionaries and `IngestReceipt` default counts in `services/api/tests/unit/test_domain_models.py`
+- [X] T010 [P] [US1] Unit tests for `TelemetryService` per-item validation isolating malformed items and invoking sink for valid items in `services/api/tests/unit/test_application_services.py`
+- [X] T011 [P] [US1] API integration test for mixed batch ingestion returning HTTP 200 OK with `{ "received": 5, "stored": 3, "rejected": 2 }` in `services/api/tests/api/test_telemetry.py`
+- [X] T012 [P] [US1] API integration test for 100% malformed batch committing zero database writes and returning `{ "received": N, "stored": 0, "rejected": N }` in `services/api/tests/api/test_telemetry.py`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement per-item validation loop and bulk sink invocation in `services/api/application/telemetry/telemetry_service.py`
-- [ ] T014 [US1] Update `LoggingTelemetrySink` to implement `record_events` in `services/api/application/telemetry/telemetry_service.py`
-- [ ] T015 [US1] Update ingestion route handler to accept `RawTelemetryBatch` and return `IngestReceipt` in `services/api/presentation/api/v1/telemetry.py`
+- [X] T013 [US1] Implement per-item validation loop and bulk sink invocation in `services/api/application/telemetry/telemetry_service.py`
+- [X] T014 [US1] Update `LoggingTelemetrySink` to implement `record_events` in `services/api/application/telemetry/telemetry_service.py`
+- [X] T015 [US1] Update ingestion route handler to accept `RawTelemetryBatch` and return `IngestReceipt` in `services/api/presentation/api/v1/telemetry.py`
 
 **Checkpoint**: User Story 1 is functional and testable independently (MVP ready!).
 
@@ -72,14 +72,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T016 [P] [US2] API test confirming empty batch `{"events": []}` returns HTTP 200 OK with `{ "received": 0, "stored": 0, "rejected": 0 }` in `services/api/tests/api/test_telemetry.py`
-- [ ] T017 [P] [US2] API test confirming missing `events` field or non-list payload returns HTTP 422 Unprocessable Entity in `services/api/tests/api/test_telemetry.py`
-- [ ] T018 [P] [US2] API test confirming canonical alias `/api/v1/telemetry/events` shares identical behavior with `/telemetry/events` in `services/api/tests/api/test_telemetry.py`
+- [X] T016 [P] [US2] API test confirming empty batch `{"events": []}` returns HTTP 200 OK with `{ "received": 0, "stored": 0, "rejected": 0 }` in `services/api/tests/api/test_telemetry.py`
+- [X] T017 [P] [US2] API test confirming missing `events` field or non-list payload returns HTTP 422 Unprocessable Entity in `services/api/tests/api/test_telemetry.py`
+- [X] T018 [P] [US2] API test confirming canonical alias `/api/v1/telemetry/events` shares identical behavior with `/telemetry/events` in `services/api/tests/api/test_telemetry.py`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Enforce outer envelope strict validation rules (`extra="forbid"`, non-null `events: List[Dict[str, Any]]`) in `services/api/domain/telemetry/models.py`
-- [ ] T020 [US2] Verify client payload compatibility and response handling against frontend contract in `uis/backoffice/app/services/telemetry.ts`
+- [X] T019 [US2] Enforce outer envelope strict validation rules (`extra="forbid"`, non-null `events: List[Dict[str, Any]]`) in `services/api/domain/telemetry/models.py`
+- [X] T020 [US2] Verify client payload compatibility and response handling against frontend contract in `uis/backoffice/app/services/telemetry.ts`
 
 **Checkpoint**: User Stories 1 and 2 operate in harmony with full frontend backward compatibility.
 
@@ -95,13 +95,13 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T021 [P] [US3] Integration test verifying persistent database storage and direct query retrieval of business and technical event records in `services/api/tests/api/test_telemetry_persistence.py`
-- [ ] T022 [P] [US3] Immutability test asserting `SQLModelTelemetrySink` and domain ports provide no `UPDATE` or `DELETE` capabilities in `services/api/tests/api/test_telemetry_persistence.py`
+- [X] T021 [P] [US3] Integration test verifying persistent database storage and direct query retrieval of business and technical event records in `services/api/tests/api/test_telemetry_persistence.py`
+- [X] T022 [P] [US3] Immutability test asserting `SQLModelTelemetrySink` and domain ports provide no `UPDATE` or `DELETE` capabilities in `services/api/tests/api/test_telemetry_persistence.py`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Ensure `TelemetryEventRecord` mappings correctly serialize cross-dialect JSON properties and timezone-aware UTC datetimes in `services/api/infrastructure/persistence/sqlmodel/models.py`
-- [ ] T024 [US3] Ensure `SQLModelTelemetrySink.record_events()` atomically maps and commits all domain attributes to `telemetry_events` in `services/api/infrastructure/persistence/sqlmodel/telemetry_sink.py`
+- [X] T023 [US3] Ensure `TelemetryEventRecord` mappings correctly serialize cross-dialect JSON properties and timezone-aware UTC datetimes in `services/api/infrastructure/persistence/sqlmodel/models.py`
+- [X] T024 [US3] Ensure `SQLModelTelemetrySink.record_events()` atomically maps and commits all domain attributes to `telemetry_events` in `services/api/infrastructure/persistence/sqlmodel/telemetry_sink.py`
 
 **Checkpoint**: Operational traceability and immutable audit logs are fully queryable and verified.
 
@@ -117,13 +117,13 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T025 [P] [US4] Unit test asserting `received == stored + rejected` invariant validation in `services/api/tests/unit/test_domain_models.py`
-- [ ] T026 [P] [US4] Unit test verifying internal warning logging upon event rejection with PII masking and zero credential leakage in `services/api/tests/unit/test_application_services.py`
+- [X] T025 [P] [US4] Unit test asserting `received == stored + rejected` invariant validation in `services/api/tests/unit/test_domain_models.py`
+- [X] T026 [P] [US4] Unit test verifying internal warning logging upon event rejection with PII masking and zero credential leakage in `services/api/tests/unit/test_application_services.py`
 
 ### Implementation for User Story 4
 
-- [ ] T027 [US4] Add `@model_validator(mode="after")` enforcing `received == stored + rejected` on `IngestReceipt` in `services/api/domain/telemetry/models.py`
-- [ ] T028 [US4] Implement sanitized warning logger in `TelemetryService` reporting event index and validation error without leaking sensitive properties in `services/api/application/telemetry/telemetry_service.py`
+- [X] T027 [US4] Add `@model_validator(mode="after")` enforcing `received == stored + rejected` on `IngestReceipt` in `services/api/domain/telemetry/models.py`
+- [X] T028 [US4] Implement sanitized warning logger in `TelemetryService` reporting event index and validation error without leaking sensitive properties in `services/api/application/telemetry/telemetry_service.py`
 
 **Checkpoint**: Ingestion receipt invariants and security-hardened diagnostics are validated.
 
@@ -133,10 +133,10 @@
 
 **Purpose**: Monorepo build and test validation, automated verification gates, and quickstart scenario execution
 
-- [ ] T029 [P] Update database seed or startup validation to ensure `telemetry_events` table exists in `services/api/seed.py`
-- [ ] T030 Execute full backend test suite (`pytest`) across all unit and API suites in `services/api/tests/`
-- [ ] T031 Execute quickstart validation scenarios covering mixed batches and direct database inspection in `specs/017-telemetry-event-storage/quickstart.md`
-- [ ] T032 [P] Verify TypeScript frontend typecheck (`npm run typecheck`) to confirm zero regressions in `uis/backoffice`
+- [X] T029 [P] Update database seed or startup validation to ensure `telemetry_events` table exists in `services/api/seed.py`
+- [X] T030 Execute full backend test suite (`pytest`) across all unit and API suites in `services/api/tests/`
+- [X] T031 Execute quickstart validation scenarios covering mixed batches and direct database inspection in `specs/017-telemetry-event-storage/quickstart.md`
+- [X] T032 [P] Verify TypeScript frontend typecheck (`npm run typecheck`) to confirm zero regressions in `uis/backoffice`
 
 ---
 
