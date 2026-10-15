@@ -17,14 +17,14 @@
 The proposed structure blends standard FastAPI conventions with a domain-driven approach, clearly separating concerns according to Hexagonal principles:
 
 ```text
-services/backend/
+services/api/
 ├── app/
 │   ├── main.py                  # FastAPI application instance and core startup events
 │   ├── core/                    # App-wide configurations, security, and global exceptions
 │   │   ├── config.py            # Environment variables (Pydantic BaseSettings)
 │   │   ├── security.py          # Authentication/Authorization logic
 │   │   └── exceptions.py        # Global exception handlers
-│   ├── api/                     # Delivery Mechanism (HTTP/REST - The "Driving Ports")
+│   ├── application/             # Delivery Mechanism (HTTP/REST - The "Driving Ports")
 │   │   ├── dependencies.py      # FastAPI Depends() injections (DB sessions, Auth, etc.)
 │   │   └── v1/                  # API versioning
 │   │       ├── inventory.py
@@ -91,7 +91,7 @@ Our proposal adopts these essential conventions (such as `main.py`, `core/config
 
 ## 5. Frontend and Backend Coexistence
 
-TrackFlow utilizes a unified monorepo approach for Next.js frontends (`uis/website`, `uis/backoffice`) and the backend API (`services/backend`). 
+TrackFlow utilizes a unified monorepo approach for Next.js frontends (`uis/website`, `uis/backoffice`) and the backend API (`services/api`). 
 
 - **Monorepo Integration:** While the frontend and backend coexist in the same Git repository to leverage shared standards, they operate as fully separated, scalable processes.
 - **API Communication & CORS:** The Next.js client applications communicate with the FastAPI backend over HTTP/REST. Because the frontend and backend run on different ports (and eventually different domains in production), the backend must explicitly configure Cross-Origin Resource Sharing (CORS). We will use FastAPI's `CORSMiddleware` in `main.py` to allow origins specifically mapping to our frontend deployments.
