@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Telemetry Ingestion API
+  version: 1.0.0
+  description: >
+    Ingestion endpoint for collecting enveloped client and server telemetry events.
+    Supports partial batch validation, bulk persistence into Supabase / PostgreSQL,
+    and backward compatibility with existing frontends.
+paths:
+  /telemetry/events:
+    post:
+      summary: Ingest batch of telemetry events
+      description: >
+        Accepts a batch of telemetry events, individually validates each item against the
+        standard TelemetryEvent schema, commits valid events to persistent storage in a single
+        transaction, and returns an IngestReceipt detailing received, stored, and rejected counts.
+      operationId: ingestTelemetryEvents
+      tags:
+        - telemetry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawTelemetryBatch'
+            examples:
+              validBatch:
+                summary: Purely valid batch
+                value:
+                  events:
+                    - eventId: "550e8400-e29b-41d4-a716-446655440000"
+                      timestamp: "2026-10-15T10:00:00Z"
+                      sessionId: "sess_abc123"
+                      userId: "usr_operator_1"
+                      event_type: "inbound_order_created"
+                      schemaVersion: "1.0.0"
+                      requestId: "req_001"
+                      properties:
+                        warehouseId: "WH-LAX-1"
+                        skuCount: 5
+              mixedBatch:
+                summary: Mixed batch with 1 valid and 1 malformed event
+                value:
+                  events:
+                    - eventId: "550e8400-e29b-41d4-a716-446655440000"
+                      timestamp: "2026-10-15T10:00:00Z"
+                      sessionId: "sess_abc123"
+                      userId: "usr_operator_1"
+                      event_type: "inbound_order_created"
+                      schemaVersion: "1.0.0"
+                      requestId: "req_001"
+                      properties:
+                        warehouseId: "WH-LAX-1"
+                    - eventId: "not-a-uuid"
+                      timestamp: "invalid-date"
+                      sessionId: ""
+                      event_type: "INVALID_EVENT"
+              emptyBatch:
+                summary: Empty batch
+                value:
+                  events: []
+      responses:
+        '200':
+          description: Batch successfully evaluated and valid items persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestReceipt'
+              examples:
+                validBatchReceipt:
+                  summary: All events accepted and stored
+                  value:
+                    received: 2
+                    stored: 2
+                    rejected: 0
+                mixedBatchReceipt:
+                  summary: Partial batch persistence outcome
+                  value:
+                    received: 2
+                    stored: 1
+                    rejected: 1
+                emptyBatchReceipt:
+                  summary: Empty batch evaluation
+                  value:
+                    received: 0
+                    stored: 0
+                    rejected: 0
+        '422':
+          description: Malformed outer request envelope (e.g. missing events array or non-list type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal server error or database transaction failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/telemetry/events:
+    post:
+      summary: Ingest batch of telemetry events (canonical v1 alias)
+      description: Canonical v1 route alias sharing identical handler and contract with `/telemetry/events`.
+      operationId: ingestTelemetryEventsV1
+      tags:
+        - telemetry
+      requestBody:
+        $ref: '#/paths/~1telemetry~1events/post/requestBody'
+      responses:
+        '200':
+          $ref: '#/paths/~1telemetry~1events/post/responses/200'
+        '422':
+          $ref: '#/paths/~1telemetry~1events/post/responses/422'
+        '500':
+          $ref: '#/paths/~1telemetry~1events/post/responses/500'
+
+components:
+  schemas:
+    RawTelemetryBatch:
+      type: object
+      required:
+        - events
+      additionalProperties: false
+      properties:
+        events:
+          type: array
+          description: List of unvalidated event dictionaries evaluated individually.
+          items:
+            type: object
+            additionalProperties: true
+
+    IngestReceipt:
+      type: object
+      required:
+        - received
+        - stored
+        - rejected
+      additionalProperties: false
+      properties:
+        received:
+          type: integer
+          minimum: 0
+          description: Total events evaluated in the incoming batch.
+        stored:
+          type: integer
+          minimum: 0
+          description: Count of valid events successfully persisted to storage.
+        rejected:
+          type: integer
+          minimum: 0
+          description: Count of malformed events failing individual schema validation.
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required:
+              - loc
+              - msg
+              - type
+            properties:
+              loc:
+                type: array
+                items:
+                  anyOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Sanitized, user-safe error message.

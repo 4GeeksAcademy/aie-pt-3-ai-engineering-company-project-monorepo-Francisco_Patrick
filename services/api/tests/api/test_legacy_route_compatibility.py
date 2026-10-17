@@ -96,24 +96,27 @@ def test_login_available_on_both_prefixes(client, test_users):
 
 
 def test_telemetry_ingest_on_both_prefixes(client):
-    payload = {
-        "events": [
-            {
-                "eventId": "550e8400-e29b-41d4-a716-446655440000",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "sessionId": "sess_compat",
-                "userId": None,
-                "event_type": "frontend_error_captured",
-                "schemaVersion": "1.0.0",
-                "requestId": "req_compat",
-                "properties": {"errorName": "TypeError"},
-            }
-        ]
-    }
+    import uuid
     for path in ("/telemetry/events", "/api/v1/telemetry/events"):
+        payload = {
+            "events": [
+                {
+                    "eventId": str(uuid.uuid4()),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "sessionId": "sess_compat",
+                    "userId": None,
+                    "event_type": "frontend_error_captured",
+                    "schemaVersion": "1.0.0",
+                    "requestId": "req_compat",
+                    "properties": {"errorName": "TypeError"},
+                }
+            ]
+        }
         response = client.post(path, json=payload)
         assert response.status_code == 200
-        assert response.json() == {"received": 1}
+        assert response.json()["received"] == 1
+        assert response.json()["stored"] == 1
+        assert response.json()["rejected"] == 0
 
 
 def test_csv_analysis_and_export_on_both_prefixes(client):

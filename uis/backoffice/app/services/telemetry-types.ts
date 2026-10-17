@@ -42,7 +42,12 @@ export interface TelemetryBatch {
  * Server acknowledgment receipt response.
  */
 export interface IngestReceipt {
+  /** Total events evaluated in the incoming batch. */
   received: number;
+  /** Count of valid events successfully persisted to storage. */
+  stored?: number;
+  /** Count of malformed events failing individual schema validation. */
+  rejected?: number;
 }
 
 /**

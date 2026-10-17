@@ -6,7 +6,7 @@ Pure business entities conforming strictly to TrackFlow Telemetry Plan with zero
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TelemetryEvent(BaseModel):
@@ -68,13 +68,47 @@ class TelemetryBatch(BaseModel):
     )
 
 
-class IngestReceipt(BaseModel):
-    """Response receipt confirming ingestion and validation of telemetry events."""
+class RawTelemetryBatch(BaseModel):
+    """Batch container for raw telemetry events allowing per-item evaluation."""
 
-    received: int = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    events: List[Dict[str, Any]] = Field(
         ...,
-        description="Count of telemetry events accepted.",
+        description="Array of raw event objects for individual envelope validation.",
     )
 
 
-__all__ = ["IngestReceipt", "TelemetryBatch", "TelemetryEvent"]
+class IngestReceipt(BaseModel):
+    """Response receipt confirming ingestion and validation of telemetry events."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    received: int = Field(
+        ...,
+        ge=0,
+        description="Total events evaluated.",
+    )
+    stored: int = Field(
+        default=0,
+        ge=0,
+        description="Events successfully validated and persisted in storage.",
+    )
+    rejected: int = Field(
+        default=0,
+        ge=0,
+        description="Events failing schema validation.",
+    )
+
+    @model_validator(mode="after")
+    def validate_receipt_invariants(self) -> "IngestReceipt":
+        """Enforce invariant: received must equal stored + rejected."""
+        if self.received != self.stored + self.rejected:
+            raise ValueError(
+                f"IngestReceipt invariant violated: received ({self.received}) "
+                f"must equal stored ({self.stored}) + rejected ({self.rejected})"
+            )
+        return self
+
+
+__all__ = ["IngestReceipt", "RawTelemetryBatch", "TelemetryBatch", "TelemetryEvent"]

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, status
 
 from application.telemetry.telemetry_service import TelemetryService
-from domain.telemetry.models import IngestReceipt, TelemetryBatch
+from domain.telemetry.models import IngestReceipt, RawTelemetryBatch
 from presentation.dependencies import get_telemetry_service_dep
 
 router = APIRouter(tags=["telemetry"])
@@ -16,8 +16,8 @@ router = APIRouter(tags=["telemetry"])
     summary="Ingest batch of telemetry events",
 )
 def ingest_telemetry_events(
-    batch: TelemetryBatch,
+    batch: RawTelemetryBatch,
     service: TelemetryService = Depends(get_telemetry_service_dep),
 ) -> IngestReceipt:
-    """Validate the enveloped event batch, dispatch it to the sink, and return a receipt."""
-    return service.record_batch(batch)
+    """Validate each event individually, dispatch valid events in bulk to the sink, and return a receipt."""
+    return service.record_raw_batch(batch)
