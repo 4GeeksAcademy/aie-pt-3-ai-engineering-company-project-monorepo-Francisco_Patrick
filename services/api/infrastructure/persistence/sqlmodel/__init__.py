@@ -11,14 +11,24 @@ from infrastructure.persistence.sqlmodel.client import (
 from infrastructure.persistence.sqlmodel.inventory_repository import (
     SQLModelInventoryRepository,
 )
-from infrastructure.persistence.sqlmodel.models import SKU, StockEntry, StockExit
+from infrastructure.persistence.sqlmodel.models import (
+    SKU,
+    StockEntry,
+    StockExit,
+    TelemetryEventRecord,
+)
+from infrastructure.persistence.sqlmodel.telemetry_sink import (
+    SQLModelTelemetrySink,
+)
 
 __all__ = [
     "SKU",
     "SQLModelClientManager",
     "SQLModelInventoryRepository",
+    "SQLModelTelemetrySink",
     "StockEntry",
     "StockExit",
+    "TelemetryEventRecord",
     "engine",
     "get_db",
     "get_engine",

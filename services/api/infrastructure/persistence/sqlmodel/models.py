@@ -5,8 +5,10 @@ into pure domain layers.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
-from sqlmodel import Field, SQLModel
+from typing import Any, Dict, Optional
+from uuid import UUID
+from sqlalchemy import Column as SAColumn, DateTime, JSON
+from sqlmodel import Column, Field, SQLModel
 
 
 class SKU(SQLModel, table=True):
@@ -54,4 +56,28 @@ class StockExit(SQLModel, table=True):
     )
 
 
-__all__ = ["SKU", "StockEntry", "StockExit"]
+class TelemetryEventRecord(SQLModel, table=True):
+    """Relational table model for immutable telemetry events."""
+
+    __tablename__ = "telemetry_events"
+
+    event_id: UUID = Field(primary_key=True, index=True, nullable=False)
+    timestamp: datetime = Field(
+        sa_column=SAColumn(DateTime(timezone=True), index=True, nullable=False),
+    )
+    session_id: str = Field(index=True, nullable=False)
+    user_id: Optional[str] = Field(default=None, index=True, nullable=True)
+    event_type: str = Field(index=True, nullable=False)
+    schema_version: str = Field(nullable=False)
+    request_id: str = Field(index=True, nullable=False)
+    properties: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+__all__ = ["SKU", "StockEntry", "StockExit", "TelemetryEventRecord"]

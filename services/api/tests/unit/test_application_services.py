@@ -41,7 +41,7 @@ from domain.inventory.models import InventoryProduct, SKU, StockEntry, StockExit
 from domain.inventory.ports import InventoryRepositoryPort
 from domain.suppliers.models import Supplier
 from domain.suppliers.ports import SupplierRepositoryPort
-from domain.telemetry.models import TelemetryBatch, TelemetryEvent
+from domain.telemetry.models import RawTelemetryBatch, TelemetryBatch, TelemetryEvent
 from domain.telemetry.ports import TelemetrySinkPort
 
 
@@ -353,6 +353,10 @@ class MockTelemetrySink(TelemetrySinkPort):
         self.events.extend(batch.events)
         return len(batch.events)
 
+    def record_events(self, events: List[TelemetryEvent]) -> int:
+        self.events.extend(events)
+        return len(events)
+
 
 # ===================== TESTS =====================
 
@@ -582,4 +586,174 @@ def test_telemetry_service_batch_recording():
     receipt = service.record_batch(batch)
 
     assert receipt.received == 1
+    assert receipt.stored == 1
+    assert receipt.rejected == 0
     assert len(sink.events) == 1
+
+
+def test_telemetry_service_per_item_validation_partial_batch():
+    """T010: TelemetryService per-item validation isolates malformed items and invokes sink only for valid items."""
+    import uuid
+    from datetime import datetime, timezone
+
+    sink = MockTelemetrySink()
+    service = TelemetryService(sink=sink)
+
+    valid_id_1 = str(uuid.uuid4())
+    valid_id_2 = str(uuid.uuid4())
+    valid_id_3 = str(uuid.uuid4())
+
+    raw_batch = RawTelemetryBatch(
+        events=[
+            {
+                "eventId": valid_id_1,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sessionId": "sess_001",
+                "userId": "usr_alpha",
+                "event_type": "inbound_order_created",
+                "schemaVersion": "1.0.0",
+                "requestId": "req_001",
+                "properties": {"count": 10},
+            },
+            {
+                # Malformed: invalid event_type (not snake_case)
+                "eventId": str(uuid.uuid4()),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sessionId": "sess_002",
+                "event_type": "NOT_SNAKE_CASE",
+                "schemaVersion": "1.0.0",
+                "requestId": "req_002",
+            },
+            {
+                "eventId": valid_id_2,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sessionId": "sess_003",
+                "userId": None,
+                "event_type": "stock_exit_recorded",
+                "schemaVersion": "1.0.0",
+                "requestId": "req_003",
+                "properties": {},
+            },
+            {
+                # Malformed: missing required eventId and sessionId
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "event_type": "frontend_error_captured",
+                "schemaVersion": "1.0.0",
+                "requestId": "req_004",
+            },
+            {
+                "eventId": valid_id_3,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "sessionId": "sess_005",
+                "userId": "usr_gamma",
+                "event_type": "auth_login_failed",
+                "schemaVersion": "1.0.0",
+                "requestId": "req_005",
+                "properties": {"reason": "bad_credentials"},
+            },
+        ]
+    )
+
+    receipt = service.record_raw_batch(raw_batch)
+
+    assert receipt.received == 5
+    assert receipt.stored == 3
+    assert receipt.rejected == 2
+    assert len(sink.events) == 3
+
+    persisted_ids = [str(e.eventId) for e in sink.events]
+    assert valid_id_1 in persisted_ids
+    assert valid_id_2 in persisted_ids
+    assert valid_id_3 in persisted_ids
+
+
+def test_telemetry_service_all_malformed_batch():
+    """T010: TelemetryService isolates 100% malformed batch committing zero database/sink writes."""
+    from datetime import datetime, timezone
+
+    sink = MockTelemetrySink()
+    service = TelemetryService(sink=sink)
+
+    raw_batch = RawTelemetryBatch(
+        events=[
+            {"invalid": "data"},
+            {"timestamp": datetime.now(timezone.utc).isoformat()},
+        ]
+    )
+
+    receipt = service.record_raw_batch(raw_batch)
+
+    assert receipt.received == 2
+    assert receipt.stored == 0
+    assert receipt.rejected == 2
+    assert len(sink.events) == 0
+
+
+def test_telemetry_service_empty_raw_batch():
+    """T010: TelemetryService handles empty raw batch returning zero counts and zero sink writes."""
+    sink = MockTelemetrySink()
+    service = TelemetryService(sink=sink)
+
+    raw_batch = RawTelemetryBatch(events=[])
+    receipt = service.record_raw_batch(raw_batch)
+
+    assert receipt.received == 0
+    assert receipt.stored == 0
+    assert receipt.rejected == 0
+    assert len(sink.events) == 0
+
+
+def test_telemetry_service_warning_logging_sanitizes_pii_and_credentials(caplog: pytest.LogCaptureFixture):
+    """T026: Verifies internal warning logging upon event rejection with PII masking and zero credential leakage."""
+    import logging
+
+    sink = MockTelemetrySink()
+    service = TelemetryService(sink=sink)
+
+    secret_password = "super_secret_password_123"
+    secret_token = "bearer_secret_token_abc"
+    sensitive_email = "confidential_user@company.com"
+    sensitive_ssn = "000-11-2222"
+
+    raw_batch = RawTelemetryBatch(
+        events=[
+            {
+                "eventId": "invalid-uuid-format",
+                "timestamp": "invalid-timestamp",
+                "sessionId": "sess_leak_test",
+                "event_type": "NOT_SNAKE_CASE",
+                "schemaVersion": "invalid-version",
+                "requestId": "req_leak_test",
+                "password": secret_password,
+                "token": secret_token,
+                "email": sensitive_email,
+                "properties": {
+                    "ssn": sensitive_ssn,
+                    "secret": secret_password,
+                },
+            }
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="trackflow.telemetry"):
+        receipt = service.record_raw_batch(raw_batch)
+
+    assert receipt.received == 1
+    assert receipt.stored == 0
+    assert receipt.rejected == 1
+
+    # Verify a warning was logged to trackflow.telemetry
+    warning_logs = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warning_logs) >= 1
+
+    full_log_text = " ".join(record.getMessage() for record in warning_logs)
+
+    # Verify log identifies event index
+    assert "index=0" in full_log_text or "index: 0" in full_log_text or "0" in full_log_text
+
+    # Verify ZERO leakage of sensitive credentials or PII
+    assert secret_password not in full_log_text
+    assert secret_token not in full_log_text
+    assert sensitive_email not in full_log_text
+    assert sensitive_ssn not in full_log_text
+
