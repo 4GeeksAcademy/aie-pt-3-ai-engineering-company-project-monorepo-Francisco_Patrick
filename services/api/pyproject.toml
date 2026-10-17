@@ -21,6 +21,7 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "psycopg2-binary>=2.9.9",
     "python-dotenv>=1.2.3",
+    "pandas>=3.0.6",
 ]
 
 [build-system]
@@ -31,5 +32,5 @@ build-backend = "uv_build"
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "..", "../.."]
 
