@@ -4,7 +4,8 @@ Defines abstract sinks for recording telemetry events (e.g. structured logger, a
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from datetime import datetime
+from typing import Any, List, Optional
 
 from domain.telemetry.models import TelemetryBatch, TelemetryEvent
 
@@ -46,4 +47,46 @@ class TelemetrySinkPort(ABC):
         ...
 
 
-__all__ = ["TelemetrySinkPort"]
+class TelemetryRepositoryPort(ABC):
+    """Driven port interface for extracting raw telemetry records from persistence."""
+
+    @abstractmethod
+    def get_events_in_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        event_types: Optional[List[str]] = None,
+    ) -> List[Any]:
+        """Extract raw telemetry records within a UTC time window.
+
+        Args:
+            start_date: Inclusive UTC start datetime.
+            end_date: Inclusive UTC end datetime.
+            event_types: Optional list of event_type taxonomy filters.
+
+        Returns:
+            List of raw telemetry event records.
+        """
+        ...
+
+    @abstractmethod
+    def get_events_dataframe(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        event_types: Optional[List[str]] = None,
+    ) -> Any:
+        """Extract raw telemetry records within a UTC time window as a Pandas DataFrame.
+
+        Args:
+            start_date: Inclusive UTC start datetime.
+            end_date: Inclusive UTC end datetime.
+            event_types: Optional list of event_type taxonomy filters.
+
+        Returns:
+            pandas.DataFrame containing normalized telemetry event rows.
+        """
+        ...
+
+
+__all__ = ["TelemetryRepositoryPort", "TelemetrySinkPort"]

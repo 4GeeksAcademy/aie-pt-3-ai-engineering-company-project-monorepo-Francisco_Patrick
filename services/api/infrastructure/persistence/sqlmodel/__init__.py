@@ -17,6 +17,9 @@ from infrastructure.persistence.sqlmodel.models import (
     StockExit,
     TelemetryEventRecord,
 )
+from infrastructure.persistence.sqlmodel.telemetry_repo import (
+    SQLModelTelemetryRepository,
+)
 from infrastructure.persistence.sqlmodel.telemetry_sink import (
     SQLModelTelemetrySink,
 )
@@ -25,6 +28,7 @@ __all__ = [
     "SKU",
     "SQLModelClientManager",
     "SQLModelInventoryRepository",
+    "SQLModelTelemetryRepository",
     "SQLModelTelemetrySink",
     "StockEntry",
     "StockExit",

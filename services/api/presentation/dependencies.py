@@ -27,7 +27,10 @@ from application.services.user_service import UserService
 from application.suppliers.supplier_service import SupplierService
 from application.inventory.inventory_service import InventoryService
 from application.telemetry.telemetry_service import TelemetryService
+from application.telemetry.cache import TelemetryReportCache
+from application.telemetry.report_service import TelemetryReportService
 from application.incidents.csv_report_service import IncidentCsvReportService
+from domain.telemetry.ports import TelemetryRepositoryPort
 
 if TYPE_CHECKING:
     from application.services.email_service import EmailService
@@ -172,6 +175,30 @@ def get_telemetry_service_dep(
     return TelemetryService(sink=SQLModelTelemetrySink(session=session))
 
 
+_telemetry_report_cache = TelemetryReportCache(default_ttl_seconds=60.0)
+
+
+def get_telemetry_report_cache_dep() -> TelemetryReportCache:
+    """Dependency provider for thread-safe in-memory TelemetryReportCache with 60-second TTL."""
+    return _telemetry_report_cache
+
+
+def get_telemetry_repository_dep(
+    session: Session = Depends(get_sqlmodel_session_dep),
+) -> TelemetryRepositoryPort:
+    """Dependency provider for SQLModelTelemetryRepository bound to the request session."""
+    from infrastructure.persistence.sqlmodel.telemetry_repo import SQLModelTelemetryRepository
+    return SQLModelTelemetryRepository(session=session)
+
+
+def get_telemetry_report_service_dep(
+    repository: TelemetryRepositoryPort = Depends(get_telemetry_repository_dep),
+    cache: TelemetryReportCache = Depends(get_telemetry_report_cache_dep),
+) -> TelemetryReportService:
+    """Dependency provider for TelemetryReportService orchestrating reporting and caching."""
+    return TelemetryReportService(repository=repository, cache=cache)
+
+
 def get_incident_csv_report_service_dep(
     cache: CachePort = Depends(get_cache_dep),
 ) -> IncidentCsvReportService:
@@ -272,6 +299,9 @@ __all__ = [
     "get_sqlmodel_session_dep",
     "get_supplier_repository_dep",
     "get_supplier_service_dep",
+    "get_telemetry_report_cache_dep",
+    "get_telemetry_report_service_dep",
+    "get_telemetry_repository_dep",
     "get_telemetry_service_dep",
     "get_tinydb_dep",
     "get_user_repository_dep",
