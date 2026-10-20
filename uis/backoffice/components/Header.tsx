@@ -121,6 +121,17 @@ export default function Header(): React.ReactElement | null {
               >
                 Profile
               </Link>
+
+              <Link
+                href="/telemetry"
+                className={`${
+                  pathname === '/telemetry'
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Telemetry
+              </Link>
             </nav>
           </div>
           <div className="flex items-center">
