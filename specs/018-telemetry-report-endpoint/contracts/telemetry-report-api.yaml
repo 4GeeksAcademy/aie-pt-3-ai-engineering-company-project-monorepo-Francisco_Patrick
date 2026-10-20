@@ -1,0 +1,252 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Telemetry Report API
+  version: 1.0.0
+  description: Operational telemetry analysis report API providing system health, error distributions, and authentication reliability metrics.
+
+paths:
+  /telemetry/report:
+    get:
+      summary: Get Operational Telemetry Report
+      description: |
+        Retrieves consolidated operational health metrics over a specified UTC time window.
+        If start_date and end_date are omitted, defaults to the previous 7 days up to the current UTC time.
+        Responses for identical periods are cached in memory with a 60-second TTL.
+      operationId: get_telemetry_report
+      tags:
+        - telemetry
+      parameters:
+        - name: start_date
+          in: query
+          required: false
+          description: Start of reporting window in ISO 8601 format (e.g. 2026-10-10T00:00:00Z).
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          required: false
+          description: End of reporting window in ISO 8601 format (e.g. 2026-10-17T00:00:00Z).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Operational telemetry report successfully calculated or served from cache.
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status indicator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryReportResponse'
+        '422':
+          description: Validation error (e.g. malformed date string or start_date > end_date).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal server error with sanitized error message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/telemetry/report:
+    get:
+      summary: Get Operational Telemetry Report (Canonical v1 Alias)
+      description: Canonical alias sharing identical behavior and caching semantics with /telemetry/report.
+      operationId: get_telemetry_report_v1
+      tags:
+        - telemetry
+      parameters:
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Operational telemetry report successfully calculated or served from cache.
+          headers:
+            X-Cache:
+              schema:
+                type: string
+                enum: [HIT, MISS]
+              description: Cache status indicator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryReportResponse'
+        '422':
+          description: Validation error (e.g. malformed date string or start_date > end_date).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal server error with sanitized error message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ReportingPeriod:
+      type: object
+      required:
+        - from
+        - to
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: Start of reporting period (ISO 8601 UTC).
+          example: '2026-10-10T10:00:00Z'
+        to:
+          type: string
+          format: date-time
+          description: End of reporting period (ISO 8601 UTC).
+          example: '2026-10-17T10:00:00Z'
+
+    DailyEventVolumeMetric:
+      type: object
+      required:
+        - date
+        - count
+      properties:
+        date:
+          type: string
+          description: Calendar date string (YYYY-MM-DD).
+          example: '2026-10-16'
+        count:
+          type: integer
+          minimum: 0
+          description: Total number of telemetry events captured on this date.
+          example: 142
+
+    ErrorDistributionMetric:
+      type: object
+      required:
+        - event_type
+        - count
+        - percentage
+      properties:
+        event_type:
+          type: string
+          description: Event type taxonomy identifier.
+          example: 'auth_login_failed'
+        count:
+          type: integer
+          minimum: 0
+          description: Total error occurrences within period.
+          example: 18
+        percentage:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 100.0
+          description: Percentage share of total system errors.
+          example: 45.0
+
+    AuthFailureRateMetric:
+      type: object
+      required:
+        - date
+        - total_attempts
+        - failed_attempts
+        - failure_rate
+      properties:
+        date:
+          type: string
+          description: Calendar date string (YYYY-MM-DD).
+          example: '2026-10-16'
+        total_attempts:
+          type: integer
+          minimum: 0
+          description: Total login attempts on this date.
+          example: 50
+        failed_attempts:
+          type: integer
+          minimum: 0
+          description: Total failed login attempts on this date.
+          example: 5
+        failure_rate:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Calculated failure ratio (failed_attempts / total_attempts).
+          example: 0.1
+
+    TelemetryMetrics:
+      type: object
+      required:
+        - events_per_day
+        - error_rate_by_type
+        - auth_failure_rate
+      properties:
+        events_per_day:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyEventVolumeMetric'
+        error_rate_by_type:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDistributionMetric'
+        auth_failure_rate:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthFailureRateMetric'
+
+    TelemetryReportResponse:
+      type: object
+      required:
+        - period
+        - metrics
+      properties:
+        period:
+          $ref: '#/components/schemas/ReportingPeriod'
+        metrics:
+          $ref: '#/components/schemas/TelemetryMetrics'
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Sanitized user-safe error message.
+          example: 'An unexpected operational error occurred while generating the report.'
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  anyOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string

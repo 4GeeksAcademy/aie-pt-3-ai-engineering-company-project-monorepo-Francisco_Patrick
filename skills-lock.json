@@ -19,6 +19,12 @@
       "skillPath": "skills/nextjs-best-practices/SKILL.md",
       "computedHash": "0a3dd1e299ea935e8f5435895d549a139c86a5c1152c85cc1ad5f0eab4d3d89c"
     },
+    "pandas-best-practices": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "pandas-best-practices/SKILL.md",
+      "computedHash": "257718463935cbd02899304f565952b2a2d4abeac3e7c42b34909d9fe6d70396"
+    },
     "performance": {
       "source": "addyosmani/web-quality-skills",
       "sourceType": "github",
