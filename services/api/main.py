@@ -35,6 +35,7 @@ from presentation.api.v1 import (  # noqa: E402
     users,
 )
 from presentation.dependencies import get_security_adapter_dep  # noqa: E402
+from services.reporting.presentation import routes as reporting  # noqa: E402
 
 API_V1_PREFIX = "/api/v1"
 
@@ -47,6 +48,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (users.router, f"{API_V1_PREFIX}/users", "/users"),
     (profiles.router, f"{API_V1_PREFIX}/profiles", "/profiles"),
     (telemetry.router, f"{API_V1_PREFIX}/telemetry", "/telemetry"),
+    (reporting.router, f"{API_V1_PREFIX}/reporting", "/reporting"),
 ]
 
 
