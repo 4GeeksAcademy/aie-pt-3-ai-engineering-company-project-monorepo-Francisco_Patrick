@@ -1,7 +1,7 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/account/profile/page": "app/account/profile/page.js",
   "/account/change-password/page": "app/account/change-password/page.js",
+  "/account/profile/page": "app/account/profile/page.js",
   "/business-logic/page": "app/business-logic/page.js",
   "/forgot-password/page": "app/forgot-password/page.js",
   "/inventory/orders/inbound/page": "app/inventory/orders/inbound/page.js",
@@ -11,8 +11,10 @@
   "/login/page": "app/login/page.js",
   "/page": "app/page.js",
   "/register/page": "app/register/page.js",
+  "/reporting/page": "app/reporting/page.js",
   "/reset-password/page": "app/reset-password/page.js",
-  "/incidents/register/page": "app/incidents/register/page.js",
+  "/telemetry/page": "app/telemetry/page.js",
   "/incidents/page": "app/incidents/page.js",
+  "/incidents/register/page": "app/incidents/register/page.js",
   "/suppliers/page": "app/suppliers/page.js"
 }
