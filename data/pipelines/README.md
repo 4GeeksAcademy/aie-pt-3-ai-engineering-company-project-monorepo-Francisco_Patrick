@@ -97,3 +97,46 @@ Business metrics are visualized on the dedicated backoffice dashboard:
 - **Route**: `http://localhost:3000/reporting` (`uis/backoffice/`)
 - **API Endpoint**: `GET /api/v1/reporting/kpis`
 - **Features**: Hub toggling (`GLOBAL`, `US`, `ES`), date cadence badge, animated loading skeletons, accessible error alerts.
+
+---
+
+## 6. Automated Nightly Telemetry Export & Orchestration (`scripts/nightly_export.py`)
+
+The **Nightly Telemetry Export Runner** runs as an autonomous, detached CLI process that extracts the previous calendar day's telemetry events into raw point-in-time CSV audit files (`data/raw/telemetry_YYYY-MM-DD.csv`) and triggers the Executive KPI pipeline as an isolated subprocess.
+
+- **Orchestrator Service**: `NightlyExportRunner` (`services/jobs/runner.py`)
+- **CLI Entry Point**: `scripts/nightly_export.py`
+- **Audit Persistence**: `job_runs` table (`services/jobs/models.py`)
+- **Default Target Date**: Preceding calendar day in UTC (`YYYY-MM-DD`)
+
+### 6.1 Production Cron Schedule & Deployment
+
+The export job is configured to run daily at **02:00 UTC** (`0 2 * * *`). The 2-hour window after midnight UTC guarantees that late-arriving events across dual fulfillment hubs (`US-LAX-01` and `ES-ZAZ-01`) are persisted before batch extraction begins.
+
+```bash
+# Production Crontab Entry (with standard log redirection and rotation)
+0 2 * * * cd /workspace && python scripts/nightly_export.py >> /var/log/trackflow/nightly_export.log 2>&1
+```
+
+### 6.2 Environment Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///services/api/inventory.db` | PostgreSQL or local SQLite connection string |
+| `RAW_DATA_DIR` | `data/raw` | Target directory for immutable audit CSV snapshots |
+| `TARGET_DATE` | None (Yesterday UTC) | Optional default date override (`YYYY-MM-DD`) |
+
+### 6.3 Operational Controls & Guards
+
+1. **Database-Backed Concurrency Locking**: Active `processing` status in `job_runs` prevents overlapping runs. Secondary executions detect active locks, log an informational notice, and exit cleanly with code `0`.
+2. **Per-Day Idempotency & Snapshot Preservation**: If `(nightly_export, target_date)` is already `completed`, subsequent runs skip execution and leave existing CSV files untouched.
+3. **Historical Backfill**: Historical date cohorts can be processed on-demand without interfering with cron cadences:
+   ```bash
+   python scripts/nightly_export.py --date 2026-10-24
+   ```
+4. **Dry-Run Inspection**:
+   ```bash
+   python scripts/nightly_export.py --dry-run --verbose
+   ```
+5. **Defensive Error Sanitization**: All runtime failures mask credentials, passwords, and tokens, record diagnostic messages (max 500 chars) in `job_runs.error_message`, and exit with code `1`, leaving zero orphaned locks in `processing`.
+
