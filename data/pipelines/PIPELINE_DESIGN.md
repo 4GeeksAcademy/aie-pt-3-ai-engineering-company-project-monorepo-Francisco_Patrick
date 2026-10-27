@@ -577,6 +577,24 @@ def executive_performance_pipeline_flow(period_start: Optional[datetime] = None,
 - **Alerting Webhook**: Managed via Prefect `Secret` block named `trackflow-ops-alert-webhook`.
 - **Environment Isolation**: Parameterized blocks enable identical flow execution across Local (SQLite), Staging, and Production (PostgreSQL/Supabase) environments without modifying flow code.
 
+### 7.4 Operational Execution Schedule & CLI Run Commands
+
+#### Execution Schedule
+- **Cadence**: Weekly on Mondays at 06:00 UTC (Cron: `0 6 * * 1`).
+- **Reporting Period**: Preceding Monday 00:00:00 UTC to Sunday 23:59:59 UTC.
+- **Delivery Target**: Executive KPI snapshots pre-computed and available prior to CEO Daniel Espinoza's Monday 07:00 review.
+
+#### Direct CLI Run Commands
+Execute the production pipeline directly from the command line:
+
+```bash
+# Standard scheduled weekly run (trailing 7-day calendar window):
+python data/pipelines/pipeline.py
+
+# Ad-hoc / backfill run with explicit ISO 8601 UTC date window:
+python data/pipelines/pipeline.py --start-date 2026-10-12T00:00:00Z --end-date 2026-10-18T23:59:59Z
+```
+
 ---
 
 ## Section 8: Decoupled Presentation Layer & Application Integration
