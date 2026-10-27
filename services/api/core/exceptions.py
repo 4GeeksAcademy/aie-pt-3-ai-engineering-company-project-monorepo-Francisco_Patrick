@@ -50,7 +50,7 @@ async def validation_exception_handler(
     )
     status_code = (
         status.HTTP_422_UNPROCESSABLE_CONTENT
-        if "/telemetry" in request.url.path
+        if "/telemetry" in request.url.path or "/reporting" in request.url.path
         else status.HTTP_400_BAD_REQUEST
     )
     return JSONResponse(
