@@ -53,7 +53,7 @@ class ExecutiveKpiSnapshot(SQLModel, table=True):
         description="Total outbound packages fulfilled",
     )
     on_time_delivery_rate: float = Field(
-        default=0.0,
+        default=1.0,
         nullable=False,
         description="Ratio of deliveries completed within SLA (0.0 to 1.0)",
     )
@@ -68,7 +68,7 @@ class ExecutiveKpiSnapshot(SQLModel, table=True):
         description="Return percentage (0.0 to 100.0)",
     )
     customer_satisfaction_score: float = Field(
-        default=0.0,
+        default=100.0,
         nullable=False,
         description="Normalized customer satisfaction score (0.0 to 100.0)",
     )

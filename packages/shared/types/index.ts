@@ -9,3 +9,4 @@ export interface BaseEntity {
 export * from "./auth";
 export * from "./incidents";
 export * from "./telemetry";
+export * from "./reporting";

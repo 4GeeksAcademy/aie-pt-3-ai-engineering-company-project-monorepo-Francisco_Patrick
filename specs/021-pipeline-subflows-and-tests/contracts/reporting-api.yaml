@@ -1,0 +1,265 @@
+openapi: 3.0.3
+info:
+  title: TrackFlow Executive Reporting API
+  description: Public REST API for querying pre-computed executive business performance KPIs and monitoring pipeline execution health.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development backend server
+paths:
+  /reporting/kpis:
+    get:
+      tags:
+        - Reporting
+      summary: Query Executive KPI Snapshots
+      description: Retrieves weekly business performance snapshots filtered by geographic hub scope and optional date window bounds.
+      operationId: readExecutiveKpis
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [US, ES, GLOBAL]
+            default: GLOBAL
+          description: "Geographic hub scope filter: US, ES, or GLOBAL."
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: "Optional start of reporting window in ISO 8601 UTC format."
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: "Optional end of reporting window in ISO 8601 UTC format."
+      responses:
+        '200':
+          description: Successfully retrieved executive KPI snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutiveKpisResponse'
+        '422':
+          description: Validation error in query parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error while retrieving snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reporting/status:
+    get:
+      tags:
+        - Reporting
+      summary: Get Pipeline Health & Execution Status
+      description: Returns operational health and metadata of the most recent business performance data pipeline execution.
+      operationId: readPipelineStatus
+      responses:
+        '200':
+          description: Pipeline status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineStatusResponse'
+        '500':
+          description: Internal server error retrieving pipeline status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reporting/trigger:
+    post:
+      tags:
+        - Reporting
+      summary: Manually Trigger Pipeline Execution
+      description: Initiates an ad-hoc or backfill execution run of the business performance data pipeline.
+      operationId: triggerPipeline
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineTriggerRequest'
+      responses:
+        '202':
+          description: Pipeline run initiated or accepted into execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineTriggerResponse'
+        '409':
+          description: Pipeline run already active in RUNNING state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error initiating pipeline run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ExecutiveKpiSnapshot:
+      type: object
+      required:
+        - snapshot_id
+        - period_start
+        - period_end
+        - country
+        - shipments_volume
+        - on_time_delivery_rate
+        - operational_cost_eur
+        - returns_rate
+        - customer_satisfaction_score
+        - generated_at
+      properties:
+        snapshot_id:
+          type: string
+          format: uuid
+          description: Unique snapshot record identifier.
+        period_start:
+          type: string
+          format: date-time
+          description: Reporting period start timestamp in UTC.
+        period_end:
+          type: string
+          format: date-time
+          description: Reporting period end timestamp in UTC.
+        country:
+          type: string
+          enum: [US, ES, GLOBAL]
+          description: Geographic hub scope.
+        shipments_volume:
+          type: integer
+          minimum: 0
+          description: Total packages fulfilled.
+        on_time_delivery_rate:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Ratio of on-time deliveries within SLA.
+        operational_cost_eur:
+          type: number
+          minimum: 0.0
+          description: Total operational expenditure in Euros.
+        returns_rate:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          description: Percentage of packages returned.
+        customer_satisfaction_score:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          description: Normalized customer satisfaction score out of 100.
+        generated_at:
+          type: string
+          format: date-time
+          description: Persistence timestamp in UTC.
+
+    ExecutiveKpisResponse:
+      type: object
+      required:
+        - count
+        - snapshots
+      properties:
+        count:
+          type: integer
+          description: Number of snapshots returned.
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutiveKpiSnapshot'
+
+    PipelineExecutionLog:
+      type: object
+      required:
+        - run_id
+        - flow_name
+        - started_at
+        - records_processed
+        - status
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        flow_name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        records_processed:
+          type: integer
+        status:
+          type: string
+          enum: [RUNNING, SUCCESS, FAILED]
+        error_details:
+          type: string
+          nullable: true
+
+    PipelineStatusResponse:
+      type: object
+      required:
+        - is_running
+        - healthy
+      properties:
+        latest_run:
+          $ref: '#/components/schemas/PipelineExecutionLog'
+          nullable: true
+        is_running:
+          type: boolean
+        healthy:
+          type: boolean
+
+    PipelineTriggerRequest:
+      type: object
+      properties:
+        period_start:
+          type: string
+          format: date-time
+        period_end:
+          type: string
+          format: date-time
+
+    PipelineTriggerResponse:
+      type: object
+      required:
+        - run_id
+        - status
+        - message
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [INITIATED, QUEUED]
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Sanitized human-readable error description.
