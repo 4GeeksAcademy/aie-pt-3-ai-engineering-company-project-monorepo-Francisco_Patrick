@@ -230,3 +230,47 @@ def test_us4_failure_recovery_and_lock_clearance(integration_env):
             assert active_lock is None
 
 
+
+
+
+def test_e2e_zombie_recovery_and_subsequent_execution(integration_env):
+    """Test Spec 022 Fix: End-to-end simulation of kill -9 zombie lock recovery."""
+    from datetime import timedelta
+    engine = integration_env["engine"]
+    raw_dir = integration_env["raw_dir"]
+    target_date = "2026-10-24"
+
+    # Pre-seed a zombie lock stranded 3 hours ago
+    stranded_time = datetime.now(timezone.utc) - timedelta(hours=3)
+    with Session(engine) as session:
+        zombie = JobRun(
+            job_name="nightly_export",
+            target_date="2026-10-23",
+            status=JobStatus.PROCESSING.value,
+            started_at=stranded_time,
+        )
+        session.add(zombie)
+        session.commit()
+        session.refresh(zombie)
+        zombie_id = zombie.id
+
+    runner = NightlyExportRunner(engine=engine, raw_data_dir=str(raw_dir))
+
+    mock_subprocess = subprocess.CompletedProcess(
+        args=["python", "data/pipelines/pipeline.py"],
+        returncode=0,
+        stdout="Pipeline success",
+        stderr="",
+    )
+
+    with patch("subprocess.run", return_value=mock_subprocess):
+        result = runner.execute(target_date_override=target_date)
+
+        assert result.status == JobStatus.COMPLETED
+        assert result.skipped is False
+
+        with Session(engine) as session:
+            recovered = session.get(JobRun, zombie_id)
+            assert recovered is not None
+            assert recovered.status == JobStatus.FAILED.value
+            assert "Stale lock recovered" in recovered.error_message

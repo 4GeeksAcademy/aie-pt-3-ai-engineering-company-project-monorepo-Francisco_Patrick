@@ -1,0 +1,4 @@
+# TrackFlow Autonomous Nightly Telemetry Export Cron Schedule
+# Executes daily at 02:00 UTC (cohort window: UTC yesterday 00:00:00 to 23:59:59)
+0 2 * * * cd /workspace && python scripts/nightly_export.py >> /var/log/trackflow/nightly_export.log 2>&1
+

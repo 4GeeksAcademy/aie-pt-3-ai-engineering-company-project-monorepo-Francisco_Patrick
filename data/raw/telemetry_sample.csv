@@ -1,0 +1,8 @@
+event_id,timestamp,session_id,user_id,event_type,schema_version,request_id,properties,created_at
+evt-001,2026-10-24T02:15:30Z,sess-a101,usr-u882,outbound_order_fulfilled,1.0,req-r9001,"{""orderId"": ""ord-1001"", ""warehouseCode"": ""US-LAX-01"", ""totalCostEur"": 18.25, ""itemCount"": 2}",2026-10-24T02:15:31Z
+evt-002,2026-10-24T05:40:12Z,sess-a102,usr-u883,shipment_dispatched,1.0,req-r9002,"{""orderId"": ""ord-1001"", ""carrier"": ""FedEx"", ""trackingNumber"": ""TRK99201"", ""warehouseCode"": ""US-LAX-01""}",2026-10-24T05:40:13Z
+evt-003,2026-10-24T09:10:00Z,sess-b201,usr-u901,outbound_order_fulfilled,1.0,req-r9003,"{""orderId"": ""ord-1002"", ""warehouseCode"": ""ES-ZAZ-01"", ""totalCostEur"": 12.80, ""itemCount"": 1}",2026-10-24T09:10:01Z
+evt-004,2026-10-24T14:22:45Z,sess-b202,usr-u902,shipment_tracking_updated,1.0,req-r9004,"{""orderId"": ""ord-1001"", ""status"": ""DELIVERED"", ""isDelivered"": true, ""onTime"": true, ""warehouseCode"": ""US-LAX-01""}",2026-10-24T14:22:46Z
+evt-005,2026-10-24T18:05:10Z,sess-c301,usr-u950,cx_ticket_resolved,1.0,req-r9005,"{""ticketId"": ""tkt-501"", ""csatScore"": 95, ""fcr"": true, ""warehouseCode"": ""GLOBAL""}",2026-10-24T18:05:11Z
+evt-006,2026-10-24T21:49:55Z,sess-d401,usr-u975,customer_return_received,1.0,req-r9006,"{""orderId"": ""ord-0980"", ""returnReason"": ""defective"", ""refundAmountEur"": 45.00, ""warehouseCode"": ""ES-ZAZ-01""}",2026-10-24T21:49:56Z
+
