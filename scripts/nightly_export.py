@@ -62,6 +62,13 @@ def parse_arguments(args: Optional[list[str]] = None) -> argparse.Namespace:
         help="Resolve date and check locks/idempotency without writing snapshots or running pipeline.",
     )
     parser.add_argument(
+        "--stale-timeout",
+        dest="stale_timeout",
+        type=int,
+        default=3600,
+        help="Stale lock recovery threshold in seconds (default: 3600).",
+    )
+    parser.add_argument(
         "--verbose",
         dest="verbose",
         action="store_true",
@@ -81,6 +88,7 @@ def main(args: Optional[list[str]] = None) -> int:
         result = runner.execute(
             target_date_override=parsed.date,
             dry_run=parsed.dry_run,
+            stale_timeout_seconds=parsed.stale_timeout,
         )
 
         if result.status == JobStatus.FAILED:
