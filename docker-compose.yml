@@ -39,6 +39,7 @@ services:
     volumes:
       - ./services:/app/services
       - ./shared:/app/shared
+      - ./data:/app/data
       - /app/services/api/__pycache__
     environment:
       - PYTHONPATH=/app:/app/services:/app/services/api

@@ -13,6 +13,7 @@ RUN uv pip install --system --no-cache -r ./services/requirements.txt
 
 # Copy shared modules (required by services/api/main.py for CSV analyzer engine) and services source code
 COPY shared/ ./shared/
+COPY data/ ./data/
 COPY services/ ./services/
 
 WORKDIR /app/services
