@@ -5,7 +5,10 @@
   "description": "TypeScript business foundations for TrackFlow",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:jobs": "uv run --project services/api pytest tests/unit/jobs/ -v",
+    "test:backend": "uv run --project services/api pytest services/api/tests/ -v",
+    "test:python": "uv run --project services/api pytest tests/ -v"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

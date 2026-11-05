@@ -11,8 +11,9 @@ import sys
 from typing import List, Optional, Union
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import exists, text, update
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 
 from data.pipelines.models import get_engine
@@ -118,17 +119,88 @@ class NightlyExportRunner:
         yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
         return yesterday.strftime("%Y-%m-%d")
 
-    def check_active_lock(self) -> Optional[JobRun]:
-        """Check if an active processing job currently exists in the database.
+    def recover_stale_locks(self, timeout_seconds: int = 3600) -> int:
+        """Recover and fail orphaned or zombie locks from abruptly terminated runner processes.
+
+        Identifies jobs stranded in 'processing' status older than timeout_seconds,
+        or stranded in 'pending' status older than 5 minutes (300 seconds), and
+        transitions them to 'failed' status with a diagnostic error message.
+
+        Args:
+            timeout_seconds: Threshold in seconds beyond which an active processing job
+                is considered a zombie process (default 3600 seconds / 1 hour).
 
         Returns:
-            The active JobRun record if currently in 'processing' status, else None.
+            The number of stale locks recovered.
+        """
+        now = datetime.now(timezone.utc)
+        processing_threshold = now - timedelta(seconds=timeout_seconds)
+        pending_threshold = now - timedelta(seconds=300)
+
+        recovered_count = 0
+        with Session(self.engine) as session:
+            stmt = (
+                select(JobRun)
+                .where(JobRun.job_name == self.job_name)
+                .where(
+                    JobRun.status.in_([JobStatus.PROCESSING.value, JobStatus.PENDING.value])
+                )
+            )
+            active_jobs = session.exec(stmt).all()
+
+            for job in active_jobs:
+                job_started = job.started_at
+                if job_started is not None and job_started.tzinfo is None:
+                    job_started = job_started.replace(tzinfo=timezone.utc)
+                job_created = job.created_at
+                if job_created is not None and job_created.tzinfo is None:
+                    job_created = job_created.replace(tzinfo=timezone.utc)
+
+                is_stale_processing = (
+                    job.status == JobStatus.PROCESSING.value
+                    and (
+                        (job_started is not None and job_started <= processing_threshold)
+                        or (job_started is None and job_created is not None and job_created <= processing_threshold)
+                    )
+                )
+                is_stale_pending = (
+                    job.status == JobStatus.PENDING.value
+                    and job_created is not None
+                    and job_created <= pending_threshold
+                )
+
+                if is_stale_processing or is_stale_pending:
+                    job.status = JobStatus.FAILED.value
+                    job.finished_at = now
+                    job.error_message = (
+                        "Stale lock recovered: execution timed out or process was killed abruptly (zombie lock)"
+                    )
+                    session.add(job)
+                    recovered_count += 1
+
+            if recovered_count > 0:
+                session.commit()
+                logger.warning(
+                    "Recovered %d stale/zombie lock(s) for job '%s'.",
+                    recovered_count,
+                    self.job_name,
+                )
+
+        return recovered_count
+
+    def check_active_lock(self) -> Optional[JobRun]:
+        """Check if an active processing or pending job currently exists in the database.
+
+        Returns:
+            The active JobRun record if currently in 'processing' or 'pending' status, else None.
         """
         with Session(self.engine) as session:
             stmt = (
                 select(JobRun)
                 .where(JobRun.job_name == self.job_name)
-                .where(JobRun.status == JobStatus.PROCESSING.value)
+                .where(
+                    JobRun.status.in_([JobStatus.PROCESSING.value, JobStatus.PENDING.value])
+                )
             )
             return session.exec(stmt).first()
 
@@ -256,24 +328,28 @@ class NightlyExportRunner:
         self,
         target_date_override: Optional[str] = None,
         dry_run: bool = False,
+        stale_timeout_seconds: int = 3600,
     ) -> JobExecutionResult:
         """Execute the end-to-end nightly export orchestration cycle.
 
         Args:
             target_date_override: Optional date string override (YYYY-MM-DD).
             dry_run: If True, resolves date and checks locks without writing files or running pipeline.
+            stale_timeout_seconds: Threshold in seconds to recover stale zombie locks (default 3600).
 
         Returns:
             JobExecutionResult reflecting execution status and metadata.
         """
-        start_time = datetime.now(timezone.utc)
+        # 0. Stale Lock Recovery
+        self.recover_stale_locks(timeout_seconds=stale_timeout_seconds)
+
         target_date = self.resolve_target_date(target_date_override)
         logger.info(
             "Nightly telemetry export initiated. Target date: %s",
             target_date,
         )
 
-        # 1. Concurrency Lock Check
+        # 1. Concurrency Lock Check (fast path before inserting pending record)
         active_lock = self.check_active_lock()
         if active_lock is not None:
             logger.info(
@@ -316,20 +392,91 @@ class NightlyExportRunner:
                 skip_reason="dry_run",
             )
 
-        # 3. Create active 'processing' record (lock acquisition)
+        # 3. Create initial 'pending' record
         job_run = JobRun(
             job_name=self.job_name,
             target_date=target_date,
-            status=JobStatus.PROCESSING.value,
-            started_at=start_time,
+            status=JobStatus.PENDING.value,
+            started_at=None,
         )
-        with Session(self.engine) as session:
-            session.add(job_run)
-            session.commit()
-            session.refresh(job_run)
-            run_id = job_run.id
+        try:
+            with Session(self.engine) as session:
+                session.add(job_run)
+                session.commit()
+                session.refresh(job_run)
+                run_id = job_run.id
+        except (IntegrityError, OperationalError):
+            active_lock = self.check_active_lock()
+            logger.info(
+                "Active job '%s' currently processing (Run ID: %s). Skipping duplicate execution.",
+                self.job_name,
+                active_lock.id if active_lock else "unknown",
+            )
+            return JobExecutionResult(
+                status=JobStatus.PROCESSING,
+                target_date=target_date,
+                run_id=active_lock.id if active_lock else None,
+                skipped=True,
+                skip_reason="concurrency_lock_active",
+            )
 
-        # 4. Processing Lifecycle with Defensive Error Handling
+        # 4. Atomic Lock Acquisition: Transition PENDING -> PROCESSING
+        start_time = datetime.now(timezone.utc)
+        acquired = False
+        try:
+            with Session(self.engine) as session:
+                stmt = (
+                    update(JobRun)
+                    .where(JobRun.id == run_id)
+                    .where(JobRun.status == JobStatus.PENDING.value)
+                    .where(
+                        ~exists().where(
+                            JobRun.job_name == self.job_name,
+                            JobRun.status == JobStatus.PROCESSING.value,
+                            JobRun.id != run_id,
+                        )
+                    )
+                    .values(
+                        status=JobStatus.PROCESSING.value,
+                        started_at=start_time,
+                    )
+                )
+                res = session.exec(stmt)
+                session.commit()
+                if res.rowcount and res.rowcount > 0:
+                    acquired = True
+        except (IntegrityError, OperationalError):
+            acquired = False
+
+        if not acquired:
+            # Cleanly remove the pending record since we didn't acquire lock
+            with Session(self.engine) as session:
+                persisted = session.get(JobRun, run_id)
+                if persisted and persisted.status == JobStatus.PENDING.value:
+                    session.delete(persisted)
+                    session.commit()
+
+            active_lock = self.check_active_lock()
+            logger.info(
+                "Active job '%s' currently processing. Lock acquisition skipped.",
+                self.job_name,
+            )
+            return JobExecutionResult(
+                status=JobStatus.PROCESSING,
+                target_date=target_date,
+                run_id=active_lock.id if active_lock else None,
+                skipped=True,
+                skip_reason="concurrency_lock_active",
+            )
+
+        logger.info(
+            "Acquired concurrency lock for '%s' (Run ID: %s, Target: %s). Status: pending -> processing",
+            self.job_name,
+            run_id,
+            target_date,
+        )
+
+        # 5. Processing Lifecycle with Defensive Error Handling
         try:
             csv_path = self.export_telemetry_csv(target_date)
             proc = self.run_downstream_pipeline(target_date)

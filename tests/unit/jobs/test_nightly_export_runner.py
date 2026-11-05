@@ -347,3 +347,122 @@ def test_cli_malformed_date_returns_code_1(monkeypatch):
 
 
 
+
+
+
+# ---------------------------------------------------------------------------
+# Spec 022 Concurrency, Stale Lock, & Lifecycle Tests
+# ---------------------------------------------------------------------------
+
+def test_atomic_locking_prevents_simultaneous_execution(test_db, tmp_path):
+    """Test US2/Spec 022 Fix: Concurrent runner executions cannot both acquire the lock."""
+    import concurrent.futures
+    import time
+
+    runner1 = NightlyExportRunner(engine=test_db, raw_data_dir=str(tmp_path / "raw1"))
+    runner2 = NightlyExportRunner(engine=test_db, raw_data_dir=str(tmp_path / "raw2"))
+    target_date = "2026-10-24"
+
+    def slow_pipeline(*args, **kwargs):
+        time.sleep(0.2)
+        return subprocess.CompletedProcess(args=["python"], returncode=0, stdout="OK", stderr="")
+
+    with patch("subprocess.run", side_effect=slow_pipeline):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future1 = executor.submit(runner1.execute, target_date_override=target_date)
+            future2 = executor.submit(runner2.execute, target_date_override=target_date)
+            res1 = future1.result()
+            res2 = future2.result()
+
+    results = [res1, res2]
+    completed = [r for r in results if r.status == JobStatus.COMPLETED and not r.skipped]
+    skipped = [r for r in results if r.skipped and r.skip_reason == "concurrency_lock_active"]
+
+    # Exactly one executed to completion, and the other cleanly skipped
+    assert len(completed) == 1
+    assert len(skipped) == 1
+
+    # Verify database has exactly one completed record
+    with Session(test_db) as session:
+        runs = session.exec(select(JobRun).where(JobRun.target_date == target_date)).all()
+        completed_runs = [r for r in runs if r.status == JobStatus.COMPLETED.value]
+        assert len(completed_runs) == 1
+
+
+def test_stale_lock_recovery_clears_zombie_and_proceeds(test_db, tmp_path):
+    """Test Spec 022 Fix: Zombie lock left by kill -9 is recovered and new run proceeds."""
+    runner = NightlyExportRunner(engine=test_db, raw_data_dir=str(tmp_path))
+    target_date = "2026-10-24"
+
+    # Pre-seed a zombie processing record stranded 2 hours ago (timeout = 3600s)
+    two_hours_ago = datetime.now(timezone.utc) - timedelta(hours=2)
+    with Session(test_db) as session:
+        zombie = JobRun(
+            job_name="nightly_export",
+            target_date="2026-10-23",
+            status=JobStatus.PROCESSING.value,
+            started_at=two_hours_ago,
+        )
+        session.add(zombie)
+        session.commit()
+        session.refresh(zombie)
+        zombie_id = zombie.id
+
+    mock_proc = subprocess.CompletedProcess(
+        args=["python"], returncode=0, stdout="Success", stderr=""
+    )
+    with patch("subprocess.run", return_value=mock_proc):
+        result = runner.execute(target_date_override=target_date)
+
+        assert result.status == JobStatus.COMPLETED
+        assert result.skipped is False
+
+        # Verify zombie was marked FAILED with recovery message
+        with Session(test_db) as session:
+            recovered_zombie = session.get(JobRun, zombie_id)
+            assert recovered_zombie is not None
+            assert recovered_zombie.status == JobStatus.FAILED.value
+            assert recovered_zombie.finished_at is not None
+            assert "Stale lock recovered" in recovered_zombie.error_message
+
+            # Verify the new run succeeded
+            new_run = session.get(JobRun, result.run_id)
+            assert new_run is not None
+            assert new_run.status == JobStatus.COMPLETED.value
+
+
+def test_pending_to_processing_lifecycle_transition(test_db, tmp_path):
+    """Test Spec 022 Fix: Job transitions pending -> processing (started_at populated) -> completed."""
+    runner = NightlyExportRunner(engine=test_db, raw_data_dir=str(tmp_path))
+    target_date = "2026-10-24"
+
+    observed_states = []
+
+    original_export = runner.export_telemetry_csv
+
+    def spy_export(date_str):
+        with Session(test_db) as session:
+            active_runs = session.exec(select(JobRun).where(JobRun.job_name == "nightly_export")).all()
+            for r in active_runs:
+                observed_states.append((r.status, r.started_at is not None))
+        return original_export(date_str)
+
+    runner.export_telemetry_csv = spy_export
+
+    mock_proc = subprocess.CompletedProcess(
+        args=["python"], returncode=0, stdout="Success", stderr=""
+    )
+    with patch("subprocess.run", return_value=mock_proc):
+        result = runner.execute(target_date_override=target_date)
+        assert result.status == JobStatus.COMPLETED
+
+    # When export ran, the job must have been in PROCESSING with started_at populated
+    assert (JobStatus.PROCESSING.value, True) in observed_states
+
+    # At the end, the job must be in COMPLETED with started_at and finished_at
+    with Session(test_db) as session:
+        final_run = session.get(JobRun, result.run_id)
+        assert final_run is not None
+        assert final_run.status == JobStatus.COMPLETED.value
+        assert final_run.started_at is not None
+        assert final_run.finished_at is not None

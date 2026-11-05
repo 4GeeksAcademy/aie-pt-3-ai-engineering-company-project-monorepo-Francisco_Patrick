@@ -27,7 +27,38 @@ uv run pytest --cov=application/services --cov=infrastructure/adapters --cov=pre
 > [!NOTE]
 > Environment variables (such as `JWT_SECRET_KEY=test-secret-key-for-unit-testing-32-bytes!`) are automatically set in `services/api/tests/conftest.py`.
 
-### 1.2 TypeScript Frontend Tests (`Jest`)
+### 1.2 Monorepo Root & Job Runner Tests (`pytest`)
+
+Root-level tests located in `tests/` (such as `tests/unit/jobs/test_nightly_export_runner.py` or `tests/integration/jobs/`) require backend dependencies (`sqlalchemy`, `sqlmodel`, `prefect`, `pandas`). Because dependencies are installed within `services/api/.venv`, running `python -m pytest` from a root shell without activating the virtual environment will fail with `ModuleNotFoundError: No module named 'sqlalchemy'`.
+
+To run tests from the monorepo root:
+
+```bash
+# Option A: Run via npm scripts (Recommended)
+npm run test:jobs       # Runs tests in tests/unit/jobs/
+npm run test:backend    # Runs backend tests in services/api/tests/
+npm run test:python     # Runs all root-level tests
+
+# Option B: Run via uv with project delegation
+uv run --project services/api pytest tests/unit/jobs/test_nightly_export_runner.py -v
+
+# Option C: Use the PowerShell convenience test runner
+.\scripts\test_runner.ps1 tests/unit/jobs/test_nightly_export_runner.py -v
+
+# Option D: Activate the virtual environment before running pytest
+# Windows PowerShell:
+.\services\api\.venv\Scripts\Activate.ps1
+python -m pytest tests/unit/jobs/test_nightly_export_runner.py -v
+
+# Linux / macOS:
+source services/api/.venv/bin/activate
+pytest tests/unit/jobs/test_nightly_export_runner.py -v
+
+# Option E: Invoke the virtual environment python binary directly
+.\services\api\.venv\Scripts\python.exe -m pytest tests/unit/jobs/test_nightly_export_runner.py -v
+```
+
+### 1.3 TypeScript Frontend Tests (`Jest`)
 
 The TypeScript test suite covers client-side authentication storage helpers (`lib/auth.ts`) and API client wrappers (`lib/authApi.ts`).
 

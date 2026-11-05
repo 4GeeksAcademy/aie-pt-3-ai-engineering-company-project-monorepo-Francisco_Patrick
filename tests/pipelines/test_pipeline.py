@@ -179,7 +179,7 @@ def test_transformation_malformed_and_missing_payloads() -> None:
         "returns": pd.DataFrame(),
         "cx": pd.DataFrame(),
     }
-    snapshots = transform_executive_kpis(
+    snapshots = transform_executive_kpis.fn(
         raw_data=empty_unstructured_dict,
         period_start=datetime(2026, 10, 12, tzinfo=timezone.utc),
         period_end=datetime(2026, 10, 18, tzinfo=timezone.utc),
@@ -226,7 +226,7 @@ def test_transformation_exact_mathematical_precision(
     period_start = datetime(2026, 10, 12, 0, 0, 0, tzinfo=timezone.utc)
     period_end = datetime(2026, 10, 18, 23, 59, 59, tzinfo=timezone.utc)
 
-    snapshots = transform_executive_kpis(
+    snapshots = transform_executive_kpis.fn(
         raw_data=raw_data,
         period_start=period_start,
         period_end=period_end,
