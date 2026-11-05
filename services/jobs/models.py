@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column as SAColumn, DateTime, Index
+from sqlalchemy import Column as SAColumn, DateTime, Index, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Field, SQLModel
 
@@ -43,6 +43,13 @@ class JobRun(SQLModel, table=True):
     __table_args__ = (
         Index("idx_job_runs_name_target_date", "job_name", "target_date"),
         Index("idx_job_runs_name_status", "job_name", "status"),
+        Index(
+            "idx_job_runs_active_unique",
+            "job_name",
+            unique=True,
+            sqlite_where=text("status IN ('pending', 'processing')"),
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
     )
 
     id: UUID = Field(
@@ -65,15 +72,15 @@ class JobRun(SQLModel, table=True):
         description="Operational cohort date in YYYY-MM-DD UTC format",
     )
     status: str = Field(
-        default=JobStatus.PROCESSING.value,
+        default=JobStatus.PENDING.value,
         max_length=20,
         nullable=False,
         index=True,
         description="Lifecycle state: pending, processing, completed, failed",
     )
-    started_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    started_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=SAColumn(DateTime(timezone=True), nullable=True),
         description="Timestamp when execution began",
     )
     finished_at: Optional[datetime] = Field(
@@ -101,6 +108,11 @@ def init_jobs_db(target_engine: Optional[Engine] = None) -> None:
         eng,
         tables=[JobRun.__table__],
     )
+    for idx in JobRun.__table__.indexes:
+        try:
+            idx.create(eng, checkfirst=True)
+        except Exception:
+            pass
 
 
 __all__ = [

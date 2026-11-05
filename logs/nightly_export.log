@@ -1,0 +1,8 @@
+2026-10-25 02:00:01 [WARNING] [scripts.nightly_export] Recovered 1 stale/zombie lock(s) for job 'nightly_export'.
+2026-10-25 02:00:01 [INFO] [scripts.nightly_export] Nightly telemetry export initiated. Target date: 2026-10-24
+2026-10-25 02:00:01 [INFO] [scripts.nightly_export] Acquired concurrency lock for 'nightly_export' (Run ID: e4b25f0a-7f1c-4b53-8321-789a421b8f01, Target: 2026-10-24). Status: pending -> processing
+2026-10-25 02:00:01 [INFO] [scripts.nightly_export] Exporting telemetry events for 2026-10-24 to data/raw/telemetry_2026-10-24.csv
+2026-10-25 02:00:02 [INFO] [scripts.nightly_export] Spawning downstream KPI pipeline subprocess for target date 2026-10-24
+2026-10-25 02:00:07 [INFO] [scripts.nightly_export] Downstream KPI pipeline completed successfully with exit code 0
+2026-10-25 02:00:07 [INFO] [scripts.nightly_export] Nightly telemetry export completed successfully for 2026-10-24. Duration: 6.24s
+

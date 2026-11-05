@@ -108,15 +108,21 @@ The **Nightly Telemetry Export Runner** runs as an autonomous, detached CLI proc
 - **CLI Entry Point**: `scripts/nightly_export.py`
 - **Audit Persistence**: `job_runs` table (`services/jobs/models.py`)
 - **Default Target Date**: Preceding calendar day in UTC (`YYYY-MM-DD`)
+- **PR Metadata Label**: `cronjob`
 
-### 6.1 Production Cron Schedule & Deployment
+### 6.1 Production Cron Schedule & Deployment (`scripts/crontab`)
 
 The export job is configured to run daily at **02:00 UTC** (`0 2 * * *`). The 2-hour window after midnight UTC guarantees that late-arriving events across dual fulfillment hubs (`US-LAX-01` and `ES-ZAZ-01`) are persisted before batch extraction begins.
 
+The standalone crontab schedule definition is located at `scripts/crontab`:
+
 ```bash
-# Production Crontab Entry (with standard log redirection and rotation)
+# TrackFlow Autonomous Nightly Telemetry Export Cron Schedule
+# Executes daily at 02:00 UTC (cohort window: UTC yesterday 00:00:00 to 23:59:59)
 0 2 * * * cd /workspace && python scripts/nightly_export.py >> /var/log/trackflow/nightly_export.log 2>&1
 ```
+
+Standard log rotation on Linux hosts should target `/var/log/trackflow/nightly_export.log` using `logrotate` with daily frequency and 14-day retention.
 
 ### 6.2 Environment Configuration
 
@@ -128,15 +134,24 @@ The export job is configured to run daily at **02:00 UTC** (`0 2 * * *`). The 2-
 
 ### 6.3 Operational Controls & Guards
 
-1. **Database-Backed Concurrency Locking**: Active `processing` status in `job_runs` prevents overlapping runs. Secondary executions detect active locks, log an informational notice, and exit cleanly with code `0`.
-2. **Per-Day Idempotency & Snapshot Preservation**: If `(nightly_export, target_date)` is already `completed`, subsequent runs skip execution and leave existing CSV files untouched.
-3. **Historical Backfill**: Historical date cohorts can be processed on-demand without interfering with cron cadences:
+1. **Atomic Concurrency Locking & Lifecycle Transitions (`pending` -> `processing`)**:
+   - The `JobRun` model includes a partial unique index on `(job_name)` where `status IN ('pending', 'processing')` (`idx_job_runs_active_unique`).
+   - When a job starts, it creates a record with `status = 'pending'` (`started_at = NULL`), then atomically transitions to `status = 'processing'` using conditional SQL `UPDATE ... WHERE NOT EXISTS (...)`.
+   - Secondary concurrent executions fail lock acquisition, cleanly remove their pending record, log an informational notice, and exit cleanly with code `0`.
+2. **Automated Stale Lock Recovery (Zombie Process Remediation)**:
+   - Abrupt termination (`kill -9`, OOM killer, or container eviction) leaves records in `processing` status without running cleanup handlers.
+   - The runner invokes `recover_stale_locks(timeout_seconds=3600)` at startup: any active processing job older than 1 hour (or stranded pending job older than 5 minutes) is transitioned to `failed` status with `finished_at = now()` and `error_message = "Stale lock recovered..."`.
+   - The timeout threshold is configurable via `--stale-timeout <seconds>` on the CLI.
+3. **Per-Day Idempotency & Snapshot Preservation**:
+   - If `(nightly_export, target_date)` is already `completed`, subsequent runs skip execution and leave existing CSV files untouched.
+4. **Historical Backfill**:
+   - Historical date cohorts can be processed on-demand without interfering with cron cadences:
    ```bash
    python scripts/nightly_export.py --date 2026-10-24
    ```
-4. **Dry-Run Inspection**:
+5. **Dry-Run Inspection**:
    ```bash
    python scripts/nightly_export.py --dry-run --verbose
    ```
-5. **Defensive Error Sanitization**: All runtime failures mask credentials, passwords, and tokens, record diagnostic messages (max 500 chars) in `job_runs.error_message`, and exit with code `1`, leaving zero orphaned locks in `processing`.
-
+6. **Defensive Error Sanitization**:
+   - All runtime failures mask credentials, passwords, and tokens, record diagnostic messages (max 500 chars) in `job_runs.error_message`, and exit with code `1`, releasing locks cleanly.
