@@ -16,3 +16,4 @@ venv/
 *.db
 .pytest_cache/
 .coverage
+db.json
