@@ -1,4 +1,4 @@
-fastapi>=0.100.0
+fastapi>=0.100.0,<0.151.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
 python-jose[cryptography]
@@ -12,6 +12,9 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.9
 python-dotenv
 pandas>=2.0.0
-prefect>=3.0.0
+prefect>=3.9.1
 httpx>=0.25.0
+celery[redis]>=5.3.0
+redis>=5.0.0
+flower>=2.0.0
 
