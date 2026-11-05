@@ -43,6 +43,8 @@ services:
       - /app/services/api/__pycache__
     environment:
       - PYTHONPATH=/app:/app/services:/app/services/api
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
     env_file:
       - .env
       - services/api/.env
@@ -55,9 +57,86 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - trackflow-net
     restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: trackflow-redis
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - trackflow-net
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+    container_name: trackflow-worker
+    command: celery -A services.api.infrastructure.queue.celery_app worker -l INFO -c 2
+    volumes:
+      - ./services:/app/services
+      - ./shared:/app/shared
+      - ./data:/app/data
+      - /app/services/api/__pycache__
+    environment:
+      - PYTHONPATH=/app:/app/services:/app/services/api
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+    env_file:
+      - .env
+      - services/api/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - trackflow-net
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+    container_name: trackflow-flower
+    command: celery -A services.api.infrastructure.queue.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - PYTHONPATH=/app:/app/services:/app/services/api
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+      - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH:-admin:admin}
+    env_file:
+      - .env
+      - services/api/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5555')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - trackflow-net
+    restart: unless-stopped
+
+volumes:
+  redis_data:
 
 networks:
   trackflow-net:

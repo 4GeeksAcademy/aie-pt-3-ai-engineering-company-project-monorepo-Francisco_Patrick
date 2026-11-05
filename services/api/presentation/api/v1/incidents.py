@@ -4,9 +4,11 @@ Includes CSV stream analysis and export endpoints formerly defined inline in mai
 """
 
 import io
+import os
+import uuid
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query as QueryParam, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query as QueryParam, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from application.incidents.csv_report_service import IncidentCsvReportService
@@ -20,6 +22,7 @@ from domain.schemas.incident_schema import (
     IncidentStatusUpdateSchema,
     IncidentSummaryResponse,
 )
+from infrastructure.queue.schemas import AsyncTaskAcceptedResponse
 from presentation.dependencies import (
     get_cache_dep,
     get_incident_csv_report_service_dep,
@@ -31,12 +34,12 @@ router = APIRouter(tags=["incidents"])
 SUMMARY_CACHE_KEY = "incident_summary:global"
 
 
-@router.post("/analyze", response_model=IncidentAnalysisResponse)
+@router.post("/analyze", response_model=AsyncTaskAcceptedResponse, status_code=status.HTTP_202_ACCEPTED)
 async def analyze_incidents(
+    response: Response,
     file: UploadFile = File(...),
-    report_service: IncidentCsvReportService = Depends(get_incident_csv_report_service_dep),
-) -> Any:
-    """Analyze an uploaded UTF-8 CSV of incidents and return aggregate metrics."""
+) -> AsyncTaskAcceptedResponse:
+    """Validate uploaded CSV, stage file to disk, and dispatch analysis task asynchronously."""
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
 
@@ -49,19 +52,35 @@ async def analyze_incidents(
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
     try:
-        text_stream = io.StringIO(content.decode("utf-8"))
+        _ = content.decode("utf-8")
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="Invalid encoding. File must be UTF-8 encoded.")
 
-    try:
-        return report_service.analyze(text_stream)
-    except ValueError as ve:
-        raise HTTPException(status_code=422, detail=f"CSV processing failed: {str(ve)}")
-    except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="An internal server error occurred while analyzing the incident data. Please verify file format and try again.",
-        )
+    from infrastructure.queue.celery_app import register_enqueued_task
+    from infrastructure.queue.tasks import analyze_incidents_task
+
+    task_id = str(uuid.uuid4())
+    staging_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "data", "staging", "incidents")
+    )
+    os.makedirs(staging_dir, exist_ok=True)
+    staging_path = os.path.join(staging_dir, f"{task_id}.csv")
+
+    with open(staging_path, "wb") as f:
+        f.write(content)
+
+    analyze_incidents_task.apply_async(args=[staging_path, file.filename], task_id=task_id)
+    register_enqueued_task(task_id, "incidents.analyze_csv")
+    poll_url = f"/api/v1/tasks/{task_id}"
+    response.headers["Location"] = poll_url
+
+    return AsyncTaskAcceptedResponse(
+        task_id=task_id,
+        status="pending",
+        message="Incident CSV analysis task enqueued.",
+        poll_url=poll_url,
+    )
+
 
 
 @router.get("/results/export")

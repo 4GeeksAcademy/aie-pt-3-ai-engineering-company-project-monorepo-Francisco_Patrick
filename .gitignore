@@ -18,3 +18,4 @@ venv/
 .coverage
 services/db.json
 db.json
+data/staging/

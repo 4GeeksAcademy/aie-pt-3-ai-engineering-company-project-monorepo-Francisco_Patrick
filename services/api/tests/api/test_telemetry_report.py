@@ -37,15 +37,17 @@ def reset_telemetry_report_cache():
 
 
 def test_get_telemetry_report_default_7_day_window():
-    """T007: Default request resolves a 7-day UTC period and returns X-Cache: MISS on cold read."""
+    """T007: Default request resolves a 7-day UTC period asynchronously."""
     before_call = datetime.now(timezone.utc)
     response = client.get("/telemetry/report")
     after_call = datetime.now(timezone.utc)
 
-    assert response.status_code == 200
-    assert response.headers.get("X-Cache") == "MISS"
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    task_res = client.get(f"/tasks/{task_id}")
+    assert task_res.status_code == 200
+    data = task_res.json()["result"]
 
-    data = response.json()
     assert "period" in data
     assert "metrics" in data
 
@@ -71,16 +73,18 @@ def test_get_telemetry_report_default_7_day_window():
 
 
 def test_get_telemetry_report_caching_hit_on_subsequent_request():
-    """T007: Identical request within 60s TTL returns cached response with X-Cache: HIT."""
+    """T007: Identical async request within 60s TTL returns consistent task result."""
     res1 = client.get("/telemetry/report")
-    assert res1.status_code == 200
-    assert res1.headers.get("X-Cache") == "MISS"
-    data1 = res1.json()
+    assert res1.status_code == 202
+    task_res1 = client.get(f"/tasks/{res1.json()['task_id']}")
+    assert task_res1.status_code == 200
+    data1 = task_res1.json()["result"]
 
     res2 = client.get("/telemetry/report")
-    assert res2.status_code == 200
-    assert res2.headers.get("X-Cache") == "HIT"
-    data2 = res2.json()
+    assert res2.status_code == 202
+    task_res2 = client.get(f"/tasks/{res2.json()['task_id']}")
+    assert task_res2.status_code == 200
+    data2 = task_res2.json()["result"]
 
     assert data1 == data2
 
@@ -91,25 +95,29 @@ def test_get_telemetry_report_custom_date_range_caching():
     end_str = "2026-10-05T23:59:59Z"
 
     res1 = client.get(f"/telemetry/report?start_date={start_str}&end_date={end_str}")
-    assert res1.status_code == 200
-    assert res1.headers.get("X-Cache") == "MISS"
+    assert res1.status_code == 202
+    task_res1 = client.get(f"/tasks/{res1.json()['task_id']}")
+    assert task_res1.status_code == 200
+    data1 = task_res1.json()["result"]
 
-    data1 = res1.json()
     assert data1["period"]["from"].startswith("2026-10-01T00:00:00")
     assert data1["period"]["to"].startswith("2026-10-05T23:59:59")
 
     # Second call with identical params must hit cache
     res2 = client.get(f"/telemetry/report?start_date={start_str}&end_date={end_str}")
-    assert res2.status_code == 200
-    assert res2.headers.get("X-Cache") == "HIT"
-    assert res2.json() == data1
+    assert res2.status_code == 202
+    task_res2 = client.get(f"/tasks/{res2.json()['task_id']}")
+    assert task_res2.status_code == 200
+    assert task_res2.json()["result"] == data1
 
 
 def test_get_telemetry_report_canonical_v1_alias():
     """T007: Canonical /api/v1/telemetry/report exhibits identical contract behavior."""
     response = client.get("/api/v1/telemetry/report")
-    assert response.status_code == 200
-    data = response.json()
+    assert response.status_code == 202
+    task_res = client.get(f"/tasks/{response.json()['task_id']}")
+    assert task_res.status_code == 200
+    data = task_res.json()["result"]
     assert "period" in data
     assert "metrics" in data
 
@@ -160,8 +168,10 @@ def test_get_telemetry_report_with_seeded_events():
     assert ingest_res.status_code == 200
 
     report_res = client.get("/telemetry/report")
-    assert report_res.status_code == 200
-    report_data = report_res.json()
+    assert report_res.status_code == 202
+    task_res = client.get(f"/tasks/{report_res.json()['task_id']}")
+    assert task_res.status_code == 200
+    report_data = task_res.json()["result"]
     assert "metrics" in report_data
     assert "period" in report_data
     assert isinstance(report_data["metrics"]["auth_failure_rate"], list)
@@ -190,8 +200,10 @@ def test_get_telemetry_report_auth_failure_rate_metrics():
     assert ingest_res.status_code == 200
 
     report_res = client.get("/telemetry/report")
-    assert report_res.status_code == 200
-    data = report_res.json()
+    assert report_res.status_code == 202
+    task_res = client.get(f"/tasks/{report_res.json()['task_id']}")
+    assert task_res.status_code == 200
+    data = task_res.json()["result"]
 
     auth_rates = data["metrics"]["auth_failure_rate"]
     assert len(auth_rates) > 0
@@ -210,8 +222,10 @@ def test_get_telemetry_report_auth_failure_rate_zero_attempts_period():
     end_str = "2020-01-02T23:59:59Z"
 
     report_res = client.get(f"/telemetry/report?start_date={start_str}&end_date={end_str}")
-    assert report_res.status_code == 200
-    data = report_res.json()
+    assert report_res.status_code == 202
+    task_res = client.get(f"/tasks/{report_res.json()['task_id']}")
+    assert task_res.status_code == 200
+    data = task_res.json()["result"]
 
     assert data["metrics"]["auth_failure_rate"] == []
     assert data["metrics"]["events_per_day"] == []

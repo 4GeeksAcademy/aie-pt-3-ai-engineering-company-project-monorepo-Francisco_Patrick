@@ -10,20 +10,19 @@ from datetime import datetime
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
+from infrastructure.queue.schemas import AsyncTaskAcceptedResponse
 from data.pipelines.reporting_interface import (
     PipelineActiveConflictError,
     get_executive_kpis,
     get_pipeline_status,
-    trigger_pipeline_run,
 )
 from services.reporting.domain.schemas import (
     ErrorResponse,
     ExecutiveKpisResponse,
     PipelineStatusResponse,
     PipelineTriggerRequest,
-    PipelineTriggerResponse,
 )
 
 logger = logging.getLogger("services.reporting.presentation.routes")
@@ -56,27 +55,41 @@ def read_pipeline_status() -> PipelineStatusResponse:
 
 @router.post(
     "/trigger",
-    response_model=PipelineTriggerResponse,
+    response_model=AsyncTaskAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
-        status.HTTP_202_ACCEPTED: {"model": PipelineTriggerResponse},
+        status.HTTP_202_ACCEPTED: {"model": AsyncTaskAcceptedResponse},
         status.HTTP_409_CONFLICT: {"model": ErrorResponse},
         status.HTTP_422_UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse},
     },
     summary="Manually Trigger Pipeline Execution",
-    description="Initiates an ad-hoc or backfill execution of the business performance pipeline.",
+    description="Initiates an ad-hoc or backfill execution of the business performance pipeline asynchronously.",
 )
 def trigger_pipeline(
+    response: Response,
     payload: Optional[PipelineTriggerRequest] = None,
-) -> PipelineTriggerResponse:
-    """Trigger a new pipeline execution run."""
-    period_start = payload.period_start if payload else None
-    period_end = payload.period_end if payload else None
+) -> AsyncTaskAcceptedResponse:
+    """Trigger a new pipeline execution run asynchronously."""
+    period_start = payload.period_start.isoformat() if (payload and payload.period_start) else None
+    period_end = payload.period_end.isoformat() if (payload and payload.period_end) else None
 
     try:
-        result = trigger_pipeline_run(period_start=period_start, period_end=period_end)
-        return PipelineTriggerResponse.model_validate(result)
+        from infrastructure.queue.celery_app import register_enqueued_task
+        from infrastructure.queue.tasks import trigger_pipeline_task
+
+        async_result = trigger_pipeline_task.delay(period_start=period_start, period_end=period_end)
+        task_id = str(async_result.id)
+        register_enqueued_task(task_id, "reporting.trigger_pipeline")
+        poll_url = f"/api/v1/tasks/{task_id}"
+        response.headers["Location"] = poll_url
+
+        return AsyncTaskAcceptedResponse(
+            task_id=task_id,
+            status="pending",
+            message="Reporting pipeline execution enqueued.",
+            poll_url=poll_url,
+        )
     except PipelineActiveConflictError as conflict_err:
         logger.warning("Pipeline trigger rejected due to active conflict: %s", conflict_err)
         raise HTTPException(

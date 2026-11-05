@@ -5,6 +5,8 @@ import pytest
 # Ensure JWT_SECRET_KEY is set before importing app or adapters
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-unit-testing-32-bytes!"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
+os.environ["REDIS_URL"] = "memory://"
+os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
 
 # Add services/api directory to sys.path so imports work seamlessly
 API_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -35,6 +37,16 @@ from presentation.dependencies import (
     get_auth_service_dep,
     get_profile_service_dep
 )
+from infrastructure.queue.celery_app import celery_app
+
+celery_app.conf.update(
+    task_always_eager=True,
+    task_eager_propagates=True,
+    task_store_eager_result=True,
+    broker_url="memory://",
+    result_backend="cache+memory://",
+)
+
 
 
 @pytest.fixture(autouse=True)
