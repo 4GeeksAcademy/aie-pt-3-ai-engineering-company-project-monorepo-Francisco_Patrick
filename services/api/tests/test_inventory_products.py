@@ -26,8 +26,13 @@ def get_auth_headers(test_users=None):
 
 def test_get_products_empty(client):
     response = client.get("/inventory/products")
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
+    assert response.status_code == 202
+    data = response.json()
+    assert "task_id" in data
+    task_res = client.get(f"/api/v1/tasks/{data['task_id']}")
+    assert task_res.status_code == 200
+    assert isinstance(task_res.json()["result"], list)
+
 
 
 def test_create_product_requires_auth(client):
