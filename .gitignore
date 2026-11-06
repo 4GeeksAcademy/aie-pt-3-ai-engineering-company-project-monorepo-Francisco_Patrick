@@ -2,6 +2,11 @@ node_modules/
 dist/
 build/
 
+# Next.js build directories
+.next/
+**/.next/
+out/
+
 # Environment files
 .env
 .env.*
@@ -16,5 +21,9 @@ venv/
 *.db
 .pytest_cache/
 .coverage
+
+# Database & local state
 services/db.json
 db.json
+**/db.json
+*.csv
