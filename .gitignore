@@ -23,11 +23,9 @@ venv/
 .coverage
 
 # Database & local state
-services/db.json
 db.json
 **/db.json
 *.csv
 
 # Git backup
 .git_backup/
-

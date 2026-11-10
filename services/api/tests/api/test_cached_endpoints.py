@@ -98,10 +98,13 @@ def test_suppliers_caching_and_mutation_invalidation():
 
 
 def test_inventory_products_caching_and_inbound_invalidation():
-    # 1. Query products list to populate cache
+    # 1. Query products list asynchronously to enqueue task and populate cache
     res1 = client.get("/inventory/products")
-    assert res1.status_code == 200
-    initial_products = res1.json()
+    assert res1.status_code == 202
+    task_id1 = res1.json()["task_id"]
+    task_res1 = client.get(f"/tasks/{task_id1}")
+    assert task_res1.status_code == 200
+    initial_products = task_res1.json()["result"]
     assert response_cache.get("inventory_products:all") is not None
 
     # 2. Register inbound delivery to trigger invalidation
@@ -118,7 +121,7 @@ def test_inventory_products_caching_and_inbound_invalidation():
         # Verify inventory cache was cleared
         assert response_cache.get("inventory_products:all") is None
 
-        # 3. Subsequent list query returns updated stock
+        # 3. Subsequent list query enqueues task and returns updated stock
         res2 = client.get("/inventory/products")
-        assert res2.status_code == 200
+        assert res2.status_code == 202
         assert response_cache.get("inventory_products:all") is not None

@@ -28,8 +28,12 @@ def test_read_routes_match_between_legacy_and_v1(client, test_users, legacy_path
     canonical = client.get(v1_path, headers=headers)
 
     assert legacy.status_code == canonical.status_code
-    assert legacy.status_code == 200
-    assert legacy.json() == canonical.json()
+    if legacy_path == "/inventory/products":
+        assert legacy.status_code == 202
+        assert legacy.json()["status"] == canonical.json()["status"] == "pending"
+    else:
+        assert legacy.status_code == 200
+        assert legacy.json() == canonical.json()
 
 
 @pytest.mark.parametrize("legacy_path,v1_path", READ_ROUTE_PAIRS)
@@ -132,8 +136,11 @@ def test_csv_analysis_and_export_on_both_prefixes(client):
             f"{prefix}/analyze",
             files={"file": ("incidents.csv", csv_body, "text/csv")},
         )
-        assert analyzed.status_code == 200
-        assert "metrics" in analyzed.json()
+        assert analyzed.status_code == 202
+        task_id = analyzed.json()["task_id"]
+        task_res = client.get(f"/tasks/{task_id}")
+        assert task_res.status_code == 200
+        assert "metrics" in task_res.json()["result"]
 
         exported = client.get(f"{prefix}/results/export")
         assert exported.status_code == 200

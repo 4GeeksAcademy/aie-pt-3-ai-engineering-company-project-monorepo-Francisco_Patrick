@@ -31,6 +31,7 @@ from presentation.api.v1 import (  # noqa: E402
     inventory,
     profiles,
     suppliers,
+    tasks,
     telemetry,
     users,
 )
@@ -49,6 +50,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (profiles.router, f"{API_V1_PREFIX}/profiles", "/profiles"),
     (telemetry.router, f"{API_V1_PREFIX}/telemetry", "/telemetry"),
     (reporting.router, f"{API_V1_PREFIX}/reporting", "/reporting"),
+    (tasks.router, f"{API_V1_PREFIX}/tasks", "/tasks"),
 ]
 
 

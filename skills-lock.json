@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "celery": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "skillPath": "toolchains/python/async/celery/SKILL.md",
+      "computedHash": "00e6aae8ae91e9a050c34801cf63e012ff5b233f95243b67a6ab8682e5ffc0a6"
+    },
     "core-web-vitals": {
       "source": "addyosmani/web-quality-skills",
       "sourceType": "github",
@@ -48,6 +54,12 @@
       "sourceType": "github",
       "skillPath": ".claude/skills/python-best-practices/SKILL.md",
       "computedHash": "9096f9ba1660f3dc864206f05f2851f77a3872dded644514a63a509d5052466d"
+    },
+    "redis-core": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-core/SKILL.md",
+      "computedHash": "7805229f286490b074aa105bc9650060202e247764f09102b928421789380b63"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",

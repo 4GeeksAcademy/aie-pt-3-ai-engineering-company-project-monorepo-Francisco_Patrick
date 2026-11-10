@@ -1,8 +1,8 @@
 """Inventory API router (canonical v1, also mounted at the legacy /inventory prefix)."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from application.inventory.dto import (
     InboundOrderCreateDTO,
@@ -15,6 +15,7 @@ from application.inventory.inventory_service import InventoryService
 from domain.common.exceptions import DuplicateEntityError
 from domain.inventory.models import InventoryProduct
 from domain.models import User
+from infrastructure.queue.schemas import AsyncTaskAcceptedResponse
 from presentation.dependencies import get_current_user, get_inventory_service_dep
 
 router = APIRouter(tags=["Inventory"])
@@ -47,14 +48,32 @@ def create_product(
 
 @router.get(
     "/products",
-    response_model=List[ProductResponseDTO],
-    response_model_exclude=_LEGACY_PRODUCT_EXCLUDE,
+    response_model=AsyncTaskAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="List all products asynchronously",
+    description="Enqueues inventory stock aggregation task and returns tracking ID.",
 )
 def list_products(
-    service: InventoryService = Depends(get_inventory_service_dep),
-) -> List[InventoryProduct]:
-    """List all products with calculated current stock (cached)."""
-    return service.list_products()
+    response: Response,
+    include_archived: bool = Query(default=False, description="Include archived products"),
+) -> AsyncTaskAcceptedResponse:
+    """Enqueues inventory stock aggregation task and returns tracking ID."""
+    from infrastructure.queue.celery_app import register_enqueued_task
+    from infrastructure.queue.tasks import list_products_task
+
+    async_result = list_products_task.delay(include_archived=include_archived)
+    task_id = str(async_result.id)
+    register_enqueued_task(task_id, "inventory.list_products")
+    poll_url = f"/api/v1/tasks/{task_id}"
+    response.headers["Location"] = poll_url
+
+    return AsyncTaskAcceptedResponse(
+        task_id=task_id,
+        status="pending",
+        message="Inventory stock aggregation task enqueued.",
+        poll_url=poll_url,
+    )
+
 
 
 @router.get(

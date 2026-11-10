@@ -5,6 +5,7 @@ schema initialization, and session generator dependency for relational persisten
 """
 
 import os
+import sys
 import urllib.parse
 from typing import Generator, Optional, Union
 from dotenv import load_dotenv
@@ -16,9 +17,19 @@ _api_env_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
 )
 if os.path.exists(_api_env_path):
-    load_dotenv(dotenv_path=_api_env_path, override=True)
+    load_dotenv(dotenv_path=_api_env_path, override=False)
 else:
     load_dotenv()
+
+# If running inside test runner, ensure Celery Redis URLs don't override in-memory test configuration
+if "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None:
+    os.environ["REDIS_URL"] = "memory://"
+    os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
+    if not os.getenv("TEST_USE_REMOTE_DB"):
+        os.environ.pop("user", None)
+        os.environ.pop("DB_USER", None)
+        os.environ.pop("host", None)
+        os.environ.pop("DB_HOST", None)
 
 
 
@@ -38,6 +49,13 @@ class SQLModelClientManager:
 
     def build_database_url(self) -> str:
         """Construct database connection URL from environment variables with SQLite fallback."""
+        if ("pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None) and not os.getenv("TEST_USE_REMOTE_DB"):
+            test_sqlite_path = os.path.join(
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")),
+                "test_inventory.db",
+            )
+            return f"sqlite:///{test_sqlite_path}"
+
         db_user = os.getenv("user") or os.getenv("DB_USER")
         db_password = os.getenv("password") or os.getenv("DB_PASSWORD")
         db_host = os.getenv("host") or os.getenv("DB_HOST")
@@ -128,6 +146,8 @@ class SQLModelClientManager:
             StockExit,
             TelemetryEventRecord,
         )
+        from infrastructure.queue.models import DeadLetterQueueRecord  # noqa: F401
+
         eng = target_engine if target_engine is not None else self.get_engine()
         default_sqlite_url = f"sqlite:///{self.get_default_sqlite_path()}"
 

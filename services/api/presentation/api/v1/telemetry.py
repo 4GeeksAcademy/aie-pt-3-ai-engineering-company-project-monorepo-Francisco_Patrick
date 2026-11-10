@@ -8,6 +8,7 @@ from application.telemetry.report_service import TelemetryReportService
 from application.telemetry.telemetry_service import TelemetryService
 from domain.telemetry.models import IngestReceipt, RawTelemetryBatch
 from domain.telemetry.report_models import TelemetryReportResponse
+from infrastructure.queue.schemas import AsyncTaskAcceptedResponse
 from presentation.dependencies import (
     get_telemetry_report_service_dep,
     get_telemetry_service_dep,
@@ -32,19 +33,13 @@ def ingest_telemetry_events(
 
 @router.get(
     "/report",
-    response_model=TelemetryReportResponse,
-    status_code=status.HTTP_200_OK,
+    response_model=AsyncTaskAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Get Operational Telemetry Report",
-    description="Retrieves consolidated operational health metrics over a specified UTC time window.",
+    description="Enqueues operational telemetry report generation and returns tracking ID.",
     responses={
-        200: {
-            "description": "Operational telemetry report successfully calculated or served from cache.",
-            "headers": {
-                "X-Cache": {
-                    "description": "Cache status indicator (HIT or MISS).",
-                    "schema": {"type": "string", "enum": ["HIT", "MISS"]},
-                }
-            },
+        202: {
+            "description": "Telemetry report task enqueued successfully.",
         },
         422: {
             "description": "Validation error (e.g. malformed date string or start_date > end_date)."
@@ -64,16 +59,29 @@ def get_telemetry_report(
         default=None,
         description="End of reporting window in ISO 8601 format (inclusive).",
     ),
-    service: TelemetryReportService = Depends(get_telemetry_report_service_dep),
-) -> TelemetryReportResponse:
-    """Retrieve operational telemetry report with 60-second in-memory caching."""
-    try:
-        report, is_hit = service.get_report(start_date=start_date, end_date=end_date)
-    except ValueError as e:
+) -> AsyncTaskAcceptedResponse:
+    """Enqueues operational telemetry report generation and returns tracking ID."""
+    if start_date and end_date and start_date > end_date:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
+            detail="start_date must be before or equal to end_date",
         )
 
-    response.headers["X-Cache"] = "HIT" if is_hit else "MISS"
-    return report
+    from infrastructure.queue.celery_app import register_enqueued_task
+    from infrastructure.queue.tasks import telemetry_report_task
+
+    start_iso = start_date.isoformat() if start_date else None
+    end_iso = end_date.isoformat() if end_date else None
+
+    async_result = telemetry_report_task.delay(start_date=start_iso, end_date=end_iso)
+    task_id = str(async_result.id)
+    register_enqueued_task(task_id, "telemetry.generate_report")
+    poll_url = f"/api/v1/tasks/{task_id}"
+    response.headers["Location"] = poll_url
+
+    return AsyncTaskAcceptedResponse(
+        task_id=task_id,
+        status="pending",
+        message="Telemetry report generation task enqueued.",
+        poll_url=poll_url,
+    )
