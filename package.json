@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test:jobs": "uv run --project services/api pytest tests/unit/jobs/ -v",
     "test:backend": "uv run --project services/api pytest services/api/tests/ -v",
-    "test:python": "uv run --project services/api pytest tests/ -v"
+    "test:python": "uv run --project services/api pytest tests/ -v",
+    "test:sales-forecast": "uv run --project services/api pytest tests/pipelines/test_sales_forecast.py -v",
+    "train:sales-forecast": "uv run --project services/api python scripts/train_sales_forecast.py --data-path data/raw/trackflow_sales.csv --output-dir reports"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

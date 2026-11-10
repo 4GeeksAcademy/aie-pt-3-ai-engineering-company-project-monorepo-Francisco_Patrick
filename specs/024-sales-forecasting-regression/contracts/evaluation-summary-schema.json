@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SalesForecastEvaluationSummary",
+  "type": "object",
+  "required": [
+    "model_type",
+    "random_seed",
+    "dataset_split",
+    "metrics",
+    "business_interpretation",
+    "generated_at"
+  ],
+  "properties": {
+    "model_type": {
+      "type": "string",
+      "enum": ["random_forest", "xgboost"]
+    },
+    "random_seed": {
+      "type": "integer"
+    },
+    "dataset_split": {
+      "type": "object",
+      "required": [
+        "train_months_count",
+        "test_months_count",
+        "train_start",
+        "train_end",
+        "test_start",
+        "test_end"
+      ],
+      "properties": {
+        "train_months_count": { "type": "integer", "const": 96 },
+        "test_months_count": { "type": "integer", "const": 24 },
+        "train_start": { "type": "string", "format": "date" },
+        "train_end": { "type": "string", "format": "date" },
+        "test_start": { "type": "string", "format": "date" },
+        "test_end": { "type": "string", "format": "date" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "mse_eur2",
+        "rmse_eur",
+        "nrmse_pct",
+        "average_monthly_revenue_eur",
+        "psi_score",
+        "psi_status",
+        "gini_coefficient",
+        "k2_statistic",
+        "k2_pvalue",
+        "residuals_normal"
+      ],
+      "properties": {
+        "mse_eur2": { "type": "number", "minimum": 0.0 },
+        "rmse_eur": { "type": "number", "minimum": 0.0 },
+        "nrmse_pct": { "type": "number", "minimum": 0.0 },
+        "average_monthly_revenue_eur": { "type": "number", "minimum": 0.0 },
+        "psi_score": { "type": "number", "minimum": 0.0 },
+        "psi_status": { "type": "string", "enum": ["STABLE", "MODERATE_DRIFT", "HIGH_DRIFT"] },
+        "gini_coefficient": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+        "k2_statistic": { "type": "number", "minimum": 0.0 },
+        "k2_pvalue": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "residuals_normal": { "type": "boolean" }
+      }
+    },
+    "business_interpretation": {
+      "type": "object",
+      "required": [
+        "mse_rationale",
+        "psi_assessment",
+        "gini_assessment",
+        "k2_assessment",
+        "executive_readiness"
+      ],
+      "properties": {
+        "mse_rationale": { "type": "string" },
+        "psi_assessment": { "type": "string" },
+        "gini_assessment": { "type": "string" },
+        "k2_assessment": { "type": "string" },
+        "executive_readiness": { "type": "string" }
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
+
