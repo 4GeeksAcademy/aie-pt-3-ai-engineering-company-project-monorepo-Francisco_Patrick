@@ -19,9 +19,9 @@
 
 **Purpose**: Directory scaffolding, `uv` environment verification (`FR-010`), and npm convenience scripts.
 
-- [ ] T001 Create evaluation output directory `data/eval/` and verify baseline dataset existence at `data/raw/trackflow_sales.csv`
-- [ ] T002 Verify Python runtime dependencies (`scikit-learn`, `scipy`, `pandas`, `numpy`, `matplotlib`, `pytest`) exclusively via `uv` (`FR-010`) in `services/api/pyproject.toml`
-- [ ] T003 [P] Add `evaluate:sales-forecast` and `test:regression-eval` convenience scripts in `package.json`
+- [X] T001 Create evaluation output directory `data/eval/` and verify baseline dataset existence at `data/raw/trackflow_sales.csv`
+- [X] T002 Verify Python runtime dependencies (`scikit-learn`, `scipy`, `pandas`, `numpy`, `matplotlib`, `pytest`) exclusively via `uv` (`FR-010`) in `services/api/pyproject.toml`
+- [X] T003 [P] Add `evaluate:sales-forecast` and `test:regression-eval` convenience scripts in `package.json`
 
 ---
 
@@ -31,9 +31,9 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this foundational phase is complete.
 
-- [ ] T004 [P] Implement Mean Absolute Error (`calculate_mae`) and fold metric helper functions in `data/pipelines/sales_forecast/metrics.py`
-- [ ] T005 [P] Define domain dataclasses (`TemporalCVFold`, `FoldMetricsRecord`, `TemporalCVSummary`, `LearningCurvePoint`, `ModelFitDiagnosis`) with strict type annotations in `data/pipelines/sales_forecast/evaluator.py`
-- [ ] T006 Scaffold CLI argument parser (`--data-path`, `--n-splits`, `--random-seed`, `--eval-dir`, `--docs-path`) and exit code handler (`0`, `1`, `2`, `3`) per `contracts/cli-contract.md` in `scripts/evaluate_sales_forecast.py`
+- [X] T004 [P] Implement Mean Absolute Error (`calculate_mae`) and fold metric helper functions in `data/pipelines/sales_forecast/metrics.py`
+- [X] T005 [P] Define domain dataclasses (`TemporalCVFold`, `FoldMetricsRecord`, `TemporalCVSummary`, `LearningCurvePoint`, `ModelFitDiagnosis`) with strict type annotations in `data/pipelines/sales_forecast/evaluator.py`
+- [X] T006 Scaffold CLI argument parser (`--data-path`, `--n-splits`, `--random-seed`, `--eval-dir`, `--docs-path`) and exit code handler (`0`, `1`, `2`, `3`) per `contracts/cli-contract.md` in `scripts/evaluate_sales_forecast.py`
 
 **Checkpoint**: Foundation ready — User Story implementation can now proceed.
 
@@ -47,10 +47,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implement `create_temporal_cv_splits` in `data/pipelines/sales_forecast/evaluator.py` to generate $\ge 5$ expanding chronological folds (`train_size` = 16, 32, 48, 64, 80; `val_size` = 16) over the 96-month training partition with `DataLeakageError` guards against shuffling, overlap, or `< 5` splits
-- [ ] T008 [US1] Implement `evaluate_temporal_cv` in `data/pipelines/sales_forecast/evaluator.py` to execute per-fold leak-free causal feature engineering (`build_causal_feature_matrix` on visible slice `train_df.iloc[:val_end + 1]`), train-only `StandardScaler` fitting, `RandomForestRegressor(n_estimators=100, random_state=42)` training, and per-fold + cross-fold `mean ± std` (`ddof=1`) MAE and RMSE aggregation
-- [ ] T009 [US1] Implement `export_cv_metrics_json` in `data/pipelines/sales_forecast/evaluator.py` to serialize `data/eval/cv_metrics.json` conforming to `specs/025-regression-model-evaluation/contracts/evaluation-report-schema.json`
-- [ ] T010 [US1] Wire 5-fold temporal cross-validation execution and executive stdout summary table into `scripts/evaluate_sales_forecast.py`
+- [X] T007 [US1] Implement `create_temporal_cv_splits` in `data/pipelines/sales_forecast/evaluator.py` to generate $\ge 5$ expanding chronological folds (`train_size` = 16, 32, 48, 64, 80; `val_size` = 16) over the 96-month training partition with `DataLeakageError` guards against shuffling, overlap, or `< 5` splits
+- [X] T008 [US1] Implement `evaluate_temporal_cv` in `data/pipelines/sales_forecast/evaluator.py` to execute per-fold leak-free causal feature engineering (`build_causal_feature_matrix` on visible slice `train_df.iloc[:val_end + 1]`), train-only `StandardScaler` fitting, `RandomForestRegressor(n_estimators=100, random_state=42)` training, and per-fold + cross-fold `mean ± std` (`ddof=1`) MAE and RMSE aggregation
+- [X] T009 [US1] Implement `export_cv_metrics_json` in `data/pipelines/sales_forecast/evaluator.py` to serialize `data/eval/cv_metrics.json` conforming to `specs/025-regression-model-evaluation/contracts/evaluation-report-schema.json`
+- [X] T010 [US1] Wire 5-fold temporal cross-validation execution and executive stdout summary table into `scripts/evaluate_sales_forecast.py`
 
 **Checkpoint**: User Story 1 is functional and independently testable as an MVP increment.
 
@@ -64,11 +64,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Implement `compute_learning_curve` in `data/pipelines/sales_forecast/evaluator.py` to extract chronological training sizes (`16, 32, 48, 64, 80` months), in-sample vs. out-of-sample MAE/RMSE trajectories, and generalization gap ratios
-- [ ] T012 [P] [US2] Implement `render_learning_curve` in `data/pipelines/sales_forecast/visualizer.py` to plot Training vs. Validation MAE and RMSE curves across chronological training sample sizes and save a 300 DPI chart to `data/eval/learning_curve.png`
-- [ ] T013 [US2] Implement `classify_model_fit` in `data/pipelines/sales_forecast/evaluator.py` to evaluate the training-to-validation error ratio, fold standard deviation, and secular trend ceiling, returning a typed `ModelFitDiagnosis` (`well-fitted`, `underfitting`, or `overfitting`) with root-cause and corrective action
-- [ ] T014 [US2] Implement `generate_evaluation_report` in `data/pipelines/sales_forecast/evaluator.py` to write `data/eval/evaluation_report.md` containing the explicit fit classification, 5-fold `mean ± std` metric table, learning curve convergence analysis, targeted corrective action, and staging readiness verdict
-- [ ] T015 [US2] Integrate learning curve rendering (`data/eval/learning_curve.png`) and technical evaluation report generation (`data/eval/evaluation_report.md`) into `scripts/evaluate_sales_forecast.py`
+- [X] T011 [P] [US2] Implement `compute_learning_curve` in `data/pipelines/sales_forecast/evaluator.py` to extract chronological training sizes (`16, 32, 48, 64, 80` months), in-sample vs. out-of-sample MAE/RMSE trajectories, and generalization gap ratios
+- [X] T012 [P] [US2] Implement `render_learning_curve` in `data/pipelines/sales_forecast/visualizer.py` to plot Training vs. Validation MAE and RMSE curves across chronological training sample sizes and save a 300 DPI chart to `data/eval/learning_curve.png`
+- [X] T013 [US2] Implement `classify_model_fit` in `data/pipelines/sales_forecast/evaluator.py` to evaluate the training-to-validation error ratio, fold standard deviation, and secular trend ceiling, returning a typed `ModelFitDiagnosis` (`well-fitted`, `underfitting`, or `overfitting`) with root-cause and corrective action
+- [X] T014 [US2] Implement `generate_evaluation_report` in `data/pipelines/sales_forecast/evaluator.py` to write `data/eval/evaluation_report.md` containing the explicit fit classification, 5-fold `mean ± std` metric table, learning curve convergence analysis, targeted corrective action, and staging readiness verdict
+- [X] T015 [US2] Integrate learning curve rendering (`data/eval/learning_curve.png`) and technical evaluation report generation (`data/eval/evaluation_report.md`) into `scripts/evaluate_sales_forecast.py`
 
 **Checkpoint**: User Stories 1 and 2 are complete and produce `data/eval/learning_curve.png`, `data/eval/evaluation_report.md`, and `data/eval/cv_metrics.json`.
 
@@ -82,8 +82,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T016 [US3] Implement `generate_business_metric_doc` in `data/pipelines/sales_forecast/evaluator.py` to generate `docs/model-eval.md` with empirical 5-fold Training & Validation MAE and RMSE tables, mathematical comparisons, stakeholder cost asymmetry analysis (Ana, Carlos, Thomas across Los Angeles 60% / Zaragoza 40% hubs), and primary metric justification
-- [ ] T017 [US3] Integrate `docs/model-eval.md` generation via `--docs-path` CLI option in `scripts/evaluate_sales_forecast.py` and execute the CLI to populate `docs/model-eval.md`, `data/eval/evaluation_report.md`, `data/eval/learning_curve.png`, and `data/eval/cv_metrics.json`
+- [X] T016 [US3] Implement `generate_business_metric_doc` in `data/pipelines/sales_forecast/evaluator.py` to generate `docs/model-eval.md` with empirical 5-fold Training & Validation MAE and RMSE tables, mathematical comparisons, stakeholder cost asymmetry analysis (Ana, Carlos, Thomas across Los Angeles 60% / Zaragoza 40% hubs), and primary metric justification
+- [X] T017 [US3] Integrate `docs/model-eval.md` generation via `--docs-path` CLI option in `scripts/evaluate_sales_forecast.py` and execute the CLI to populate `docs/model-eval.md`, `data/eval/evaluation_report.md`, `data/eval/learning_curve.png`, and `data/eval/cv_metrics.json`
 
 **Checkpoint**: User Stories 1, 2, and 3 are complete with all documentation and visual artifacts generated.
 
@@ -97,9 +97,9 @@
 
 ### Tests for User Story 4
 
-- [ ] T018 [P] [US4] Implement `test_temporal_cv_fold_count_and_monotonic_ordering` and `test_temporal_cv_rejects_shuffled_or_insufficient_splits` in `tests/pipelines/test_regression_evaluation.py` to assert $\ge 5$ folds, strictly consecutive monotonic indices, `max(train_idx) < min(val_idx)`, zero overlap, hold-out test isolation, and `DataLeakageError` on invalid splits
-- [ ] T019 [P] [US4] Implement `test_per_fold_scaler_and_feature_isolation` in `tests/pipelines/test_regression_evaluation.py` to verify that mutating future fold revenue values does not alter earlier fold feature matrices or `StandardScaler` parameters
-- [ ] T020 [P] [US4] Implement `test_mae_and_rmse_mean_std_aggregation` and `test_learning_curve_and_reports_generation` in `tests/pipelines/test_regression_evaluation.py` to verify `mean ± std` calculations, `data/eval/learning_curve.png` creation, `data/eval/evaluation_report.md` fit classification, `docs/model-eval.md` domain coverage, and `data/eval/cv_metrics.json` schema compliance
+- [X] T018 [P] [US4] Implement `test_temporal_cv_fold_count_and_monotonic_ordering` and `test_temporal_cv_rejects_shuffled_or_insufficient_splits` in `tests/pipelines/test_regression_evaluation.py` to assert $\ge 5$ folds, strictly consecutive monotonic indices, `max(train_idx) < min(val_idx)`, zero overlap, hold-out test isolation, and `DataLeakageError` on invalid splits
+- [X] T019 [P] [US4] Implement `test_per_fold_scaler_and_feature_isolation` in `tests/pipelines/test_regression_evaluation.py` to verify that mutating future fold revenue values does not alter earlier fold feature matrices or `StandardScaler` parameters
+- [X] T020 [P] [US4] Implement `test_mae_and_rmse_mean_std_aggregation` and `test_learning_curve_and_reports_generation` in `tests/pipelines/test_regression_evaluation.py` to verify `mean ± std` calculations, `data/eval/learning_curve.png` creation, `data/eval/evaluation_report.md` fit classification, `docs/model-eval.md` domain coverage, and `data/eval/cv_metrics.json` schema compliance
 
 **Checkpoint**: All user stories (`US1` through `US4`) are implemented and verified by automated unit tests.
 
@@ -109,8 +109,8 @@
 
 **Purpose**: Package export hygiene, static type/build verification, and end-to-end quickstart validation.
 
-- [ ] T021 [P] Export new evaluation classes and functions (`TemporalCVFold`, `FoldMetricsRecord`, `TemporalCVSummary`, `LearningCurvePoint`, `ModelFitDiagnosis`, `calculate_mae`, `create_temporal_cv_splits`, `evaluate_temporal_cv`, `compute_learning_curve`, `classify_model_fit`, `render_learning_curve`, `generate_evaluation_report`, `generate_business_metric_doc`, `export_cv_metrics_json`) in `data/pipelines/sales_forecast/__init__.py`
-- [ ] T022 Run end-to-end validation per `specs/025-regression-model-evaluation/quickstart.md` (`uv run --project services/api pytest tests/pipelines/ -v`, CLI execution of `scripts/evaluate_sales_forecast.py`, and `npm run typecheck`) to confirm zero regressions across the monorepo
+- [X] T021 [P] Export new evaluation classes and functions (`TemporalCVFold`, `FoldMetricsRecord`, `TemporalCVSummary`, `LearningCurvePoint`, `ModelFitDiagnosis`, `calculate_mae`, `create_temporal_cv_splits`, `evaluate_temporal_cv`, `compute_learning_curve`, `classify_model_fit`, `render_learning_curve`, `generate_evaluation_report`, `generate_business_metric_doc`, `export_cv_metrics_json`) in `data/pipelines/sales_forecast/__init__.py`
+- [X] T022 Run end-to-end validation per `specs/025-regression-model-evaluation/quickstart.md` (`uv run --project services/api pytest tests/pipelines/ -v`, CLI execution of `scripts/evaluate_sales_forecast.py`, and `npm run typecheck`) to confirm zero regressions across the monorepo
 
 ---
 

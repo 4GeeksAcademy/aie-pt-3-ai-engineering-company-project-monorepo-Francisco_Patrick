@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend safe for CLI / CI environments
@@ -19,6 +19,9 @@ import numpy as np
 import pandas as pd
 
 from data.pipelines.sales_forecast.model import ForecastPredictionPoint
+
+if TYPE_CHECKING:
+    from data.pipelines.sales_forecast.evaluator import LearningCurvePoint, TemporalCVSummary
 
 
 def render_forecast_visualization(
@@ -157,6 +160,203 @@ def render_forecast_visualization(
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
 
+    fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+
+    return path
+
+
+def render_learning_curve(
+    learning_curve: Sequence["LearningCurvePoint"],
+    output_path: str | Path = Path("data/eval/learning_curve.png"),
+    cv_summary: "TemporalCVSummary | None" = None,
+    dpi: int = 300,
+) -> Path:
+    """Render high-resolution learning curve comparing Training vs. Validation MAE and RMSE.
+
+    Plots Training Error and Validation Error across increasing chronological training sample
+    sizes (N = 16, 32, 48, 64, 80 months) in a two-panel diagnostic layout (RMSE primary panel
+    and MAE secondary panel) with generalization gap shading and mean +/- std callouts.
+
+    Args:
+        learning_curve: Sequence of LearningCurvePoint objects ordered by increasing train_size.
+        output_path: Destination file path for the PNG chart (default: data/eval/learning_curve.png).
+        cv_summary: Optional TemporalCVSummary for displaying aggregate mean +/- std bands in title/legend.
+        dpi: Image resolution in dots per inch (default: 300).
+
+    Returns:
+        Path: Resolved path of the saved PNG image.
+    """
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    train_sizes = np.array([pt.train_size for pt in learning_curve], dtype=int)
+    train_rmse = np.array([pt.train_rmse_eur for pt in learning_curve], dtype=float)
+    val_rmse = np.array([pt.val_rmse_eur for pt in learning_curve], dtype=float)
+    train_mae = np.array([pt.train_mae_eur for pt in learning_curve], dtype=float)
+    val_mae = np.array([pt.val_mae_eur for pt in learning_curve], dtype=float)
+
+    fig, (ax_rmse, ax_mae) = plt.subplots(1, 2, figsize=(15, 6.5), dpi=dpi, sharex=True)
+
+    eur_formatter = ticker.FuncFormatter(lambda x, p: f"€{x:,.0f}")
+
+    # Panel 1: RMSE Learning Curve (Primary Decision Metric)
+    ax_rmse.fill_between(
+        train_sizes,
+        train_rmse,
+        val_rmse,
+        color="#f97316",
+        alpha=0.16,
+        label="Generalization Gap (Val RMSE − Train RMSE)",
+        zorder=2,
+    )
+    ax_rmse.plot(
+        train_sizes,
+        val_rmse,
+        color="#dc2626",
+        linestyle="-",
+        linewidth=2.6,
+        marker="o",
+        markersize=7,
+        label="Validation RMSE (Out-of-Sample Fold)",
+        zorder=4,
+    )
+    ax_rmse.plot(
+        train_sizes,
+        train_rmse,
+        color="#2563eb",
+        linestyle="--",
+        linewidth=2.4,
+        marker="s",
+        markersize=6,
+        label="Training RMSE (In-Sample Fold)",
+        zorder=3,
+    )
+
+    for sz, tr, vr in zip(train_sizes, train_rmse, val_rmse):
+        ax_rmse.annotate(
+            f"€{vr:,.0f}",
+            xy=(sz, vr),
+            xytext=(0, 10),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8.5,
+            fontweight="bold",
+            color="#991b1b",
+        )
+        ax_rmse.annotate(
+            f"€{tr:,.0f}",
+            xy=(sz, tr),
+            xytext=(0, -15),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8.0,
+            color="#1e40af",
+        )
+
+    ax_rmse.set_title(
+        "Primary Metric: RMSE vs. Chronological Training Size",
+        fontsize=11.5,
+        fontweight="bold",
+        color="#0f172a",
+        pad=12,
+    )
+    ax_rmse.set_xlabel("Chronological Training Window Size (Months)", fontsize=10.5, labelpad=8)
+    ax_rmse.set_ylabel("Root Mean Squared Error — RMSE (EUR)", fontsize=10.5, labelpad=8)
+    ax_rmse.set_xticks(train_sizes)
+    ax_rmse.set_xticklabels([f"{s}m\n(Fold {i + 1})" for i, s in enumerate(train_sizes)])
+    ax_rmse.yaxis.set_major_formatter(eur_formatter)
+    ax_rmse.set_ylim(bottom=0, top=float(np.max(val_rmse)) * 1.22)
+    ax_rmse.grid(True, linestyle=":", alpha=0.6, color="#94a3b8")
+    ax_rmse.legend(loc="upper right", frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=9)
+
+    # Panel 2: MAE Learning Curve (Linear Executive Interpretation Metric)
+    ax_mae.fill_between(
+        train_sizes,
+        train_mae,
+        val_mae,
+        color="#eab308",
+        alpha=0.16,
+        label="Generalization Gap (Val MAE − Train MAE)",
+        zorder=2,
+    )
+    ax_mae.plot(
+        train_sizes,
+        val_mae,
+        color="#d97706",
+        linestyle="-",
+        linewidth=2.6,
+        marker="o",
+        markersize=7,
+        label="Validation MAE (Out-of-Sample Fold)",
+        zorder=4,
+    )
+    ax_mae.plot(
+        train_sizes,
+        train_mae,
+        color="#059669",
+        linestyle="--",
+        linewidth=2.4,
+        marker="s",
+        markersize=6,
+        label="Training MAE (In-Sample Fold)",
+        zorder=3,
+    )
+
+    for sz, tm, vm in zip(train_sizes, train_mae, val_mae):
+        ax_mae.annotate(
+            f"€{vm:,.0f}",
+            xy=(sz, vm),
+            xytext=(0, 10),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8.5,
+            fontweight="bold",
+            color="#92400e",
+        )
+        ax_mae.annotate(
+            f"€{tm:,.0f}",
+            xy=(sz, tm),
+            xytext=(0, -15),
+            textcoords="offset points",
+            ha="center",
+            fontsize=8.0,
+            color="#065f46",
+        )
+
+    ax_mae.set_title(
+        "Secondary Metric: MAE vs. Chronological Training Size",
+        fontsize=11.5,
+        fontweight="bold",
+        color="#0f172a",
+        pad=12,
+    )
+    ax_mae.set_xlabel("Chronological Training Window Size (Months)", fontsize=10.5, labelpad=8)
+    ax_mae.set_ylabel("Mean Absolute Error — MAE (EUR)", fontsize=10.5, labelpad=8)
+    ax_mae.set_xticks(train_sizes)
+    ax_mae.set_xticklabels([f"{s}m\n(Fold {i + 1})" for i, s in enumerate(train_sizes)])
+    ax_mae.yaxis.set_major_formatter(eur_formatter)
+    ax_mae.set_ylim(bottom=0, top=float(np.max(val_mae)) * 1.22)
+    ax_mae.grid(True, linestyle=":", alpha=0.6, color="#94a3b8")
+    ax_mae.legend(loc="upper right", frameon=True, facecolor="#f8fafc", edgecolor="#cbd5e1", fontsize=9)
+
+    subtitle = (
+        f"5-Fold Summary — Train RMSE: {cv_summary.formatted_train_rmse} | Val RMSE: {cv_summary.formatted_val_rmse} | "
+        f"Train MAE: {cv_summary.formatted_train_mae} | Val MAE: {cv_summary.formatted_val_mae}"
+        if cv_summary is not None
+        else "5-Fold Expanding-Window Chronological Cross-Validation (96-Month Training Partition, 2016–2023)"
+    )
+
+    fig.suptitle(
+        "TrackFlow Sales Forecasting — Temporal Learning Curve & Fit Diagnosis (Overfitting Gap Analysis)\n"
+        + subtitle,
+        fontsize=12.5,
+        fontweight="bold",
+        color="#0f172a",
+        y=0.98,
+    )
+
+    plt.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(path, dpi=dpi)
     plt.close(fig)
 
