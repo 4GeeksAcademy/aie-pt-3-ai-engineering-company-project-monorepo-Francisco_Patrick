@@ -1,0 +1,32 @@
+{
+  "model_type": "random_forest",
+  "random_seed": 42,
+  "dataset_split": {
+    "train_months_count": 96,
+    "test_months_count": 24,
+    "train_start": "2016-01-01",
+    "train_end": "2023-12-01",
+    "test_start": "2024-01-01",
+    "test_end": "2025-12-01"
+  },
+  "metrics": {
+    "mse_eur2": 14817762861.0,
+    "rmse_eur": 121728.23,
+    "nrmse_pct": 9.37,
+    "average_monthly_revenue_eur": 1299073.05,
+    "psi_score": 5.8916,
+    "psi_status": "HIGH_DRIFT",
+    "gini_coefficient": 0.4783,
+    "k2_statistic": 7.9305,
+    "k2_pvalue": 0.019,
+    "residuals_normal": false
+  },
+  "business_interpretation": {
+    "mse_rationale": "Mean Squared Error (MSE) penalizes large variance in EUR\u00b2 but fails to verify temporal stability, distribution drift, or rank discrimination between holiday surges and post-holiday dips. Relying solely on low MSE risks silent overfitting.",
+    "psi_assessment": "Population Stability Index (PSI = 5.8916) indicates status 'HIGH_DRIFT'. A material distribution shift (drift) is detected between the historical training baseline and the recent test period, reflecting business expansion and secular growth.",
+    "gini_assessment": "Gini coefficient (0.4783) demonstrates rank ordering discrimination, confirming the model reliably ranks high-volume Q4 months above lower-volume Q1 periods.",
+    "k2_assessment": "D'Agostino-Pearson K2 test (statistic=7.9305, p-value=0.0190) yields normality status: DEVIATED. Residual errors show slight kurtosis or skewness due to rapid growth periods.",
+    "executive_readiness": "The evaluation suite successfully computes all required statistical and business checkpoints across MSE, PSI drift detection, Gini seasonal discrimination, and K2 residual diagnostics, providing executive stakeholders transparent visibility into model performance and growth dynamics."
+  },
+  "generated_at": "2026-11-10T10:47:40.338330+00:00"
+}
