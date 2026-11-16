@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.internal/schemas/regression-cv-evaluation.json",
+  "title": "TrackFlow Regression Temporal Cross-Validation Evaluation Summary",
+  "type": "object",
+  "required": [
+    "model_type",
+    "random_seed",
+    "n_splits",
+    "train_partition_months",
+    "summary_metrics",
+    "folds",
+    "diagnosis",
+    "generated_at"
+  ],
+  "properties": {
+    "model_type": {
+      "type": "string",
+      "enum": ["random_forest", "xgboost"]
+    },
+    "random_seed": {
+      "type": "integer"
+    },
+    "n_splits": {
+      "type": "integer",
+      "minimum": 5
+    },
+    "train_partition_months": {
+      "type": "integer",
+      "const": 96
+    },
+    "summary_metrics": {
+      "type": "object",
+      "required": [
+        "train_mae_mean_eur",
+        "train_mae_std_eur",
+        "val_mae_mean_eur",
+        "val_mae_std_eur",
+        "train_rmse_mean_eur",
+        "train_rmse_std_eur",
+        "val_rmse_mean_eur",
+        "val_rmse_std_eur",
+        "formatted_train_mae",
+        "formatted_val_mae",
+        "formatted_train_rmse",
+        "formatted_val_rmse"
+      ],
+      "properties": {
+        "train_mae_mean_eur": { "type": "number", "minimum": 0 },
+        "train_mae_std_eur": { "type": "number", "minimum": 0 },
+        "val_mae_mean_eur": { "type": "number", "minimum": 0 },
+        "val_mae_std_eur": { "type": "number", "minimum": 0 },
+        "train_rmse_mean_eur": { "type": "number", "minimum": 0 },
+        "train_rmse_std_eur": { "type": "number", "minimum": 0 },
+        "val_rmse_mean_eur": { "type": "number", "minimum": 0 },
+        "val_rmse_std_eur": { "type": "number", "minimum": 0 },
+        "formatted_train_mae": { "type": "string", "pattern": "±" },
+        "formatted_val_mae": { "type": "string", "pattern": "±" },
+        "formatted_train_rmse": { "type": "string", "pattern": "±" },
+        "formatted_val_rmse": { "type": "string", "pattern": "±" }
+      }
+    },
+    "folds": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "fold_index",
+          "train_size",
+          "val_size",
+          "train_window",
+          "val_window",
+          "train_mae_eur",
+          "val_mae_eur",
+          "train_rmse_eur",
+          "val_rmse_eur"
+        ],
+        "properties": {
+          "fold_index": { "type": "integer", "minimum": 1 },
+          "train_size": { "type": "integer", "minimum": 1 },
+          "val_size": { "type": "integer", "minimum": 1 },
+          "train_window": { "type": "string" },
+          "val_window": { "type": "string" },
+          "train_mae_eur": { "type": "number", "minimum": 0 },
+          "val_mae_eur": { "type": "number", "minimum": 0 },
+          "train_rmse_eur": { "type": "number", "minimum": 0 },
+          "val_rmse_eur": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "required": [
+        "fit_classification",
+        "primary_metric",
+        "generalization_gap_ratio",
+        "root_cause",
+        "corrective_action",
+        "staging_decision"
+      ],
+      "properties": {
+        "fit_classification": {
+          "type": "string",
+          "enum": ["well-fitted", "underfitting", "overfitting"]
+        },
+        "primary_metric": {
+          "type": "string",
+          "enum": ["RMSE", "MAE"]
+        },
+        "generalization_gap_ratio": { "type": "number", "minimum": 0 },
+        "root_cause": { "type": "string", "minLength": 20 },
+        "corrective_action": { "type": "string", "minLength": 20 },
+        "staging_decision": {
+          "type": "string",
+          "enum": ["HOLD_REQUIRES_REMEDIATION", "CONDITIONAL_PROMOTION", "PROMOTE_TO_STAGING"]
+        }
+      }
+    },
+    "generated_at": {
+      "type": "string"
+    }
+  }
+}
+

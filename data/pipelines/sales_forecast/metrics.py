@@ -39,6 +39,65 @@ class ModelEvaluationSummary:
     generated_at: str
 
 
+def calculate_mae(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> float:
+    """Calculate Mean Absolute Error (MAE) in EUR.
+
+    Args:
+        y_true: Ground truth observed revenues in EUR.
+        y_pred: Predicted revenues in EUR.
+
+    Returns:
+        float: Mean Absolute Error in EUR rounded to 2 decimal places.
+    """
+    y_true_arr = np.asarray(y_true, dtype=float).ravel()
+    y_pred_arr = np.asarray(y_pred, dtype=float).ravel()
+    mae = float(np.mean(np.abs(y_true_arr - y_pred_arr)))
+    return round(mae, 2)
+
+
+def calculate_rmse(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> float:
+    """Calculate Root Mean Squared Error (RMSE) in EUR.
+
+    Args:
+        y_true: Ground truth observed revenues in EUR.
+        y_pred: Predicted revenues in EUR.
+
+    Returns:
+        float: Root Mean Squared Error in EUR rounded to 2 decimal places.
+    """
+    y_true_arr = np.asarray(y_true, dtype=float).ravel()
+    y_pred_arr = np.asarray(y_pred, dtype=float).ravel()
+    rmse = float(np.sqrt(np.mean(np.square(y_true_arr - y_pred_arr))))
+    return round(rmse, 2)
+
+
+def aggregate_fold_metric(
+    values: list[float] | np.ndarray,
+) -> Tuple[float, float, str]:
+    """Compute sample mean, sample standard deviation (ddof=1), and formatted EUR string across folds.
+
+    Args:
+        values: Sequence of per-fold metric values in EUR.
+
+    Returns:
+        Tuple[float, float, str]:
+            - mean_eur: Sample mean rounded to 2 decimal places.
+            - std_eur: Sample standard deviation (ddof=1) rounded to 2 decimal places.
+            - formatted: Human-readable '€X,XXX.XX ± €Y,YYY.YY' string.
+    """
+    arr = np.asarray(values, dtype=float).ravel()
+    mean_val = round(float(np.mean(arr)), 2) if len(arr) > 0 else 0.0
+    std_val = round(float(np.std(arr, ddof=1)), 2) if len(arr) > 1 else 0.0
+    formatted = f"€{mean_val:,.2f} ± €{std_val:,.2f}"
+    return mean_val, std_val, formatted
+
+
 def calculate_mse_and_nrmse(
     y_true: np.ndarray,
     y_pred: np.ndarray,

@@ -10,7 +10,9 @@
     "test:backend": "uv run --project services/api pytest services/api/tests/ -v",
     "test:python": "uv run --project services/api pytest tests/ -v",
     "test:sales-forecast": "uv run --project services/api pytest tests/pipelines/test_sales_forecast.py -v",
-    "train:sales-forecast": "uv run --project services/api python scripts/train_sales_forecast.py --data-path data/raw/trackflow_sales.csv --output-dir reports"
+    "test:regression-eval": "uv run --project services/api pytest tests/pipelines/test_regression_evaluation.py -v",
+    "train:sales-forecast": "uv run --project services/api python scripts/train_sales_forecast.py --data-path data/raw/trackflow_sales.csv --output-dir reports",
+    "evaluate:sales-forecast": "uv run --project services/api python scripts/evaluate_sales_forecast.py --data-path data/raw/trackflow_sales.csv --n-splits 5 --random-seed 42 --eval-dir data/eval --docs-path docs/model-eval.md"
   },
   "devDependencies": {
     "typescript": "^5.9.2"
