@@ -25,6 +25,8 @@ venv/
 # Database & local state
 db.json
 **/db.json
+.qdrant_storage/
+**/.qdrant_storage/
 *.csv
 !data/raw/*.csv
 

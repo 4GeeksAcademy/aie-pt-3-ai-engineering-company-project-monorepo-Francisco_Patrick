@@ -10,3 +10,4 @@ export * from "./auth";
 export * from "./incidents";
 export * from "./telemetry";
 export * from "./reporting";
+export * from "./knowledge";

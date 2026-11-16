@@ -25,6 +25,7 @@ from domain.common.exceptions import (
     UserInactiveError,
     ValidationErrorDetail,
 )
+from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
 
 
 async def validation_exception_handler(
@@ -50,7 +51,9 @@ async def validation_exception_handler(
     )
     status_code = (
         status.HTTP_422_UNPROCESSABLE_CONTENT
-        if "/telemetry" in request.url.path or "/reporting" in request.url.path
+        if "/telemetry" in request.url.path
+        or "/reporting" in request.url.path
+        or "/knowledge" in request.url.path
         else status.HTTP_400_BAD_REQUEST
     )
     return JSONResponse(
@@ -183,6 +186,21 @@ async def business_rule_violation_handler(
     )
 
 
+async def knowledge_base_unavailable_handler(
+    request: Request, exc: KnowledgeBaseUnavailableException
+) -> JSONResponse:
+    """Map domain KnowledgeBaseUnavailableException to HTTP 503 Service Unavailable."""
+    payload = ErrorResponsePayload(
+        error="SERVICE_UNAVAILABLE",
+        message=exc.message,
+        detail=exc.message,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=payload.model_dump(),
+    )
+
+
 async def domain_exception_handler(
     request: Request, exc: DomainException
 ) -> JSONResponse:
@@ -226,6 +244,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AuthenticationError, authentication_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(AuthorizationError, authorization_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(BusinessRuleViolationError, business_rule_violation_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(KnowledgeBaseUnavailableException, knowledge_base_unavailable_handler)  # type: ignore[arg-type]
     app.add_exception_handler(DomainException, domain_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)  # type: ignore[arg-type]
 

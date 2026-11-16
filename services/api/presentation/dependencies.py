@@ -30,7 +30,13 @@ from application.telemetry.telemetry_service import TelemetryService
 from application.telemetry.cache import TelemetryReportCache
 from application.telemetry.report_service import TelemetryReportService
 from application.incidents.csv_report_service import IncidentCsvReportService
+from application.services.knowledge_service import KnowledgeService
 from domain.telemetry.ports import TelemetryRepositoryPort
+from domain.knowledge.ports import (
+    EmbeddingServicePort,
+    LLMGenerationPort,
+    VectorStorePort,
+)
 
 if TYPE_CHECKING:
     from application.services.email_service import EmailService
@@ -207,6 +213,77 @@ def get_incident_csv_report_service_dep(
     return IncidentCsvReportService(cache=cache, analyzer=analyze_csv_stream)
 
 
+# --- Knowledge Base & RAG Dependencies ---
+_knowledge_vector_store_singleton: Optional[VectorStorePort] = None
+_knowledge_embedding_singleton: Optional[EmbeddingServicePort] = None
+_knowledge_llm_singleton: Optional[LLMGenerationPort] = None
+
+
+def get_embedding_service_dep() -> EmbeddingServicePort:
+    """Dependency provider for EmbeddingServicePort (FastEmbedAdapter)."""
+    global _knowledge_embedding_singleton
+    if _knowledge_embedding_singleton is None:
+        from infrastructure.adapters.embedding_adapter import FastEmbedAdapter
+        _knowledge_embedding_singleton = FastEmbedAdapter()
+    return _knowledge_embedding_singleton
+
+
+def get_vector_store_dep(
+    embedder: EmbeddingServicePort = Depends(get_embedding_service_dep),
+) -> VectorStorePort:
+    """Dependency provider for VectorStorePort (QdrantVectorStoreAdapter).
+
+    Automatically seeds the canonical 4 corporate policy documents on first initialization
+    when the collection is empty so the API is immediately ready in dev/CI environments.
+    """
+    global _knowledge_vector_store_singleton
+    if _knowledge_vector_store_singleton is None:
+        import dataclasses
+        import os
+        from pathlib import Path
+        from application.services.chunking import MarkdownSemanticChunker
+        from infrastructure.adapters.qdrant_vector_store_adapter import QdrantVectorStoreAdapter
+
+        adapter = QdrantVectorStoreAdapter()
+        adapter.ensure_collection()
+        health = adapter.get_health_status()
+        if health.get("indexed_points_count", 0) == 0:
+            repo_root = Path(__file__).resolve().parent.parent.parent.parent
+            docs_dir = repo_root / "docs" / "company-knowledge-base"
+            if docs_dir.exists():
+                chunker = MarkdownSemanticChunker()
+                _, chunks = chunker.load_and_chunk_directory(docs_dir)
+                vectors = embedder.embed_documents([c.text for c in chunks])
+                embedded_chunks = [
+                    dataclasses.replace(c, vector=v) for c, v in zip(chunks, vectors)
+                ]
+                adapter.upsert_chunks(embedded_chunks)
+        _knowledge_vector_store_singleton = adapter
+    return _knowledge_vector_store_singleton
+
+
+def get_llm_generation_dep() -> LLMGenerationPort:
+    """Dependency provider for LLMGenerationPort (GroundedGenerationAdapter)."""
+    global _knowledge_llm_singleton
+    if _knowledge_llm_singleton is None:
+        from infrastructure.adapters.grounded_generation_adapter import GroundedGenerationAdapter
+        _knowledge_llm_singleton = GroundedGenerationAdapter()
+    return _knowledge_llm_singleton
+
+
+def get_knowledge_service_dep(
+    vector_store: VectorStorePort = Depends(get_vector_store_dep),
+    embedding_service: EmbeddingServicePort = Depends(get_embedding_service_dep),
+    llm_generator: LLMGenerationPort = Depends(get_llm_generation_dep),
+) -> KnowledgeService:
+    """Dependency provider for KnowledgeService orchestrating RAG retrieval and synthesis."""
+    return KnowledgeService(
+        vector_store=vector_store,
+        embedding_service=embedding_service,
+        llm_generator=llm_generator,
+    )
+
+
 # --- Password Reset Collaborators ---
 def get_password_reset_token_repository_dep(
     db: TinyDB = Depends(get_tinydb_dep),
@@ -286,11 +363,14 @@ __all__ = [
     "get_current_admin_user",
     "get_current_user",
     "get_email_service_dep",
+    "get_embedding_service_dep",
     "get_incident_csv_report_service_dep",
     "get_incident_repository_dep",
     "get_incident_service_dep",
     "get_inventory_repository_dep",
     "get_inventory_service_dep",
+    "get_knowledge_service_dep",
+    "get_llm_generation_dep",
     "get_password_reset_token_repository_dep",
     "get_profile_repository_dep",
     "get_profile_service_dep",
@@ -306,5 +386,6 @@ __all__ = [
     "get_tinydb_dep",
     "get_user_repository_dep",
     "get_user_service_dep",
+    "get_vector_store_dep",
     "oauth2_scheme",
 ]

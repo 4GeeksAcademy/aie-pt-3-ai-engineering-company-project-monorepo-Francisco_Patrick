@@ -29,6 +29,7 @@ from presentation.api.v1 import (  # noqa: E402
     auth,
     incidents,
     inventory,
+    knowledge,
     profiles,
     suppliers,
     tasks,
@@ -51,6 +52,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (telemetry.router, f"{API_V1_PREFIX}/telemetry", "/telemetry"),
     (reporting.router, f"{API_V1_PREFIX}/reporting", "/reporting"),
     (tasks.router, f"{API_V1_PREFIX}/tasks", "/tasks"),
+    (knowledge.router, f"{API_V1_PREFIX}/knowledge", "/knowledge"),
 ]
 
 

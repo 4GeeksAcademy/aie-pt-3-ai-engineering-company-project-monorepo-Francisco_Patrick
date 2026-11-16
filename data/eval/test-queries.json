@@ -1,0 +1,92 @@
+[
+  {
+    "id": "eval-001",
+    "query": "What is TrackFlow's standard return window and who covers return shipping costs?",
+    "expected_source_document": "returns-policy",
+    "expected_section_keywords": ["Standard Return Window", "Return Costs", "Window"],
+    "expected_answer_keywords": ["30 days", "client brand", "transit", "error"],
+    "is_out_of_scope": false,
+    "category": "standard_operations"
+  },
+  {
+    "id": "eval-002",
+    "query": "What is the standard monthly storage rate in Los Angeles versus Zaragoza and is there a grace period?",
+    "expected_source_document": "storage-pricing",
+    "expected_section_keywords": ["Standard Storage Rates", "Grace Period", "Rates"],
+    "expected_answer_keywords": ["18 USD", "16 EUR", "30 days"],
+    "is_out_of_scope": false,
+    "category": "standard_operations"
+  },
+  {
+    "id": "eval-003",
+    "query": "Which carrier is recommended for rural deliveries in Aragón and small packages in Spain?",
+    "expected_source_document": "carrier-coverage",
+    "expected_section_keywords": ["Spain", "Zaragoza", "Carrier"],
+    "expected_answer_keywords": ["SEUR", "Aragón", "MRW", "2 kg"],
+    "is_out_of_scope": false,
+    "category": "standard_operations"
+  },
+  {
+    "id": "eval-004",
+    "query": "Can we guarantee the 90% delivery SLA commitment during Black Friday, Christmas, or January Sales?",
+    "expected_source_document": "sla-delivery",
+    "expected_section_keywords": ["Peak Season", "High-Demand", "Exclusions"],
+    "expected_answer_keywords": ["not guarantee", "40%", "Black Friday", "in advance"],
+    "is_out_of_scope": false,
+    "category": "guardrail_peak_season"
+  },
+  {
+    "id": "eval-005",
+    "query": "Can an account manager offer a storage fee discount for a client storing 75 cubic meters per month?",
+    "expected_source_document": "storage-pricing",
+    "expected_section_keywords": ["Volume Discounts", "Preferential", "Miguel Torres"],
+    "expected_answer_keywords": ["50 cubic meters", "Miguel Torres", "cannot"],
+    "is_out_of_scope": false,
+    "category": "guardrail_volume_discount"
+  },
+  {
+    "id": "eval-006",
+    "query": "How do we process an international cross-border return purchased in the US and returned in Spain?",
+    "expected_source_document": "returns-policy",
+    "expected_section_keywords": ["International Returns", "Brand Rules", "Manual"],
+    "expected_answer_keywords": ["manual", "Sofía Ramos", "not covered"],
+    "is_out_of_scope": false,
+    "category": "guardrail_international_returns"
+  },
+  {
+    "id": "eval-007",
+    "query": "Which carriers operate out of Los Angeles for heavy packages, California express, and international shipping?",
+    "expected_source_document": "carrier-coverage",
+    "expected_section_keywords": ["United States", "Los Angeles"],
+    "expected_answer_keywords": ["UPS", "FedEx", "DHL", "5 kg"],
+    "is_out_of_scope": false,
+    "category": "standard_operations"
+  },
+  {
+    "id": "eval-008",
+    "query": "What is our monthly on-time delivery SLA target and what compensation applies if we miss it for two consecutive months?",
+    "expected_source_document": "sla-delivery",
+    "expected_section_keywords": ["SLA Commitment", "Compensation", "Target"],
+    "expected_answer_keywords": ["90%", "two consecutive months", "5%"],
+    "is_out_of_scope": false,
+    "category": "standard_operations"
+  },
+  {
+    "id": "eval-009",
+    "query": "What is TrackFlow's temperature-controlled pharmaceutical cold-chain refrigeration SLA and hazardous material fee?",
+    "expected_source_document": null,
+    "expected_section_keywords": [],
+    "expected_answer_keywords": ["does not contain", "operations"],
+    "is_out_of_scope": true,
+    "category": "out_of_scope_refusal"
+  },
+  {
+    "id": "eval-010",
+    "query": "¿Cuál es el recargo por inventario de baja rotación después de 180 días sin movimiento en el almacén?",
+    "expected_source_document": "storage-pricing",
+    "expected_section_keywords": ["Long-Term Inventory", "Aging", "180"],
+    "expected_answer_keywords": ["150%", "180 days", "181"],
+    "is_out_of_scope": false,
+    "category": "cross_lingual"
+  }
+]

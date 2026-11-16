@@ -1,0 +1,193 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Knowledge Base & RAG API
+  version: 1.0.0
+  description: API endpoints for frontline natural language policy search and retrieval-augmented generation.
+paths:
+  /api/v1/knowledge/query:
+    post:
+      summary: Submit a natural-language query to the TrackFlow corporate knowledge base
+      operationId: queryKnowledgeBase
+      tags:
+        - Knowledge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeQueryRequest'
+            example:
+              query: "What is TrackFlow's standard return window and who covers return shipping costs?"
+              language: "en"
+              top_k: 3
+              min_score: 0.62
+      responses:
+        '200':
+          description: Successful synthesized grounded response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeQueryResponse'
+              example:
+                query: "What is TrackFlow's standard return window and who covers return shipping costs?"
+                answer: "TrackFlow's standard return window is 30 days from delivery, unless a customized window has been negotiated in the client contract. Under standard conditions, return shipping costs are covered by the client brand; TrackFlow covers shipping only when the return is due to a TrackFlow error, such as damage in transit or incorrect delivery."
+                is_refusal: false
+                sources:
+                  - source_document: "returns-policy"
+                    section: "Standard Return Window & Costs"
+                    similarity_score: 0.86
+                execution_time_ms: 124.5
+        '422':
+          description: Validation error for invalid query payload (empty string, out-of-range top_k)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '503':
+          description: Vector database or embedding service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
+
+  /api/v1/knowledge/health:
+    get:
+      summary: Health and collection status check for Qdrant knowledge index
+      operationId: getKnowledgeHealth
+      tags:
+        - Knowledge
+      responses:
+        '200':
+          description: Health details of the knowledge vector index
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeHealthResponse'
+              example:
+                status: "healthy"
+                collection_name: "trackflow_knowledge"
+                indexed_points_count: 12
+                vector_dimensions: 384
+
+components:
+  schemas:
+    KnowledgeQueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 3
+          maxLength: 1000
+          description: Natural language query string
+        language:
+          type: string
+          default: "en"
+          description: Desired response language code
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: Maximum number of candidate chunks to retrieve
+        min_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.62
+          description: Calibrated minimum similarity score threshold
+
+    KnowledgeSourceCitation:
+      type: object
+      required:
+        - source_document
+        - section
+        - similarity_score
+      properties:
+        source_document:
+          type: string
+          description: Canonical source document slug
+        section:
+          type: string
+          description: Subtitle or section name from source document
+        similarity_score:
+          type: number
+          description: Similarity score of the cited chunk
+
+    KnowledgeQueryResponse:
+      type: object
+      required:
+        - query
+        - answer
+        - is_refusal
+        - sources
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+          description: Echoed input query string
+        answer:
+          type: string
+          description: Grounded synthesized natural language response
+        is_refusal:
+          type: boolean
+          description: Flag indicating if the inquiry was refused due to low confidence or missing policy
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeSourceCitation'
+          description: List of source documents and sections supporting the response
+        execution_time_ms:
+          type: number
+          description: End-to-end processing time in milliseconds
+
+    KnowledgeHealthResponse:
+      type: object
+      required:
+        - status
+        - collection_name
+        - indexed_points_count
+        - vector_dimensions
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        collection_name:
+          type: string
+        indexed_points_count:
+          type: integer
+        vector_dimensions:
+          type: integer
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  anyOf:
+                    - type: string
+                    - type: integer
+              msg:
+                type: string
+              type:
+                type: string
+
+    ServiceUnavailableError:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          example: "SERVICE_UNAVAILABLE"
+        message:
+          type: string
+          example: "Knowledge base vector service is temporarily unavailable."
