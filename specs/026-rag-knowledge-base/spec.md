@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Feature: RAG & Knowledge Base. Enable commercial and frontline teams (Account Managers, Business Development, Coordinators) to query internal corporate policies, catalogs, and procedures using natural language and receive grounded, accurate answers in the authentic voice of TrackFlow sales without hallucinations or manual document searching."
+**Input**: User description: "Feature: RAG & Knowledge Base. Enable commercial and frontline teams (Account Managers, Business Development, Coordinators) to query internal corporate policies, catalogs, and procedures using natural language and receive grounded, accurate answers in the authentic voice of TrackFlow sales without hallucinations or manual document searching. Additionally, provide mandatory environment-based configuration variables so administrators and operators can securely configure the LLM API key, select the desired LLM and agent models, and configure the embedding and vector store runtime without hardcoding credentials or model selections."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -114,6 +114,38 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 
 ---
 
+### User Story 5 - Secure Environment Configuration for AI Credentials & Model Selection (Priority: P2)
+
+As a Platform Operator or Developer configuring the TrackFlow Knowledge Base,
+I want to securely provide API keys and specify which language model, agent model, and embedding model the assistant should use via environment configuration files (`.env` and `.env.example`),
+So that sensitive credentials are never hardcoded in source control, and my organization can choose or switch between preferred AI providers and agent models across local, staging, and production environments without modifying code.
+
+**Why this priority**:
+Secure credential management and configurable model selection are mandatory operational requirements. Without documented environment variables for the LLM API key, LLM model, and agent model, users cannot securely connect their own AI provider credentials or customize which models power the knowledge assistant.
+
+**Independent Test**:
+Can be verified by inspecting the environment configuration template (`.env.example`) for all required AI/RAG variables, configuring custom model identifiers and API keys in the environment (`.env`), and confirming that the runtime initializes the configured LLM, agent model, and embedding settings while keeping secret keys strictly unexposed in logs or responses.
+
+**Acceptance Scenarios**:
+
+1. **Given** a new developer or administrator sets up the service from the repository,
+   **When** they inspect the environment configuration template (`.env.example`) and active configuration (`.env`),
+   **Then** clearly documented entries exist for the LLM API key, LLM provider/model name, agent model identifier, embedding model configuration, similarity threshold, and vector store connection parameters.
+
+2. **Given** an operator configures a valid LLM API key and specifies their chosen LLM and agent model identifiers in the environment configuration,
+   **When** the knowledge base processes a user inquiry,
+   **Then** the system reads the configured credentials and model selections from the environment to execute answer synthesis while enforcing all corporate guardrails.
+
+3. **Given** an environment where no external LLM API key is provided (such as offline local development or automated CI pipelines),
+   **When** the knowledge base starts up and processes queries,
+   **Then** the system gracefully operates using the deterministic grounded synthesis fallback without crashing or leaking missing-credential stack traces.
+
+4. **Given** an invalid or unauthorized LLM API key or unreachable external model endpoint is configured,
+   **When** a synthesis call fails at runtime,
+   **Then** the system logs a sanitized diagnostic warning (never exposing the raw API key) and either falls back gracefully to deterministic grounded synthesis or returns a safe, user-friendly service status message.
+
+---
+
 ### Edge Cases
 
 - **Multilingual Inquiries**: If a user submits a query in Spanish (e.g., "¿Cuál es el recargo por inventario de baja rotación después de 180 días?"), the system must understand the semantic intent and provide an accurate answer aligned with the canonical policy (150% surcharge on standard rate starting on day 181).
@@ -121,6 +153,7 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 - **Empty or Whitespace-Only Queries**: Submitting an empty or whitespace string must be rejected on the client side with a helpful validation message before executing unnecessary processing.
 - **Long-tail Multi-Part Questions**: If a user asks a compound question covering both SLA commitments and return shipping responsibilities, the response must address both topics with their respective source policies or distinguish which part lacks documentation.
 - **Document Versioning & Index Updates**: When source documents are refreshed, re-indexing must be idempotent, replacing prior knowledge without creating duplicate records or outdated orphaned fragments.
+- **Missing, Placeholder, or Malformed Environment Credentials**: If the LLM API key variable is empty, set to a placeholder template value, or omitted in local/CI environments, the system must detect this safely without exposing secret values in logs or error payloads and fall back to deterministic grounded synthesis.
 
 ---
 
@@ -147,6 +180,9 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 - **FR-013**: System MUST expose a dedicated query endpoint that accepts a natural language question and returns the synthesized answer string.
 - **FR-014**: System MUST provide a responsive web interface allowing team members to enter natural language questions, view active loading states, and read formatted responses with clear error handling.
 - **FR-015**: System MUST achieve a minimum benchmark of 80% Recall@3 across a standardized evaluation suite of at least 8 test queries covering all source documents, including peak demand scenarios.
+- **FR-016**: System MUST support externalized environment configuration (via `.env` and documented in `.env.example`) for setting the LLM API key, LLM provider, LLM generation model identifier, and agent model identifier without requiring source code changes.
+- **FR-017**: System MUST support environment variables to configure the embedding model identifier, similarity threshold, and vector store connection parameters alongside the LLM and agent settings.
+- **FR-018**: System MUST protect sensitive AI credentials by never logging, returning in API responses, or exposing in error messages the configured LLM API key, while providing a deterministic grounded fallback when no live external API key is configured.
 
 ---
 
@@ -157,6 +193,7 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 - **Query Request**: A natural language inquiry submitted by a commercial or operations user seeking clarification on corporate logistics rules, SLAs, pricing, or procedures.
 - **Retrieved Context**: The filtered collection of Knowledge Chunks that exceed the minimum similarity threshold for a specific Query Request, used as the factual foundation for generation.
 - **Grounded Answer**: The final natural language response synthesized by the language model using exclusively the Retrieved Context, embodying TrackFlow's commercial voice and upholding contractual guardrails.
+- **AI & Agent Runtime Configuration**: Represents the environment-driven settings governing model execution, including the secret API credential, selected LLM provider, primary LLM model identifier, agent model identifier, embedding model selection, and retrieval similarity threshold.
 
 ---
 
@@ -170,6 +207,7 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 - **SC-004**: Users receive synthesized answers to knowledge queries within 3.5 seconds end-to-end under normal operating conditions.
 - **SC-005**: 100% of responses regarding storage volume discounts, peak season delivery times, and cross-border returns include the mandatory approval constraints (Miguel Torres), seasonal extension warnings (up to +40%), and manual handling designations (Sofía Ramos).
 - **SC-006**: Team members can formulate, submit, and view verified policy answers through the web interface with zero reliance on raw data inspection or direct document navigation.
+- **SC-007**: Operators can configure or switch the LLM API key, LLM model, and agent model solely by updating environment variables (`.env`), with 100% of required variables documented in `.env.example` and zero occurrences of plaintext API keys in source code, logs, or HTTP responses.
 
 ---
 
@@ -180,3 +218,4 @@ Can be tested by navigating to the knowledge search screen, entering questions, 
 - **Separate Model Roles**: Vector embedding generation and conversational text synthesis are treated as separate functional responsibilities handled by distinct models optimized for their respective workloads.
 - **Read-Only Frontline Consumption**: Frontline commercial and customer experience users require read-only query capabilities; document authoring and corpus updates are administrative operations managed via ingestion pipelines.
 - **Network & Host Connectivity**: The underlying vector storage service and model generation endpoints are reachable in the execution environment, with graceful error handling in case of transient network timeouts.
+- **Environment Variable Precedence & Local Defaults**: Environment variables defined in `.env` (and documented in `.env.example`) provide the single source of truth for LLM API credentials, LLM model names, and agent model selection; when unset or left as example placeholders in offline/test environments, safe default model identifiers and deterministic grounded synthesis keep the system operable.

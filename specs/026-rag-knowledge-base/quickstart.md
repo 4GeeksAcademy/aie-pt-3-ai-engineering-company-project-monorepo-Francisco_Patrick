@@ -10,8 +10,26 @@
 
 1. **Python Environment**: Python 3.14+ managed via `uv` in `services/api`.
 2. **Node.js Environment**: Node.js 20+ with npm workspaces for `uis/backoffice` and `packages/shared`.
-3. **Qdrant Vector Database**:
-   - For local development / testing: Automatically boots in `:memory:` mode when `QDRANT_HOST` is unset, requiring no external processes.
+3. **Environment Configuration (`services/api/.env`)**:
+   - Inspect `services/api/.env.example` and ensure `services/api/.env` contains the AI, LLM, Agent, Embedding, and Qdrant configuration variables:
+     ```dotenv
+     # AI, LLM & Agent Runtime Configuration (RAG & Knowledge Base)
+     LLM_API_KEY=your_llm_api_key_here
+     LLM_PROVIDER=gemini
+     LLM_MODEL=gemini-2.5-flash
+     AGENT_MODEL=gemini-2.5-pro
+
+     # Embedding & Vector Store Configuration
+     EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+     USE_FASTEMBED_ONNX=false
+     KNOWLEDGE_SIMILARITY_THRESHOLD=0.62
+     QDRANT_URL=
+     QDRANT_HOST=
+     QDRANT_PORT=6333
+     QDRANT_COLLECTION_NAME=trackflow_knowledge
+     ```
+4. **Qdrant Vector Database**:
+   - For local development / testing: Automatically boots in `:memory:` mode when `QDRANT_HOST` and `QDRANT_URL` are unset, requiring no external processes.
    - For containerized or live operation: Qdrant Docker container running on port 6333 (`docker run -p 6333:6333 qdrant/qdrant`).
 
 ---
@@ -132,6 +150,14 @@ curl -X POST http://localhost:8000/api/v1/knowledge/query \
 - `is_refusal: true`
 - `answer` politely clarifies that TrackFlow documentation lacks information on pharmaceutical refrigeration, with guidance to contact operations leadership.
 - `sources: []` (empty citations list).
+
+---
+
+### Scenario 5: Environment Configuration & Credential Safety Validation (P2)
+1. Verify `services/api/.env.example` contains documented variables: `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `AGENT_MODEL`, `EMBEDDING_MODEL`, `USE_FASTEMBED_ONNX`, `KNOWLEDGE_SIMILARITY_THRESHOLD`, `QDRANT_URL`, `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION_NAME`.
+2. Run with default/placeholder `LLM_API_KEY=your_llm_api_key_here`:
+   - Confirm queries succeed with HTTP 200 using deterministic grounded synthesis fallback.
+   - Confirm `repr(config)` and `config.to_sanitized_dict()` never expose any raw `LLM_API_KEY` value.
 
 ---
 

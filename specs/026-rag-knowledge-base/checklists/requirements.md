@@ -31,6 +31,7 @@
 
 ## Notes
 
-- All validation items passed on initial inspection.
+- All validation items passed on initial and updated inspection.
+- Specification updated to include User Story 5, FR-016..FR-018, AI & Agent Runtime Configuration entity, and SC-007 for mandatory environment configuration of LLM API keys, LLM models, and agent models.
 - Specification strictly adheres to business constraints and operational briefings defined in `trackflow-BRIEFING.en.md` and Monorepo Constitution Version 1.1.0.
-- Ready for planning phase (`/speckit-plan`).
+- Ready for planning phase (`/speckit-plan` or `/speckit-converge`).

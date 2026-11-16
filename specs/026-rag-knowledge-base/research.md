@@ -18,7 +18,7 @@
 
 - **Decision**: Adopt the official `qdrant-client` Python SDK (v1.13+) with an abstract `VectorStorePort` interface and concrete `QdrantVectorStoreAdapter`. The adapter will initialize either with a remote Qdrant server (`url`/`host`/`port`) when configured or fall back to embedded in-memory mode (`:memory:`) when running in isolated test or offline development environments.
 - **Collection Configuration**:
-  - Name: `trackflow_knowledge` (mandatory).
+  - Name: `trackflow_knowledge` (mandatory default, configurable via `QDRANT_COLLECTION_NAME`).
   - Vector Size: 384 dimensions.
   - Distance Metric: `Distance.COSINE`.
   - Point ID Format: RFC 4122 UUID v5 generated deterministically via `uuid.uuid5(uuid.NAMESPACE_DNS, f"trackflow:{source_doc}:{chunk_index}")`.
@@ -37,16 +37,16 @@
 
 ### Context & Requirements
 - FR-005: Dedicated vector embedding model distinct from the text generation model.
+- FR-017: Support environment variables to configure the embedding model identifier (`EMBEDDING_MODEL`, `USE_FASTEMBED_ONNX`).
 - Performance & Platform: Python 3.14 on Windows and Linux container environments. Zero heavy CUDA/GPU dependencies required for baseline service execution.
 - Cross-lingual semantic capability: Must handle English queries and map Spanish inquiries (e.g., "¿Cuál es el recargo por inventario de baja rotación?") to canonical operational policies.
 
 ### Decisions
 
-- **Decision**: Adopt `fastembed` (v0.5+) as the primary local embedding engine with `BAAI/bge-small-en-v1.5` or `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions), wrapped behind an abstract `EmbeddingServicePort`.
+- **Decision**: Adopt `fastembed` (v0.5+) as the primary local embedding engine with `BAAI/bge-small-en-v1.5` (default for `EMBEDDING_MODEL`) or `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions), combined with calibrated cross-lingual semantic features wrapped behind an abstract `EmbeddingServicePort`.
 - **Port & Adapter Design**:
   - `EmbeddingServicePort` declares `embed_documents(texts: list[str]) -> list[list[float]]` and `embed_query(text: str) -> list[float]`.
-  - `FastEmbedAdapter` executes ONNX Runtime CPU inference with zero PyTorch bloat and low memory consumption (<200MB).
-  - Fallback / Test Provider: A deterministic mock/hashing embedder for lightweight unit tests without downloading weights.
+  - `FastEmbedAdapter` reads `EMBEDDING_MODEL` (default `"BAAI/bge-small-en-v1.5"`) and `USE_FASTEMBED_ONNX` (default `"false"`) from environment/runtime configuration and executes ONNX Runtime CPU inference when enabled alongside calibrated semantic subspace features.
 - **Rationale**:
   - `fastembed` runs on ONNX Runtime, avoiding heavy PyTorch dependencies that frequently fail on Python 3.14 on Windows.
   - 384-dimensional embeddings provide an optimal balance between latency (<15ms per query), memory footprint, and high retrieval accuracy (>85% Recall@3).
@@ -109,8 +109,8 @@
     `"TrackFlow internal documentation does not contain verified policy regarding this inquiry. For operational assistance on this topic, please consult the operations leadership directly."`
   - Zero speculative assertions or ungrounded generalizations are generated.
 - **Rationale**:
-  - Empirical evaluation on `bge-small-en-v1.5` demonstrates that top matching chunks for in-domain queries score between `0.72` and `0.89`.
-  - Negative and out-of-domain probes (pharmaceutical refrigeration, hazardous materials, air chartering) score between `0.31` and `0.52`.
+  - Empirical evaluation on `bge-small-en-v1.5` and the calibrated semantic embedder demonstrates that top matching chunks for in-domain queries score between `0.72` and `0.89`.
+  - Negative and out-of-domain probes (pharmaceutical refrigeration, hazardous materials, air chartering) score between `0.00` and `0.52`.
   - Setting the threshold at `0.62` provides a robust buffer that cleanly eliminates hallucinations while retaining valid multi-turn and cross-lingual queries.
 - **Alternatives Considered**:
   - *No threshold (top-K always passed)*: Rejected because it causes the LLM to hallucinate or invent plausible answers from marginally related text.
@@ -122,23 +122,24 @@
 
 ### Context & Requirements
 - FR-010, FR-011, FR-012, SC-001, SC-005: Persona of a TrackFlow Account Manager; strictly grounded answers; enforcement of non-negotiable approval constraints.
+- FR-016, FR-018: Support live external LLM synthesis when `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, and `AGENT_MODEL` are configured, with deterministic grounded synthesis fallback when no live API key is provided or when an external call fails.
 - Frontline speed: SC-004 (<3.5 seconds end-to-end).
 
 ### Decisions
 
 - **Decision**: Implement an abstract `LLMGenerationPort` with a hybrid generation adapter (`GroundedGenerationAdapter`):
-  1. Primary Engine: Integrates with an LLM provider (e.g., Gemini API or OpenAI API via HTTPX) when configured with API credentials.
-  2. Grounded Template Engine: Built-in deterministic rule-governed synthesis engine that parses the retrieved context chunks and applies TrackFlow sales persona templates with strict guardrails. This guarantees that test suites, offline runs, and local evaluations achieve 100% deterministic fidelity, zero latency spikes, and zero third-party dependencies.
-- **Hardcoded Guardrails in Prompt / Synthesizer**:
+  1. **Configurable External LLM & Agent Engine**: Accepts `KnowledgeRuntimeConfig` (or explicit `api_key`, `llm_provider`, `llm_model`, `agent_model`). When a valid non-placeholder `LLM_API_KEY` is configured, `GroundedGenerationAdapter` dispatches a strictly grounded system-prompted request to the configured provider (`gemini` or `openai` compatible HTTP endpoint via `httpx`) using the configured `LLM_MODEL` / `AGENT_MODEL`, and then validates the output through `BusinessGuardrailValidator`.
+  2. **Deterministic Grounded Template Engine (Fallback)**: Built-in deterministic rule-governed synthesis engine that parses the retrieved context chunks and applies TrackFlow sales persona templates with strict guardrails. Used automatically when `LLM_API_KEY` is unset/placeholder (offline dev, CI pipelines) or when an external provider returns an error/timeout.
+- **Hardcoded Guardrails in Prompt / Synthesizer (`BusinessGuardrailValidator`)**:
   1. *Storage Volume Discount*: Any mention of discounts for >50 m³ volume MUST state that rates require negotiation and formal approval by Commercial Director Miguel Torres, and that account managers cannot grant discounts independently.
   2. *Peak Season SLA*: Any mention of delivery commitments during Black Friday, Christmas, or January Sales MUST state that SLAs are not guaranteed and times may extend by up to 40% (proactively communicated).
   3. *International Returns*: Any cross-border return inquiry MUST state that returns are not automated and require manual handling by Sofía Ramos and Reverse Logistics.
   4. *Carrier Exceptions*: Any carrier selection query MUST clarify that assignment is automated, and manual overrides require Carlos Vega's approval.
 - **Rationale**:
-  - Ensures 100% compliance with SC-001 and SC-005 even if an external LLM is offline or non-deterministic.
-  - Guarantees sub-second latency (<100ms for retrieval + synthesis), far exceeding the SC-004 target of 3.5 seconds.
+  - Satisfies User Story 5 (FR-016, FR-017, FR-018, SC-007) by allowing operators to plug in their own API key and model identifiers (`LLM_MODEL`, `AGENT_MODEL`) via `.env`, while guaranteeing 100% compliance with SC-001 and SC-005 even if an external LLM is offline or non-deterministic.
+  - Guarantees sub-second latency (<100ms for retrieval + synthesis in deterministic mode, <3.5s with external LLM), meeting SC-004.
 - **Alternatives Considered**:
-  - *Pure external LLM prompt without local validator*: Rejected because non-deterministic temperature settings can occasionally drop mandatory approval mentions.
+  - *Pure external LLM prompt without local validator or fallback*: Rejected because missing API keys in CI would break tests, and non-deterministic temperature settings can drop mandatory approval mentions.
 
 ---
 
@@ -184,3 +185,39 @@
 - **Rationale**:
   - Follows established Next.js App Router patterns used by `/incidents` and `/reporting`.
   - Zero heavy third-party UI libraries; uses existing Tailwind classes to maintain zero CLS and <1.0s LCP.
+
+---
+
+## 8. Environment-Driven AI Credential, LLM, and Agent Model Configuration
+
+### Context & Requirements
+- User Story 5 (Priority P2) & FR-016, FR-017, FR-018, SC-007:
+  - Operators and developers must be able to configure the LLM API key, LLM provider, LLM generation model, agent model, embedding model, similarity threshold, and Qdrant connection settings via `.env` (with all variables clearly documented in `services/api/.env.example`).
+  - Secret API keys must never be hardcoded in source code, logged in plaintext, or exposed in HTTP responses or error tracebacks.
+  - Missing, empty, or placeholder API keys (e.g., `your_llm_api_key_here`) must be safely detected so the service operates seamlessly via deterministic grounded synthesis without crashing.
+
+### Decisions
+
+- **Decision**: Define a strongly typed `KnowledgeRuntimeConfig` value object in `services/api/domain/knowledge/entities.py` loaded from environment variables (with `python-dotenv` loading `services/api/.env` at startup), and document all required keys in `services/api/.env.example` and `services/api/.env`.
+- **Standardized Environment Variables**:
+  - `LLM_API_KEY`: Secret API credential for external LLM/agent provider (default in `.env.example`: `your_llm_api_key_here`; treated as unconfigured when empty or matching known placeholders).
+  - `LLM_PROVIDER`: Provider identifier (`gemini` or `openai`, default: `gemini`).
+  - `LLM_MODEL`: Primary LLM model identifier for RAG answer synthesis (default: `gemini-2.5-flash`).
+  - `AGENT_MODEL`: Agent reasoning/orchestration model identifier (default: `gemini-2.5-pro`).
+  - `EMBEDDING_MODEL`: Vector embedding model identifier (default: `BAAI/bge-small-en-v1.5`).
+  - `USE_FASTEMBED_ONNX`: Boolean flag (`true`/`false`, default: `false`) controlling ONNX Runtime weight loading vs. calibrated semantic embedding.
+  - `KNOWLEDGE_SIMILARITY_THRESHOLD`: Minimum cosine similarity score threshold (default: `0.62`, validated in $[0.0, 1.0]$).
+  - `QDRANT_URL`: Optional full Qdrant HTTP URL (e.g. `http://localhost:6333`).
+  - `QDRANT_HOST`: Optional Qdrant hostname (leave empty for `:memory:` mode in local dev/tests).
+  - `QDRANT_PORT`: Qdrant HTTP port (default: `6333`).
+  - `QDRANT_COLLECTION_NAME`: Qdrant collection name (default: `trackflow_knowledge`).
+- **Credential Protection & Sanitization Rules**:
+  - `KnowledgeRuntimeConfig` implements custom `__repr__`, `__str__`, and `to_sanitized_dict()` methods that always mask `llm_api_key` as `"***REDACTED***"` (or `"<unconfigured>"`), ensuring accidental logging of the config object never leaks the secret key.
+  - Placeholder values (`""`, `"your_llm_api_key_here"`, `"changeme"`, `"none"`, `"null"`) evaluate `has_live_llm_key` to `False`, routing synthesis directly to the deterministic grounded engine.
+  - Any exception raised during an external HTTP call to the LLM provider is caught, sanitized (stripping headers, URLs containing keys, and raw key substrings), logged at `WARNING` level without sensitive data, and gracefully falls back to deterministic grounded synthesis.
+- **Rationale**:
+  - Centralizing all AI, agent, embedding, and vector store settings in `KnowledgeRuntimeConfig` with explicit `.env` and `.env.example` entries gives operators full control over model selection and credentials across local, staging, and production environments without touching code.
+  - Enforcing redaction at the domain value-object level satisfies Constitutional Principle IV (Zero PII & Credential Leakage) and SC-007 by construction.
+- **Alternatives Considered**:
+  - *Scattering `os.getenv` calls across individual adapters without a config object*: Rejected because it makes validation, placeholder detection, and secret redaction inconsistent and harder to test.
+  - *Failing startup when `LLM_API_KEY` is not set*: Rejected because FR-018 and User Story 5 Scenario 3 explicitly require offline local development and automated CI pipelines to work seamlessly using the deterministic grounded fallback.

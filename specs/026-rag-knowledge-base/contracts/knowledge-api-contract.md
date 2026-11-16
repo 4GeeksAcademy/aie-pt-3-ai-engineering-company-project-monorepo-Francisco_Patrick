@@ -44,7 +44,7 @@
   - `HTTP 503 Service Unavailable`: Triggered when Qdrant connection is degraded or fails connection timeout.
 
 ### 1.2. Knowledge Base Health & Index Status
-- **Method / Path**: `GET /api/v1/knowledge/health`
+- **Method / Path**: `GET /api/v1/knowledge/health` (Legacy alias: `GET /knowledge/health`)
 - **Controller**: `presentation.api.v1.knowledge.get_health`
 - **Response Model**: `KnowledgeHealthResponseSchema` (HTTP 200)
   ```json
@@ -58,17 +58,44 @@
 
 ---
 
-## 2. Backward Compatibility & Dual Route Mounting
+## 2. Environment Configuration Contract (`.env` & `.env.example`)
+
+Per FR-016, FR-017, FR-018, and SC-007, the Knowledge Base & RAG runtime exposes an externalized environment variable contract in `services/api/.env` and `services/api/.env.example`:
+
+```dotenv
+# AI, LLM & Agent Runtime Configuration (RAG & Knowledge Base)
+LLM_API_KEY=your_llm_api_key_here
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-2.5-flash
+AGENT_MODEL=gemini-2.5-pro
+
+# Embedding & Vector Store Configuration
+EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+USE_FASTEMBED_ONNX=false
+KNOWLEDGE_SIMILARITY_THRESHOLD=0.62
+QDRANT_URL=
+QDRANT_HOST=
+QDRANT_PORT=6333
+QDRANT_COLLECTION_NAME=trackflow_knowledge
+```
+
+### Security & Fallback Guarantees
+1. **Zero Secret Leakage**: `LLM_API_KEY` is strictly prohibited from appearing in HTTP responses, error payloads, OpenAPI examples, or application logs.
+2. **Deterministic Fallback**: When `LLM_API_KEY` is omitted, empty, or set to a template placeholder (`your_llm_api_key_here`), or when an external provider endpoint is unreachable, `GroundedGenerationAdapter` seamlessly executes deterministic grounded synthesis while enforcing all corporate guardrails.
+
+---
+
+## 3. Backward Compatibility & Dual Route Mounting
 
 Per TrackFlow Monorepo Constitution Principle II (Public API Compatibility):
 1. Routes are mounted under canonical versioned path `/api/v1/knowledge/*`.
 2. Routes are also mounted under legacy alias path `/knowledge/*` in `services/api/main.py`.
 3. 100% of endpoints declare explicit Pydantic `response_model` annotations.
-4. Internal vector payloads, embeddings, and raw Qdrant `ScoredPoint` primitives are strictly isolated and never leaked across HTTP boundaries.
+4. Internal vector payloads, embeddings, secret credentials, and raw Qdrant `ScoredPoint` primitives are strictly isolated and never leaked across HTTP boundaries.
 
 ---
 
-## 3. Frontend Contract Integration
+## 4. Frontend Contract Integration
 
 The client interface in `uis/backoffice/app/knowledge/page.tsx` interacts with the backend using the shared TypeScript interfaces from `@repo/shared-types`:
 

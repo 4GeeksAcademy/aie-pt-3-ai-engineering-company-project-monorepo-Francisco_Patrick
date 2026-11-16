@@ -5,15 +5,15 @@ description: "Task list for RAG & Knowledge Base implementation"
 # Tasks: RAG & Knowledge Base
 
 **Input**: Design documents from `/specs/026-rag-knowledge-base/`  
-**Prerequisites**: [plan.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/plan.md), [spec.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/spec.md), [data-model.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/data-model.md), [research.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/research.md), [contracts/](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/contracts/)  
+**Prerequisites**: [plan.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/plan.md), [spec.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/spec.md), [data-model.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/data-model.md), [research.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/research.md), [contracts/](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/contracts/), [quickstart.md](file:///J:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/specs/026-rag-knowledge-base/quickstart.md)  
 **Constitution**: Adheres strictly to Monorepo Constitution Principle VII (Vector Database & Qdrant SDK Governance) and Principles I–VI.
 
 ---
 
 ## Format: `[ID] [P?] [Story] Description`
 
-- **[P]**: Can run in parallel (different files, no dependencies on uncompleted tasks)
-- **[Story]**: User story identifier (`[US1]`, `[US2]`, `[US3]`, `[US4]`)
+- **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
+- **[Story]**: User story identifier (`[US1]`, `[US2]`, `[US3]`, `[US4]`, `[US5]`)
 - Every task includes explicit target file paths
 
 ---
@@ -22,9 +22,9 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 **Purpose**: Project initialization, dependency additions, shared contract types, and evaluation dataset setup.
 
-- [X] T001 Add qdrant-client and fastembed dependencies in services/api/pyproject.toml
+- [X] T001 Add qdrant-client, fastembed, and python-dotenv dependencies in services/api/pyproject.toml
 - [X] T002 [P] Create TypeScript DTO interfaces (KnowledgeQueryRequestDTO, KnowledgeQueryResponseDTO, KnowledgeSourceCitationDTO, KnowledgeHealthResponseDTO) in packages/shared/types/knowledge.ts
-- [X] T003 [P] Re-export knowledge types in packages/shared/types/index.ts and verify build in packages/shared/
+- [X] T003 [P] Re-export knowledge types in packages/shared/types/index.ts and verify build in packages/shared/package.json
 - [X] T004 [P] Create standardized evaluation dataset with 10 benchmark queries in data/eval/test-queries.json
 
 ---
@@ -39,7 +39,7 @@ description: "Task list for RAG & Knowledge Base implementation"
 - [X] T006 [P] Define port interfaces (VectorStorePort, EmbeddingServicePort, LLMGenerationPort) in services/api/domain/knowledge/ports.py
 - [X] T007 [P] Define domain exceptions (KnowledgeBaseUnavailableException, KnowledgeBaseException, IngestionException) in services/api/domain/knowledge/exceptions.py
 - [X] T008 [P] Implement MarkdownSemanticChunker preserving tables and clauses (>=3 chunks per document, deterministic UUID v5) in services/api/application/services/chunking.py
-- [X] T009 [P] Implement FastEmbedAdapter with bge-small-en-v1.5 and deterministic mock fallback in services/api/infrastructure/adapters/embedding_adapter.py
+- [X] T009 [P] Implement FastEmbedAdapter with BAAI/bge-small-en-v1.5 and calibrated cross-lingual semantic fallback in services/api/infrastructure/adapters/embedding_adapter.py
 - [X] T010 Implement QdrantVectorStoreAdapter encapsulating qdrant-client for trackflow_knowledge collection with remote and in-memory support in services/api/infrastructure/adapters/qdrant_vector_store_adapter.py
 - [X] T011 Implement idempotent document ingestion CLI script in scripts/ingest_knowledge_base.py
 - [X] T012 [P] Define Pydantic request and response schemas in services/api/presentation/schemas/knowledge.py
@@ -92,7 +92,31 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 ---
 
-## Phase 5: User Story 3 - Confidence-Gated Retrieval & Refusal of Hallucination (Priority: P3)
+## Phase 5: User Story 5 - Secure Environment Configuration for AI Credentials & Model Selection (Priority: P2)
+
+**Goal**: Platform operators and developers can securely configure the LLM API key, LLM provider, primary LLM generation model, agent model, embedding model, similarity threshold, and Qdrant connection parameters via `.env` and `.env.example` without hardcoding credentials, with strict secret masking and automatic fallback to deterministic grounded synthesis when no live key is configured or when upstream model calls fail.
+
+**Independent Test**: Inspect `services/api/.env.example` and `services/api/.env` for all required AI/RAG variables, run unit and integration tests with custom and placeholder `LLM_API_KEY`, `LLM_MODEL`, and `AGENT_MODEL` settings, and verify that runtime model selection works, deterministic fallback activates seamlessly when unconfigured, and secret API keys are masked in `__repr__`, `__str__`, `to_sanitized_dict()`, logs, and HTTP responses.
+
+### Tests for User Story 5 ⚠️
+
+- [ ] T025 [P] [US5] Unit tests for KnowledgeRuntimeConfig environment loading, placeholder detection, threshold clamping, and secret masking in services/api/tests/unit/test_knowledge_config.py
+
+### Implementation for User Story 5
+
+- [ ] T026 [P] [US5] Document AI, LLM, Agent, Embedding, and Qdrant environment variables (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL, EMBEDDING_MODEL, USE_FASTEMBED_ONNX, KNOWLEDGE_SIMILARITY_THRESHOLD, QDRANT_URL, QDRANT_HOST, QDRANT_PORT, QDRANT_COLLECTION_NAME) in services/api/.env.example and configure local defaults in services/api/.env
+- [ ] T027 [US5] Implement KnowledgeRuntimeConfig value object with from_env(), has_live_llm_key, and secret masking (__repr__, __str__, to_sanitized_dict) in services/api/domain/knowledge/entities.py
+- [ ] T028 [P] [US5] Update FastEmbedAdapter in services/api/infrastructure/adapters/embedding_adapter.py and QdrantVectorStoreAdapter in services/api/infrastructure/adapters/qdrant_vector_store_adapter.py to accept KnowledgeRuntimeConfig settings
+- [ ] T029 [US5] Enhance GroundedGenerationAdapter to support configurable external LLM and agent model synthesis (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL) with sanitized error logging and deterministic fallback in services/api/infrastructure/adapters/grounded_generation_adapter.py
+- [ ] T030 [US5] Update KnowledgeService to resolve default similarity threshold from KnowledgeRuntimeConfig in services/api/application/services/knowledge_service.py
+- [ ] T031 [US5] Wire get_knowledge_config_dep into get_embedding_service_dep, get_vector_store_dep, get_llm_generation_dep, and get_knowledge_service_dep in services/api/presentation/dependencies.py
+- [ ] T032 [US5] Add integration tests verifying environment-configured model selection, deterministic fallback with placeholder/missing LLM_API_KEY, and zero credential exposure in services/api/tests/integration/test_knowledge_routes.py
+
+**Checkpoint**: User Story 5 complete — AI credentials, LLM models, and agent models are externally configurable via `.env` with zero secret leakage and resilient offline/CI fallback.
+
+---
+
+## Phase 6: User Story 3 - Confidence-Gated Retrieval & Refusal of Hallucination (Priority: P3)
 
 **Goal**: Assistant enforces calibrated minimum similarity score threshold (`0.62`), declining to speculate or hallucinate when company documentation lacks relevant information and providing helpful fallback guidance.
 
@@ -100,19 +124,19 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 ### Tests for User Story 3 ⚠️
 
-- [X] T025 [P] [US3] Unit tests for minimum similarity score threshold (0.62) filtering and refusal generation in services/api/tests/unit/test_knowledge_service.py
+- [X] T033 [P] [US3] Unit tests for minimum similarity score threshold (0.62) filtering and refusal generation in services/api/tests/unit/test_knowledge_service.py
 
 ### Implementation for User Story 3
 
-- [X] T026 [US3] Implement calibrated score threshold filtering and standardized informational refusal response formatting in services/api/application/services/knowledge_service.py
-- [X] T027 [US3] Implement RAG retrieval evaluation script calculating Recall@1, Recall@3, MRR, and negative probe refusals in scripts/evaluate_rag_retrieval.py
-- [X] T028 [US3] Add integration test cases for out-of-scope refusal queries in services/api/tests/integration/test_knowledge_routes.py
+- [X] T034 [US3] Implement calibrated score threshold filtering and standardized informational refusal response formatting in services/api/application/services/knowledge_service.py
+- [X] T035 [US3] Implement RAG retrieval evaluation script calculating Recall@1, Recall@3, MRR, and negative probe refusals in scripts/evaluate_rag_retrieval.py
+- [X] T036 [US3] Add integration test cases for out-of-scope refusal queries in services/api/tests/integration/test_knowledge_routes.py
 
 **Checkpoint**: User Story 3 complete — confidence gating prevents hallucinations with zero false claims on ungrounded queries.
 
 ---
 
-## Phase 6: User Story 4 - Frontline Interactive Query Interface (Priority: P4)
+## Phase 7: User Story 4 - Frontline Interactive Query Interface (Priority: P4)
 
 **Goal**: Frontline commercial and customer experience team members can access a clean, responsive, and accessible web interface in `uis/backoffice` to submit natural language questions, view active loading states, read formatted answers with citation badges, and recover gracefully from network errors.
 
@@ -120,28 +144,28 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 ### Tests for User Story 4 ⚠️
 
-- [X] T029 [P] [US4] Component and integration tests for knowledge page and components in uis/backoffice/__tests__/knowledge.test.tsx
+- [X] T037 [P] [US4] Component and integration tests for knowledge page and components in uis/backoffice/__tests__/knowledge.test.tsx
 
 ### Implementation for User Story 4
 
-- [X] T030 [P] [US4] Implement KnowledgeQueryForm component with input validation in uis/backoffice/components/knowledge/KnowledgeQueryForm.tsx
-- [X] T031 [P] [US4] Implement KnowledgeAnswerCard component with citation badges and status indicators in uis/backoffice/components/knowledge/KnowledgeAnswerCard.tsx
-- [X] T032 [P] [US4] Implement KnowledgeStatusState component with loading skeleton and error retry CTA in uis/backoffice/components/knowledge/KnowledgeStatusState.tsx
-- [X] T033 [US4] Implement frontline knowledge query page integrating form, answer card, and status states in uis/backoffice/app/knowledge/page.tsx
-- [X] T034 [US4] Add Knowledge Base navigation link in uis/backoffice/components/Header.tsx
+- [X] T038 [P] [US4] Implement KnowledgeQueryForm component with input validation in uis/backoffice/components/knowledge/KnowledgeQueryForm.tsx
+- [X] T039 [P] [US4] Implement KnowledgeAnswerCard component with citation badges and status indicators in uis/backoffice/components/knowledge/KnowledgeAnswerCard.tsx
+- [X] T040 [P] [US4] Implement KnowledgeStatusState component with loading skeleton and error retry CTA in uis/backoffice/components/knowledge/KnowledgeStatusState.tsx
+- [X] T041 [US4] Implement frontline knowledge query page integrating form, answer card, and status states in uis/backoffice/app/knowledge/page.tsx
+- [X] T042 [US4] Add Knowledge Base navigation link in uis/backoffice/components/Header.tsx
 
 **Checkpoint**: User Story 4 complete — frontline commercial and operations users have full end-to-end access via the Backoffice web application.
 
 ---
 
-## Phase 7: Polish & Cross-Cutting Concerns
+## Phase 8: Polish & Cross-Cutting Concerns
 
 **Purpose**: Performance benchmarking, automated verification gates, and quickstart end-to-end validation across the monorepo.
 
-- [X] T035 [P] Execute automated evaluation suite scripts/evaluate_rag_retrieval.py and verify Recall@3 >= 80% benchmark
-- [X] T036 [P] Validate quickstart end-to-end scenarios against specs/026-rag-knowledge-base/quickstart.md
-- [X] T037 [P] Run static TypeScript type check across monorepo packages (npm run typecheck)
-- [X] T038 Run backend pytest test suite in services/api
+- [ ] T043 [P] Execute automated evaluation suite in scripts/evaluate_rag_retrieval.py against data/eval/test-queries.json and verify Recall@3 >= 80% benchmark
+- [ ] T044 [P] Validate quickstart end-to-end scenarios (including .env and .env.example credential safety validation) in specs/026-rag-knowledge-base/quickstart.md
+- [ ] T045 [P] Run static TypeScript type check and build validation across monorepo packages via package.json
+- [ ] T046 Run backend pytest unit and integration test suites in services/api/tests/
 
 ---
 
@@ -151,22 +175,24 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 - **Setup (Phase 1)**: No dependencies — can start immediately.
 - **Foundational (Phase 2)**: Depends on Setup (T001–T004) — BLOCKS all user stories.
-- **User Story 1 (Phase 3)**: Depends on Foundational completion (T005–T013).
-- **User Story 2 (Phase 4)**: Depends on US1 completion (extends generation & service layer with guardrails).
-- **User Story 3 (Phase 5)**: Depends on US1/US2 completion (activates threshold filtering & refusal logic).
-- **User Story 4 (Phase 6)**: Depends on US1 backend endpoint completion and shared DTOs (T002, T018).
-- **Polish (Phase 7)**: Depends on all user stories (Phases 3–6) being completed.
+- **User Story 1 (Phase 3, P1)**: Depends on Foundational completion (T005–T013).
+- **User Story 2 (Phase 4, P2)**: Depends on US1 completion (extends generation & service layer with guardrails).
+- **User Story 5 (Phase 5, P2)**: Depends on Foundational and US1/US2 adapters (wires externalized `.env` runtime configuration and secret masking across domain, adapters, and DI).
+- **User Story 3 (Phase 6, P3)**: Depends on US1/US2 completion (activates threshold filtering & refusal logic).
+- **User Story 4 (Phase 7, P4)**: Depends on US1 backend endpoint completion and shared DTOs (T002, T018).
+- **Polish (Phase 8)**: Depends on all user stories (Phases 3–7) being completed.
 
 ### User Story Dependencies
 
 ```mermaid
 flowchart TD
     Setup["Phase 1: Setup"] --> Foundational["Phase 2: Foundational (Blocking)"]
-    Foundational --> US1["Phase 3: US1 - Standard Ops (MVP)"]
-    US1 --> US2["Phase 4: US2 - Guardrails & Constraints"]
-    US1 --> US3["Phase 5: US3 - Threshold & Refusal"]
-    US1 --> US4["Phase 6: US4 - Backoffice Web UI"]
-    US2 --> Polish["Phase 7: Polish & Verification Gates"]
+    Foundational --> US1["Phase 3: US1 - Standard Ops (P1 MVP)"]
+    US1 --> US2["Phase 4: US2 - Guardrails & Constraints (P2)"]
+    US2 --> US5["Phase 5: US5 - Env Config & AI Model Selection (P2)"]
+    US1 --> US3["Phase 6: US3 - Threshold & Refusal (P3)"]
+    US1 --> US4["Phase 7: US4 - Backoffice Web UI (P4)"]
+    US5 --> Polish["Phase 8: Polish & Verification Gates"]
     US3 --> Polish
     US4 --> Polish
 ```
@@ -194,12 +220,19 @@ Task: "T012 [P] Define Pydantic request and response schemas in services/api/pre
 Task: "T013 [P] Implement FastAPI dependency injection providers in services/api/presentation/dependencies.py"
 ```
 
-### Phase 6 Parallel Execution
+### Phase 5 Parallel Execution (User Story 5)
+```bash
+# Launch config unit tests and .env/.env.example templates simultaneously:
+Task: "T025 [P] [US5] Unit tests for KnowledgeRuntimeConfig in services/api/tests/unit/test_knowledge_config.py"
+Task: "T026 [P] [US5] Document AI, LLM, Agent, Embedding, and Qdrant environment variables in services/api/.env.example and services/api/.env"
+```
+
+### Phase 7 Parallel Execution (User Story 4)
 ```bash
 # Launch independent UI components simultaneously:
-Task: "T030 [P] [US4] Implement KnowledgeQueryForm in uis/backoffice/components/knowledge/KnowledgeQueryForm.tsx"
-Task: "T031 [P] [US4] Implement KnowledgeAnswerCard in uis/backoffice/components/knowledge/KnowledgeAnswerCard.tsx"
-Task: "T032 [P] [US4] Implement KnowledgeStatusState in uis/backoffice/components/knowledge/KnowledgeStatusState.tsx"
+Task: "T038 [P] [US4] Implement KnowledgeQueryForm in uis/backoffice/components/knowledge/KnowledgeQueryForm.tsx"
+Task: "T039 [P] [US4] Implement KnowledgeAnswerCard in uis/backoffice/components/knowledge/KnowledgeAnswerCard.tsx"
+Task: "T040 [P] [US4] Implement KnowledgeStatusState in uis/backoffice/components/knowledge/KnowledgeStatusState.tsx"
 ```
 
 ---
@@ -217,8 +250,9 @@ Task: "T032 [P] [US4] Implement KnowledgeStatusState in uis/backoffice/component
 ### Incremental Delivery
 
 1. Setup + Foundational $\to$ Vector infrastructure & chunking ready.
-2. User Story 1 $\to$ Grounded standard commercial queries operational (MVP).
-3. User Story 2 $\to$ Executive approval & seasonal guardrails enforced.
-4. User Story 3 $\to$ Calibrated threshold & hallucination refusal active.
-5. User Story 4 $\to$ Frontline Backoffice UI available for daily operations.
-6. Polish $\to$ Recall@3 benchmark verified, TypeScript checked, and full test suite passing.
+2. User Story 1 (P1) $\to$ Grounded standard commercial queries operational (MVP).
+3. User Story 2 (P2) $\to$ Executive approval & seasonal guardrails enforced.
+4. User Story 5 (P2) $\to$ Externalized `.env` / `.env.example` AI credential & model configuration active with secret masking and deterministic fallback.
+5. User Story 3 (P3) $\to$ Calibrated threshold & hallucination refusal active.
+6. User Story 4 (P4) $\to$ Frontline Backoffice UI available for daily operations.
+7. Polish $\to$ Recall@3 benchmark verified, TypeScript checked, and full test suite passing.

@@ -8,7 +8,7 @@
 
 ## 1. Domain Entities & Value Objects
 
-The RAG & Knowledge Base domain is structured around five primary entities and value objects:
+The RAG & Knowledge Base domain is structured around six primary entities and value objects:
 
 ```mermaid
 classDiagram
@@ -59,10 +59,23 @@ classDiagram
         +float similarity_score
     }
 
+    class KnowledgeRuntimeConfig {
+        +string llm_provider
+        +string llm_model
+        +string agent_model
+        +string embedding_model
+        +bool use_fastembed_onnx
+        +float similarity_threshold
+        +string qdrant_collection_name
+        +bool has_live_llm_key()
+        +dict to_sanitized_dict()
+    }
+
     KnowledgeDocument "1" --> "*" KnowledgeChunk : decomposes into
     QueryRequest --> "*" RetrievedContext : retrieves
     RetrievedContext --> "1" KnowledgeChunk : references
     GroundedAnswer --> "*" SourceCitation : cites
+    KnowledgeRuntimeConfig ..> GroundedAnswer : configures synthesis & threshold
 ```
 
 ---
@@ -141,9 +154,48 @@ The final synthesized response delivered to the caller.
   - International returns: If query discusses cross-border returns, answer must state process is manual under Sofía Ramos.
   - Carrier exceptions: If query discusses carrier exceptions, answer must state Carlos Vega's approval is required.
 
+### 2.6. `KnowledgeRuntimeConfig` (AI & Agent Runtime Configuration)
+Represents the externalized environment-driven configuration governing LLM credentials, LLM and agent model selection, embedding settings, retrieval similarity threshold, and vector store connection parameters (FR-016, FR-017, FR-018).
+
+- **Attributes**:
+  - `llm_api_key` (`Optional[str]`): Secret API key read from `LLM_API_KEY` (never included in `__repr__`, `__str__`, logs, or API responses).
+  - `llm_provider` (`str`): AI provider identifier read from `LLM_PROVIDER` (defaults to `"gemini"`, supports `"gemini"`, `"openai"`, `"deterministic"`).
+  - `llm_model` (`str`): Primary language model identifier for grounded answer synthesis read from `LLM_MODEL` (defaults to `"gemini-2.5-flash"`).
+  - `agent_model` (`str`): Agent reasoning and workflow model identifier read from `AGENT_MODEL` (defaults to `"gemini-2.5-pro"`).
+  - `embedding_model` (`str`): Vector embedding model identifier read from `EMBEDDING_MODEL` (defaults to `"BAAI/bge-small-en-v1.5"`).
+  - `use_fastembed_onnx` (`bool`): Flag indicating whether to initialize ONNX Runtime weights via FastEmbed, read from `USE_FASTEMBED_ONNX` (defaults to `False`).
+  - `similarity_threshold` (`float`): Calibrated minimum similarity threshold read from `KNOWLEDGE_SIMILARITY_THRESHOLD` (defaults to `0.62`, range $[0.0, 1.0]$).
+  - `qdrant_url` (`Optional[str]`): Optional Qdrant server URL read from `QDRANT_URL`.
+  - `qdrant_host` (`Optional[str]`): Optional Qdrant hostname read from `QDRANT_HOST`.
+  - `qdrant_port` (`int`): Qdrant server port read from `QDRANT_PORT` (defaults to `6333`).
+  - `qdrant_collection_name` (`str`): Canonical collection name read from `QDRANT_COLLECTION_NAME` (defaults to `"trackflow_knowledge"`).
+
+- **Validation & Security Rules**:
+  - Placeholder values for `LLM_API_KEY` (`""`, `"your_llm_api_key_here"`, `"changeme"`, `"none"`, `"null"`) are treated as unconfigured (`has_live_llm_key == False`), causing the runtime to use the deterministic grounded synthesis fallback without raising missing-credential errors.
+  - `similarity_threshold` is clamped/validated within $[0.0, 1.0]$; invalid non-numeric environment strings safely fall back to `0.62`.
+  - `__repr__()` and `to_sanitized_dict()` mask `llm_api_key` as `"***REDACTED***"` when set or `"<unconfigured>"` when unset, guaranteeing zero secret exposure in logs or exception messages (FR-018, SC-007).
+
 ---
 
-## 3. Qdrant Collection Schema (`trackflow_knowledge`)
+## 3. Environment Variable Mapping (`services/api/.env` & `.env.example`)
+
+| Environment Variable | Config Field | Default Value | Secret? | Purpose |
+|---|---|---|---|---|
+| `LLM_API_KEY` | `llm_api_key` | `your_llm_api_key_here` | **Yes** | Secret API key for external LLM/Agent provider; falls back to deterministic synthesis when unset or placeholder |
+| `LLM_PROVIDER` | `llm_provider` | `gemini` | No | Target AI provider (`gemini`, `openai`, or `deterministic`) |
+| `LLM_MODEL` | `llm_model` | `gemini-2.5-flash` | No | Language model identifier for RAG answer synthesis |
+| `AGENT_MODEL` | `agent_model` | `gemini-2.5-pro` | No | Agent model identifier for complex policy & multi-step reasoning |
+| `EMBEDDING_MODEL` | `embedding_model` | `BAAI/bge-small-en-v1.5` | No | Dedicated 384-d vector embedding model identifier |
+| `USE_FASTEMBED_ONNX` | `use_fastembed_onnx` | `false` | No | Enables local ONNX Runtime inference blending |
+| `KNOWLEDGE_SIMILARITY_THRESHOLD` | `similarity_threshold` | `0.62` | No | Calibrated minimum cosine similarity score threshold |
+| `QDRANT_URL` | `qdrant_url` | *(empty)* | No | Full HTTP URL for external Qdrant instance |
+| `QDRANT_HOST` | `qdrant_host` | *(empty)* | No | Hostname for external Qdrant instance (uses `:memory:` when empty) |
+| `QDRANT_PORT` | `qdrant_port` | `6333` | No | Port for external Qdrant instance |
+| `QDRANT_COLLECTION_NAME` | `qdrant_collection_name` | `trackflow_knowledge` | No | Canonical Qdrant collection name |
+
+---
+
+## 4. Qdrant Collection Schema (`trackflow_knowledge`)
 
 - **Collection Name**: `trackflow_knowledge`
 - **Vectors Configuration**:
@@ -171,7 +223,7 @@ The final synthesized response delivered to the caller.
 
 ---
 
-## 4. TypeScript DTO Mapping (`@repo/shared-types`)
+## 5. TypeScript DTO Mapping (`@repo/shared-types`)
 
 ```typescript
 export interface KnowledgeSourceCitationDTO {
@@ -205,7 +257,7 @@ export interface KnowledgeHealthResponseDTO {
 
 ---
 
-## 5. Python Pydantic Schemas (`presentation/schemas/knowledge.py`)
+## 6. Python Pydantic Schemas (`presentation/schemas/knowledge.py`)
 
 ```python
 from typing import List, Optional
