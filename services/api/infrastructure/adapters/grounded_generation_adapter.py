@@ -14,6 +14,7 @@ from typing import Any, List, Optional, Set
 import httpx
 
 from application.services.guardrails import BusinessGuardrailValidator
+from application.services.knowledge_service import build_refusal_message
 from domain.knowledge.entities import KnowledgeRuntimeConfig, RetrievedContext
 from domain.knowledge.ports import LLMGenerationPort
 
@@ -83,11 +84,7 @@ class GroundedGenerationAdapter(LLMGenerationPort):
             Grounded natural-language answer string with corporate guardrails enforced.
         """
         if not contexts:
-            return (
-                "TrackFlow internal documentation does not contain verified policy regarding "
-                "this inquiry. For operational assistance on this topic, please consult the "
-                "operations leadership directly."
-            )
+            return build_refusal_message(query)
 
         candidate_answer: Optional[str] = None
         if self.config.has_live_llm_key:

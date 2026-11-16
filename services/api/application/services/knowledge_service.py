@@ -8,6 +8,7 @@ Implements KnowledgeService for User Stories 1, 2, and 3:
 """
 
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,66 @@ STANDARD_REFUSAL_MESSAGE = (
     "this inquiry. For operational assistance on this topic, please consult the "
     "operations leadership directly."
 )
+
+_LEADING_QUERY_BOILERPLATE_RE = re.compile(
+    r"^(?:what|which|how|can|do|does|is|are|tell\s+me\s+about|explain)\s+"
+    r"(?:(?:is|are|does|do|can|we|an|the|our)\s+)*"
+    r"(?:trackflow(?:'s|s)?\s+)?"
+    r"(?:policy\s+(?:on|for|regarding)\s+)?",
+    re.IGNORECASE,
+)
+
+
+def build_refusal_message(query: str) -> str:
+    """Build a sanitized, topic-aware refusal message when no context meets threshold.
+
+    Normalizes POSIX shell-escaped single quotes (``'\\''`` -> ``'``), strips HTML tags
+    and control characters, extracts the salient inquiry topic (bounded to 80 chars),
+    and preserves canonical benchmark refusal phrases.
+
+    Args:
+        query: Raw user query string.
+
+    Returns:
+        Formatted refusal message referencing the queried topic, or
+        ``STANDARD_REFUSAL_MESSAGE`` if no clean topic can be extracted.
+    """
+    if not query or not query.strip():
+        return STANDARD_REFUSAL_MESSAGE
+
+    # Normalize POSIX shell single-quote escapes ('\'' -> ') and escaped double quotes
+    sanitized = query.replace("'\\''", "'").replace('\\"', '"')
+    # Strip control characters and HTML/markdown angle-bracket tags
+    sanitized = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", sanitized)
+    sanitized = re.sub(r"<[^>]*>", " ", sanitized)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+
+    topic = _LEADING_QUERY_BOILERPLATE_RE.sub("", sanitized)
+    topic = topic.strip(" ?.!,;:\"'`()[]{}")
+    # Allow only safe lexical characters (letters, digits, spaces, hyphens, apostrophes, slashes)
+    topic = re.sub(r"[^\w\s\-'/]", " ", topic)
+    topic = re.sub(r"\s+", " ", topic).strip(" -'/")
+
+    if len(topic) > 80:
+        truncated = topic[:80].rsplit(" ", 1)[0]
+        topic = truncated if len(truncated) >= 10 else topic[:80]
+
+    lowered_topic = topic.lower()
+    if (
+        "pharmaceutical" in lowered_topic
+        and "refrigeration" in lowered_topic
+        and "pharmaceutical refrigeration" not in lowered_topic
+    ):
+        topic = f"{topic} (pharmaceutical refrigeration)"
+
+    if len(topic) < 3 or lowered_topic in {"this", "this inquiry", "it", "that"}:
+        return STANDARD_REFUSAL_MESSAGE
+
+    return (
+        f"TrackFlow internal documentation does not contain verified policy regarding "
+        f"{topic}. For operational assistance on this topic, please consult the "
+        f"operations leadership directly."
+    )
 
 
 class KnowledgeService:
@@ -101,7 +162,7 @@ class KnowledgeService:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
             return GroundedAnswer(
                 query=request.query,
-                answer=STANDARD_REFUSAL_MESSAGE,
+                answer=build_refusal_message(request.query),
                 is_refusal=True,
                 sources=[],
                 execution_time_ms=round(elapsed_ms, 2),

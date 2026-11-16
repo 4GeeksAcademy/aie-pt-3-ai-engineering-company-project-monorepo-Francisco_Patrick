@@ -170,6 +170,8 @@ class TestKnowledgeRoutesIntegration:
         assert data["is_refusal"] is True
         assert data["sources"] == []
         assert "does not contain" in data["answer"].lower()
+        assert "pharmaceutical refrigeration" in data["answer"].lower()
+        assert "operations leadership" in data["answer"].lower()
 
     def test_cross_lingual_spanish_long_term_inventory_query(self) -> None:
         """Edge Case: Spanish query on 180-day low-rotation surcharge returns 150% starting day 181."""

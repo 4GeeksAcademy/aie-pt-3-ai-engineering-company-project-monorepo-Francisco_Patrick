@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from application.services.knowledge_service import (
     KnowledgeService,
     STANDARD_REFUSAL_MESSAGE,
+    build_refusal_message,
 )
 from domain.knowledge.entities import (
     KnowledgeChunk,
@@ -148,8 +149,23 @@ class TestKnowledgeServiceThresholdAndRefusal:
 
         assert response.is_refusal is True
         assert response.sources == []
-        assert response.answer == STANDARD_REFUSAL_MESSAGE
+        assert "TrackFlow internal documentation does not contain verified policy regarding" in response.answer
+        assert "pharmaceutical refrigeration" in response.answer.lower()
+        assert "operations leadership directly" in response.answer
         assert llm.called is False
+
+        # Verify POSIX shell-escaped single quotes ('\'') are normalized cleanly
+        escaped_response = service.query(
+            QueryRequest(
+                query="What is TrackFlow'\\''s temperature-controlled pharmaceutical refrigeration SLA?",
+                top_k=3,
+                min_score=0.62,
+            )
+        )
+        assert escaped_response.is_refusal is True
+        assert "'\\''" not in escaped_response.answer
+        assert "pharmaceutical refrigeration" in escaped_response.answer.lower()
+        assert build_refusal_message("") == STANDARD_REFUSAL_MESSAGE
 
     def test_filters_out_sub_threshold_candidates_while_keeping_qualified_ones(
         self,

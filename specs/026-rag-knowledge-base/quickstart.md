@@ -141,15 +141,19 @@ curl -X POST http://localhost:8000/api/v1/knowledge/query \
 ```bash
 curl -X POST http://localhost:8000/api/v1/knowledge/query \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "What is TrackFlow'\''s temperature-controlled pharmaceutical refrigeration SLA?",
-    "top_k": 3
-  }'
+  -d "{\"query\": \"What is TrackFlow's temperature-controlled pharmaceutical refrigeration SLA?\", \"top_k\": 3}"
+```
+**JSON Request Payload (Backoffice UI / Cross-Platform HTTP Clients)**:
+```json
+{
+  "query": "What is TrackFlow's temperature-controlled pharmaceutical refrigeration SLA?",
+  "top_k": 3
+}
 ```
 **Expected Outcome**:
 - HTTP 200 OK
 - `is_refusal: true`
-- `answer` politely clarifies that TrackFlow documentation lacks information on pharmaceutical refrigeration, with guidance to contact operations leadership.
+- `answer` politely clarifies that TrackFlow documentation lacks information on pharmaceutical refrigeration, with guidance to contact operations leadership (`"TrackFlow internal documentation does not contain verified policy regarding temperature-controlled pharmaceutical refrigeration SLA. For operational assistance on this topic, please consult the operations leadership directly."`).
 - `sources: []` (empty citations list).
 
 ---
