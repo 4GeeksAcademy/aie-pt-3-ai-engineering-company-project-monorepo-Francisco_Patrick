@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from application.services.guardrails import BusinessGuardrailValidator
 from domain.knowledge.entities import (
     GroundedAnswer,
+    KnowledgeRuntimeConfig,
     QueryRequest,
     RetrievedContext,
     SourceCitation,
@@ -24,9 +25,7 @@ from domain.knowledge.ports import (
     VectorStorePort,
 )
 
-DEFAULT_SIMILARITY_THRESHOLD = float(
-    os.getenv("KNOWLEDGE_SIMILARITY_THRESHOLD", "0.62")
-)
+DEFAULT_SIMILARITY_THRESHOLD = KnowledgeRuntimeConfig.from_env().similarity_threshold
 
 STANDARD_REFUSAL_MESSAGE = (
     "TrackFlow internal documentation does not contain verified policy regarding "
@@ -44,7 +43,8 @@ class KnowledgeService:
         embedding_service: EmbeddingServicePort,
         llm_generator: LLMGenerationPort,
         guardrail_validator: Optional[BusinessGuardrailValidator] = None,
-        default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
+        default_min_score: Optional[float] = None,
+        config: Optional[KnowledgeRuntimeConfig] = None,
     ) -> None:
         """Initialize KnowledgeService with required ports.
 
@@ -53,13 +53,19 @@ class KnowledgeService:
             embedding_service: EmbeddingServicePort implementation.
             llm_generator: LLMGenerationPort implementation.
             guardrail_validator: Optional BusinessGuardrailValidator instance.
-            default_min_score: Calibrated minimum similarity threshold (defaults to 0.62).
+            default_min_score: Calibrated minimum similarity threshold (defaults to config.similarity_threshold).
+            config: Optional KnowledgeRuntimeConfig instance loaded from .env.
         """
+        self.config = config or KnowledgeRuntimeConfig.from_env()
         self._vector_store = vector_store
         self._embedding_service = embedding_service
         self._llm_generator = llm_generator
         self._guardrails = guardrail_validator or BusinessGuardrailValidator()
-        self._default_min_score = default_min_score
+        self._default_min_score = (
+            default_min_score
+            if default_min_score is not None
+            else self.config.similarity_threshold
+        )
 
     def query(self, request: QueryRequest) -> GroundedAnswer:
         """Process a natural-language policy query and return a grounded answer or refusal.

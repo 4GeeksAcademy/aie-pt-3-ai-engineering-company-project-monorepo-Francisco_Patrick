@@ -11,6 +11,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from domain.knowledge.entities import KnowledgeRuntimeConfig
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
 from domain.knowledge.ports import EmbeddingServicePort
 
@@ -350,18 +351,20 @@ class FastEmbedAdapter(EmbeddingServicePort):
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-small-en-v1.5",
+        model_name: Optional[str] = None,
         use_onnx: Optional[bool] = None,
+        config: Optional[KnowledgeRuntimeConfig] = None,
     ) -> None:
         """Initialize the embedding adapter.
 
         Args:
-            model_name: FastEmbed model identifier.
-            use_onnx: Whether to load the ONNX model. Defaults to env USE_FASTEMBED_ONNX.
+            model_name: FastEmbed model identifier (defaults to config.embedding_model).
+            use_onnx: Whether to load the ONNX model (defaults to config.use_fastembed_onnx).
+            config: Optional KnowledgeRuntimeConfig instance loaded from .env.
         """
-        self.model_name = model_name
-        env_flag = os.getenv("USE_FASTEMBED_ONNX", "false").lower() in ("1", "true", "yes")
-        self.use_onnx = use_onnx if use_onnx is not None else env_flag
+        self.config = config or KnowledgeRuntimeConfig.from_env()
+        self.model_name = model_name or self.config.embedding_model
+        self.use_onnx = use_onnx if use_onnx is not None else self.config.use_fastembed_onnx
         self._onnx_model: Any = None
 
         if self.use_onnx:

@@ -211,3 +211,81 @@ class TestKnowledgeRoutesIntegration:
             assert body["error"] == "SERVICE_UNAVAILABLE"
         finally:
             app.dependency_overrides.pop(get_knowledge_service_dep, None)
+
+    def test_us5_env_configuration_and_zero_credential_exposure(self) -> None:
+        """US5 (T032): Verify .env/.env.example variables, model selection, fallback, and zero secret exposure."""
+        from pathlib import Path
+        from application.services.knowledge_service import KnowledgeService
+        from domain.knowledge.entities import KnowledgeRuntimeConfig
+        from infrastructure.adapters.grounded_generation_adapter import GroundedGenerationAdapter
+        from presentation.dependencies import (
+            get_embedding_service_dep,
+            get_vector_store_dep,
+        )
+
+        api_root = Path(__file__).resolve().parent.parent.parent
+        env_example_content = (api_root / ".env.example").read_text(encoding="utf-8")
+        for required_key in (
+            "LLM_API_KEY",
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "AGENT_MODEL",
+            "EMBEDDING_MODEL",
+            "USE_FASTEMBED_ONNX",
+            "KNOWLEDGE_SIMILARITY_THRESHOLD",
+            "QDRANT_URL",
+            "QDRANT_HOST",
+            "QDRANT_PORT",
+            "QDRANT_COLLECTION_NAME",
+        ):
+            assert required_key in env_example_content, f"Missing {required_key} in .env.example"
+
+        # Test with live-looking secret key + failing upstream HTTP client to verify
+        # seamless deterministic fallback and zero credential leakage in HTTP response
+        test_secret = "AIzaSyIntegrationTestSecretKeyDoNotExpose999"
+        runtime_cfg = KnowledgeRuntimeConfig.from_env(
+            env={
+                "LLM_API_KEY": test_secret,
+                "LLM_PROVIDER": "gemini",
+                "LLM_MODEL": "gemini-2.5-flash-exp",
+                "AGENT_MODEL": "gemini-2.5-pro-exp",
+                "KNOWLEDGE_SIMILARITY_THRESHOLD": "0.62",
+            },
+            load_dotenv_file=False,
+        )
+
+        class MockUpstreamFailureClient:
+            def post(self, *args: object, **kwargs: object) -> object:
+                raise ConnectionError(f"Connection refused for key {test_secret}")
+
+        embedder = get_embedding_service_dep(config=runtime_cfg)
+        vector_store = get_vector_store_dep(embedder=embedder, config=runtime_cfg)
+        llm_adapter = GroundedGenerationAdapter(
+            config=runtime_cfg,
+            http_client=MockUpstreamFailureClient(),
+        )
+        custom_service = KnowledgeService(
+            vector_store=vector_store,
+            embedding_service=embedder,
+            llm_generator=llm_adapter,
+            config=runtime_cfg,
+        )
+
+        app.dependency_overrides[get_knowledge_service_dep] = lambda: custom_service
+        try:
+            res = client.post(
+                "/api/v1/knowledge/query",
+                json={
+                    "query": "Can we offer a discount on storage fees for a client storing 75 cubic meters?",
+                    "top_k": 3,
+                },
+            )
+            assert res.status_code == 200
+            raw_text = res.text
+            assert test_secret not in raw_text
+            data = res.json()
+            assert data["is_refusal"] is False
+            assert "Miguel Torres" in data["answer"]
+        finally:
+            app.dependency_overrides.pop(get_knowledge_service_dep, None)
+

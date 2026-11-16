@@ -100,17 +100,17 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T025 [P] [US5] Unit tests for KnowledgeRuntimeConfig environment loading, placeholder detection, threshold clamping, and secret masking in services/api/tests/unit/test_knowledge_config.py
+- [X] T025 [P] [US5] Unit tests for KnowledgeRuntimeConfig environment loading, placeholder detection, threshold clamping, and secret masking in services/api/tests/unit/test_knowledge_config.py
 
 ### Implementation for User Story 5
 
-- [ ] T026 [P] [US5] Document AI, LLM, Agent, Embedding, and Qdrant environment variables (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL, EMBEDDING_MODEL, USE_FASTEMBED_ONNX, KNOWLEDGE_SIMILARITY_THRESHOLD, QDRANT_URL, QDRANT_HOST, QDRANT_PORT, QDRANT_COLLECTION_NAME) in services/api/.env.example and configure local defaults in services/api/.env
-- [ ] T027 [US5] Implement KnowledgeRuntimeConfig value object with from_env(), has_live_llm_key, and secret masking (__repr__, __str__, to_sanitized_dict) in services/api/domain/knowledge/entities.py
-- [ ] T028 [P] [US5] Update FastEmbedAdapter in services/api/infrastructure/adapters/embedding_adapter.py and QdrantVectorStoreAdapter in services/api/infrastructure/adapters/qdrant_vector_store_adapter.py to accept KnowledgeRuntimeConfig settings
-- [ ] T029 [US5] Enhance GroundedGenerationAdapter to support configurable external LLM and agent model synthesis (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL) with sanitized error logging and deterministic fallback in services/api/infrastructure/adapters/grounded_generation_adapter.py
-- [ ] T030 [US5] Update KnowledgeService to resolve default similarity threshold from KnowledgeRuntimeConfig in services/api/application/services/knowledge_service.py
-- [ ] T031 [US5] Wire get_knowledge_config_dep into get_embedding_service_dep, get_vector_store_dep, get_llm_generation_dep, and get_knowledge_service_dep in services/api/presentation/dependencies.py
-- [ ] T032 [US5] Add integration tests verifying environment-configured model selection, deterministic fallback with placeholder/missing LLM_API_KEY, and zero credential exposure in services/api/tests/integration/test_knowledge_routes.py
+- [X] T026 [P] [US5] Document AI, LLM, Agent, Embedding, and Qdrant environment variables (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL, EMBEDDING_MODEL, USE_FASTEMBED_ONNX, KNOWLEDGE_SIMILARITY_THRESHOLD, QDRANT_URL, QDRANT_HOST, QDRANT_PORT, QDRANT_COLLECTION_NAME) in services/api/.env.example and configure local defaults in services/api/.env
+- [X] T027 [US5] Implement KnowledgeRuntimeConfig value object with from_env(), has_live_llm_key, and secret masking (__repr__, __str__, to_sanitized_dict) in services/api/domain/knowledge/entities.py
+- [X] T028 [P] [US5] Update FastEmbedAdapter in services/api/infrastructure/adapters/embedding_adapter.py and QdrantVectorStoreAdapter in services/api/infrastructure/adapters/qdrant_vector_store_adapter.py to accept KnowledgeRuntimeConfig settings
+- [X] T029 [US5] Enhance GroundedGenerationAdapter to support configurable external LLM and agent model synthesis (LLM_API_KEY, LLM_PROVIDER, LLM_MODEL, AGENT_MODEL) with sanitized error logging and deterministic fallback in services/api/infrastructure/adapters/grounded_generation_adapter.py
+- [X] T030 [US5] Update KnowledgeService to resolve default similarity threshold from KnowledgeRuntimeConfig in services/api/application/services/knowledge_service.py
+- [X] T031 [US5] Wire get_knowledge_config_dep into get_embedding_service_dep, get_vector_store_dep, get_llm_generation_dep, and get_knowledge_service_dep in services/api/presentation/dependencies.py
+- [X] T032 [US5] Add integration tests verifying environment-configured model selection, deterministic fallback with placeholder/missing LLM_API_KEY, and zero credential exposure in services/api/tests/integration/test_knowledge_routes.py
 
 **Checkpoint**: User Story 5 complete — AI credentials, LLM models, and agent models are externally configurable via `.env` with zero secret leakage and resilient offline/CI fallback.
 
@@ -162,10 +162,10 @@ description: "Task list for RAG & Knowledge Base implementation"
 
 **Purpose**: Performance benchmarking, automated verification gates, and quickstart end-to-end validation across the monorepo.
 
-- [ ] T043 [P] Execute automated evaluation suite in scripts/evaluate_rag_retrieval.py against data/eval/test-queries.json and verify Recall@3 >= 80% benchmark
-- [ ] T044 [P] Validate quickstart end-to-end scenarios (including .env and .env.example credential safety validation) in specs/026-rag-knowledge-base/quickstart.md
-- [ ] T045 [P] Run static TypeScript type check and build validation across monorepo packages via package.json
-- [ ] T046 Run backend pytest unit and integration test suites in services/api/tests/
+- [X] T043 [P] Execute automated evaluation suite in scripts/evaluate_rag_retrieval.py against data/eval/test-queries.json and verify Recall@3 >= 80% benchmark
+- [X] T044 [P] Validate quickstart end-to-end scenarios (including .env and .env.example credential safety validation) in specs/026-rag-knowledge-base/quickstart.md
+- [X] T045 [P] Run static TypeScript type check and build validation across monorepo packages via package.json
+- [X] T046 Run backend pytest unit and integration test suites in services/api/tests/
 
 ---
 

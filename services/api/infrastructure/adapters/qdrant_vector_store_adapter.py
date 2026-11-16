@@ -16,7 +16,11 @@ from typing import Any, Dict, List, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from domain.knowledge.entities import KnowledgeChunk, RetrievedContext
+from domain.knowledge.entities import (
+    KnowledgeChunk,
+    KnowledgeRuntimeConfig,
+    RetrievedContext,
+)
 from domain.knowledge.exceptions import (
     IngestionException,
     KnowledgeBaseUnavailableException,
@@ -34,7 +38,7 @@ class QdrantVectorStoreAdapter(VectorStorePort):
 
     def __init__(
         self,
-        collection_name: str = CANONICAL_COLLECTION_NAME,
+        collection_name: Optional[str] = None,
         vector_dimensions: int = DEFAULT_VECTOR_DIMENSIONS,
         location: Optional[str] = None,
         url: Optional[str] = None,
@@ -43,11 +47,12 @@ class QdrantVectorStoreAdapter(VectorStorePort):
         path: Optional[str] = None,
         timeout: float = 5.0,
         client: Optional[QdrantClient] = None,
+        config: Optional[KnowledgeRuntimeConfig] = None,
     ) -> None:
         """Initialize the Qdrant vector store adapter.
 
         Args:
-            collection_name: Qdrant collection name (defaults to 'trackflow_knowledge').
+            collection_name: Qdrant collection name (defaults to config or 'trackflow_knowledge').
             vector_dimensions: Embedding vector dimensionality (defaults to 384).
             location: Optional Qdrant location (e.g. ':memory:').
             url: Optional Qdrant HTTP URL.
@@ -56,8 +61,10 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             path: Optional local filesystem persistence path.
             timeout: Connection timeout in seconds.
             client: Optional pre-configured QdrantClient instance.
+            config: Optional KnowledgeRuntimeConfig instance loaded from .env.
         """
-        self.collection_name = collection_name
+        self.config = config or KnowledgeRuntimeConfig.from_env()
+        self.collection_name = collection_name or self.config.qdrant_collection_name or CANONICAL_COLLECTION_NAME
         self.vector_dimensions = vector_dimensions
         self._timeout = timeout
 
@@ -65,10 +72,10 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             self._client = client
             return
 
-        resolved_url = url or os.getenv("QDRANT_URL")
-        resolved_host = host or os.getenv("QDRANT_HOST")
+        resolved_url = url if url is not None else self.config.qdrant_url
+        resolved_host = host if host is not None else self.config.qdrant_host
         resolved_path = path or os.getenv("QDRANT_PATH")
-        resolved_port = port or int(os.getenv("QDRANT_PORT", "6333"))
+        resolved_port = port if port is not None else self.config.qdrant_port
 
         try:
             if location is not None:

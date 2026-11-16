@@ -2,29 +2,69 @@
 
 Synthesizes consultative, contractually accurate responses in the authentic
 voice of a TrackFlow Account Manager exclusively from retrieved context chunks,
-enforcing all corporate business guardrails via BusinessGuardrailValidator.
+supporting configurable external LLM/Agent models (via KnowledgeRuntimeConfig)
+with sanitized error handling and deterministic grounded synthesis fallback,
+while enforcing all corporate business guardrails via BusinessGuardrailValidator.
 """
 
-from typing import List, Optional, Set
+import logging
+import re
+from typing import Any, List, Optional, Set
+
+import httpx
 
 from application.services.guardrails import BusinessGuardrailValidator
-from domain.knowledge.entities import RetrievedContext
+from domain.knowledge.entities import KnowledgeRuntimeConfig, RetrievedContext
 from domain.knowledge.ports import LLMGenerationPort
+
+logger = logging.getLogger(__name__)
 
 
 class GroundedGenerationAdapter(LLMGenerationPort):
-    """Deterministic grounded synthesis engine adopting the TrackFlow sales persona."""
+    """Hybrid external LLM + deterministic grounded synthesis engine in TrackFlow sales persona."""
 
     def __init__(
         self,
         guardrail_validator: Optional[BusinessGuardrailValidator] = None,
+        config: Optional[KnowledgeRuntimeConfig] = None,
+        http_client: Optional[Any] = None,
     ) -> None:
         """Initialize the grounded generation adapter.
 
         Args:
             guardrail_validator: Optional BusinessGuardrailValidator instance.
+            config: Optional KnowledgeRuntimeConfig instance loaded from .env.
+            http_client: Optional HTTP client (e.g. httpx.Client) for external LLM requests.
         """
         self._guardrails = guardrail_validator or BusinessGuardrailValidator()
+        self.config = config or KnowledgeRuntimeConfig.from_env()
+        self.llm_provider = self.config.llm_provider
+        self.llm_model = self.config.llm_model
+        self.agent_model = self.config.agent_model
+        self._http_client = http_client
+
+    def select_active_model(self, query: str) -> str:
+        """Select between primary LLM_MODEL and AGENT_MODEL based on query complexity.
+
+        Complex multi-clause or governance-sensitive inquiries route to AGENT_MODEL,
+        while standard single-topic inquiries use LLM_MODEL.
+        """
+        lowered = query.lower()
+        agent_triggers = (
+            "discount",
+            "cubic meter",
+            "black friday",
+            "christmas",
+            "january sales",
+            "peak",
+            "international return",
+            "cross-border",
+            "manually choose",
+            "override",
+        )
+        if any(trigger in lowered for trigger in agent_triggers):
+            return self.agent_model
+        return self.llm_model
 
     def generate_grounded_answer(
         self,
@@ -49,7 +89,123 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                 "operations leadership directly."
             )
 
-        query_lower = query.lower()
+        candidate_answer: Optional[str] = None
+        if self.config.has_live_llm_key:
+            candidate_answer = self._generate_with_external_llm(
+                query=query,
+                contexts=contexts,
+                language=language,
+            )
+
+        if not candidate_answer:
+            candidate_answer = self._synthesize_deterministically(
+                query_lower=query.lower(),
+                contexts=contexts,
+            )
+
+        return self._guardrails.enforce(
+            query=query,
+            answer=candidate_answer,
+            contexts=contexts,
+        )
+
+    def _generate_with_external_llm(
+        self,
+        query: str,
+        contexts: List[RetrievedContext],
+        language: str = "en",
+    ) -> Optional[str]:
+        """Dispatch a strictly grounded generation prompt to the configured external LLM provider.
+
+        Automatically sanitizes any exception messages so LLM_API_KEY is never logged,
+        and returns None on error so the caller falls back to deterministic synthesis.
+        """
+        active_model = self.select_active_model(query)
+        context_block = "\n\n".join(
+            f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}"
+            for ctx in contexts
+        )
+        system_instruction = (
+            "You are a consultative TrackFlow Account Manager. Answer the inquiry strictly "
+            "using ONLY the provided TrackFlow policy context. Never invent prices, SLAs, "
+            "or policies not explicitly stated in the context. Respond in language: "
+            f"{language}."
+        )
+        user_prompt = f"Context:\n{context_block}\n\nInquiry: {query}"
+
+        api_key = (self.config.llm_api_key or "").strip()
+        try:
+            client = self._http_client or httpx.Client(timeout=2.5)
+            close_after = self._http_client is None
+            try:
+                if self.llm_provider == "openai":
+                    response = client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": active_model,
+                            "messages": [
+                                {"role": "system", "content": system_instruction},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                            "temperature": 0.0,
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    content = (
+                        payload.get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("content", "")
+                        .strip()
+                    )
+                    return content or None
+
+                # Default to Gemini REST API (key passed via header, never in URL query string)
+                response = client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{active_model}:generateContent",
+                    headers={
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "systemInstruction": {"parts": [{"text": system_instruction}]},
+                        "contents": [{"parts": [{"text": user_prompt}]}],
+                        "generationConfig": {"temperature": 0.0},
+                    },
+                )
+                response.raise_for_status()
+                payload = response.json()
+                candidates = payload.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts and parts[0].get("text"):
+                        return str(parts[0]["text"]).strip()
+                return None
+            finally:
+                if close_after and hasattr(client, "close"):
+                    client.close()
+        except Exception as exc:
+            safe_msg = self.config.sanitize_text(str(exc))
+            safe_msg = re.sub(r"(Bearer\s+)[A-Za-z0-9_\-\.]+", r"\1***REDACTED***", safe_msg)
+            logger.warning(
+                "External LLM call failed for provider='%s' model='%s' (%s); "
+                "falling back to deterministic grounded synthesis.",
+                self.llm_provider,
+                active_model,
+                safe_msg,
+            )
+            return None
+
+    def _synthesize_deterministically(
+        self,
+        query_lower: str,
+        contexts: List[RetrievedContext],
+    ) -> str:
+        """Synthesize a deterministic grounded response from retrieved chunks."""
         synthesized_parts: List[str] = []
         seen_chunks: Set[str] = set()
 
@@ -76,12 +232,7 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     synthesized_parts.append(secondary_statement)
                 seen_chunks.add(chunk_key)
 
-        candidate_answer = " ".join(synthesized_parts).strip()
-        return self._guardrails.enforce(
-            query=query,
-            answer=candidate_answer,
-            contexts=contexts,
-        )
+        return " ".join(synthesized_parts).strip()
 
     def _should_include_secondary_chunk(
         self,

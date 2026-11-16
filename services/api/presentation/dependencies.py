@@ -32,6 +32,7 @@ from application.telemetry.report_service import TelemetryReportService
 from application.incidents.csv_report_service import IncidentCsvReportService
 from application.services.knowledge_service import KnowledgeService
 from domain.telemetry.ports import TelemetryRepositoryPort
+from domain.knowledge.entities import KnowledgeRuntimeConfig
 from domain.knowledge.ports import (
     EmbeddingServicePort,
     LLMGenerationPort,
@@ -214,22 +215,34 @@ def get_incident_csv_report_service_dep(
 
 
 # --- Knowledge Base & RAG Dependencies ---
+_knowledge_config_singleton: Optional[KnowledgeRuntimeConfig] = None
 _knowledge_vector_store_singleton: Optional[VectorStorePort] = None
 _knowledge_embedding_singleton: Optional[EmbeddingServicePort] = None
 _knowledge_llm_singleton: Optional[LLMGenerationPort] = None
 
 
-def get_embedding_service_dep() -> EmbeddingServicePort:
+def get_knowledge_config_dep() -> KnowledgeRuntimeConfig:
+    """Dependency provider for KnowledgeRuntimeConfig loaded from .env."""
+    global _knowledge_config_singleton
+    if _knowledge_config_singleton is None:
+        _knowledge_config_singleton = KnowledgeRuntimeConfig.from_env()
+    return _knowledge_config_singleton
+
+
+def get_embedding_service_dep(
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
+) -> EmbeddingServicePort:
     """Dependency provider for EmbeddingServicePort (FastEmbedAdapter)."""
     global _knowledge_embedding_singleton
     if _knowledge_embedding_singleton is None:
         from infrastructure.adapters.embedding_adapter import FastEmbedAdapter
-        _knowledge_embedding_singleton = FastEmbedAdapter()
+        _knowledge_embedding_singleton = FastEmbedAdapter(config=config)
     return _knowledge_embedding_singleton
 
 
 def get_vector_store_dep(
     embedder: EmbeddingServicePort = Depends(get_embedding_service_dep),
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> VectorStorePort:
     """Dependency provider for VectorStorePort (QdrantVectorStoreAdapter).
 
@@ -239,12 +252,11 @@ def get_vector_store_dep(
     global _knowledge_vector_store_singleton
     if _knowledge_vector_store_singleton is None:
         import dataclasses
-        import os
         from pathlib import Path
         from application.services.chunking import MarkdownSemanticChunker
         from infrastructure.adapters.qdrant_vector_store_adapter import QdrantVectorStoreAdapter
 
-        adapter = QdrantVectorStoreAdapter()
+        adapter = QdrantVectorStoreAdapter(config=config)
         adapter.ensure_collection()
         health = adapter.get_health_status()
         if health.get("indexed_points_count", 0) == 0:
@@ -262,12 +274,14 @@ def get_vector_store_dep(
     return _knowledge_vector_store_singleton
 
 
-def get_llm_generation_dep() -> LLMGenerationPort:
+def get_llm_generation_dep(
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
+) -> LLMGenerationPort:
     """Dependency provider for LLMGenerationPort (GroundedGenerationAdapter)."""
     global _knowledge_llm_singleton
     if _knowledge_llm_singleton is None:
         from infrastructure.adapters.grounded_generation_adapter import GroundedGenerationAdapter
-        _knowledge_llm_singleton = GroundedGenerationAdapter()
+        _knowledge_llm_singleton = GroundedGenerationAdapter(config=config)
     return _knowledge_llm_singleton
 
 
@@ -275,12 +289,14 @@ def get_knowledge_service_dep(
     vector_store: VectorStorePort = Depends(get_vector_store_dep),
     embedding_service: EmbeddingServicePort = Depends(get_embedding_service_dep),
     llm_generator: LLMGenerationPort = Depends(get_llm_generation_dep),
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> KnowledgeService:
     """Dependency provider for KnowledgeService orchestrating RAG retrieval and synthesis."""
     return KnowledgeService(
         vector_store=vector_store,
         embedding_service=embedding_service,
         llm_generator=llm_generator,
+        config=config,
     )
 
 
@@ -369,6 +385,7 @@ __all__ = [
     "get_incident_service_dep",
     "get_inventory_repository_dep",
     "get_inventory_service_dep",
+    "get_knowledge_config_dep",
     "get_knowledge_service_dep",
     "get_llm_generation_dep",
     "get_password_reset_token_repository_dep",
