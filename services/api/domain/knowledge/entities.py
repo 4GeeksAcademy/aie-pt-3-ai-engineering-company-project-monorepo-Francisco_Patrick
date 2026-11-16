@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 PLACEHOLDER_API_KEYS = {
     "",
     "your_llm_api_key_here",
+    "your_qdrant_api_key_here",
     "your_api_key_here",
     "changeme",
     "none",
@@ -127,7 +128,8 @@ class KnowledgeRuntimeConfig:
     """Externalized AI, LLM, Agent, Embedding, and Vector Store runtime configuration.
 
     Enforces secret masking (__repr__, __str__, to_sanitized_dict, sanitize_text)
-    so LLM_API_KEY is never exposed in plaintext in logs, exceptions, or responses.
+    so LLM_API_KEY and QDRANT_API_KEY are never exposed in plaintext in logs,
+    exceptions, or responses.
     """
 
     llm_api_key: Optional[str] = field(default=None, repr=False)
@@ -138,6 +140,7 @@ class KnowledgeRuntimeConfig:
     use_fastembed_onnx: bool = False
     similarity_threshold: float = 0.62
     qdrant_url: Optional[str] = None
+    qdrant_api_key: Optional[str] = field(default=None, repr=False)
     qdrant_host: Optional[str] = None
     qdrant_port: int = 6333
     qdrant_collection_name: str = "trackflow_knowledge"
@@ -164,6 +167,12 @@ class KnowledgeRuntimeConfig:
             "qdrant_collection_name",
             (self.qdrant_collection_name or "trackflow_knowledge").strip() or "trackflow_knowledge",
         )
+        if self.qdrant_api_key is not None:
+            stripped_qdrant_key = self.qdrant_api_key.strip()
+            if not stripped_qdrant_key or stripped_qdrant_key.lower() in PLACEHOLDER_API_KEYS:
+                object.__setattr__(self, "qdrant_api_key", None)
+            else:
+                object.__setattr__(self, "qdrant_api_key", stripped_qdrant_key)
 
     @property
     def has_live_llm_key(self) -> bool:
@@ -175,23 +184,36 @@ class KnowledgeRuntimeConfig:
         normalized = self.llm_api_key.strip().lower()
         return normalized not in PLACEHOLDER_API_KEYS
 
+    @property
+    def has_qdrant_api_key(self) -> bool:
+        """Return True only when a non-placeholder QDRANT_API_KEY is configured."""
+        if not self.qdrant_api_key:
+            return False
+        normalized = self.qdrant_api_key.strip().lower()
+        return normalized not in PLACEHOLDER_API_KEYS
+
     def _masked_key_label(self) -> str:
         """Return the safe redacted label for llm_api_key."""
         return "***REDACTED***" if self.has_live_llm_key else "<unconfigured>"
 
+    def _masked_qdrant_key_label(self) -> str:
+        """Return the safe redacted label for qdrant_api_key."""
+        return "***REDACTED***" if self.has_qdrant_api_key else "<unconfigured>"
+
     def sanitize_text(self, text: str) -> str:
-        """Remove any accidental occurrence of the raw API key from a string."""
+        """Remove any accidental occurrence of raw API keys from a string."""
         if not text:
             return text
         cleaned = text
-        if self.llm_api_key and self.llm_api_key.strip():
-            raw_key = self.llm_api_key.strip()
-            if len(raw_key) >= 4 and raw_key in cleaned:
-                cleaned = cleaned.replace(raw_key, "***REDACTED***")
+        for secret in (self.llm_api_key, self.qdrant_api_key):
+            if secret and secret.strip():
+                raw_key = secret.strip()
+                if len(raw_key) >= 4 and raw_key in cleaned:
+                    cleaned = cleaned.replace(raw_key, "***REDACTED***")
         return cleaned
 
     def to_sanitized_dict(self) -> Dict[str, Any]:
-        """Return a dictionary representation with llm_api_key strictly masked."""
+        """Return a dictionary representation with API keys strictly masked."""
         return {
             "llm_api_key": self._masked_key_label(),
             "has_live_llm_key": self.has_live_llm_key,
@@ -202,13 +224,15 @@ class KnowledgeRuntimeConfig:
             "use_fastembed_onnx": self.use_fastembed_onnx,
             "similarity_threshold": self.similarity_threshold,
             "qdrant_url": self.qdrant_url,
+            "qdrant_api_key": self._masked_qdrant_key_label(),
+            "has_qdrant_api_key": self.has_qdrant_api_key,
             "qdrant_host": self.qdrant_host,
             "qdrant_port": self.qdrant_port,
             "qdrant_collection_name": self.qdrant_collection_name,
         }
 
     def __repr__(self) -> str:
-        """Return safe representation with llm_api_key masked."""
+        """Return safe representation with llm_api_key and qdrant_api_key masked."""
         return (
             f"KnowledgeRuntimeConfig("
             f"llm_api_key='{self._masked_key_label()}', "
@@ -219,13 +243,14 @@ class KnowledgeRuntimeConfig:
             f"use_fastembed_onnx={self.use_fastembed_onnx}, "
             f"similarity_threshold={self.similarity_threshold}, "
             f"qdrant_url={self.qdrant_url!r}, "
+            f"qdrant_api_key='{self._masked_qdrant_key_label()}', "
             f"qdrant_host={self.qdrant_host!r}, "
             f"qdrant_port={self.qdrant_port}, "
             f"qdrant_collection_name='{self.qdrant_collection_name}')"
         )
 
     def __str__(self) -> str:
-        """Return safe string representation with llm_api_key masked."""
+        """Return safe string representation with llm_api_key and qdrant_api_key masked."""
         return self.__repr__()
 
     @classmethod
@@ -252,6 +277,13 @@ class KnowledgeRuntimeConfig:
 
         raw_key = source.get("LLM_API_KEY")
         cleaned_key = raw_key.strip() if raw_key and raw_key.strip() else None
+
+        raw_qdrant_key = source.get("QDRANT_API_KEY")
+        cleaned_qdrant_key: Optional[str] = None
+        if raw_qdrant_key and raw_qdrant_key.strip():
+            candidate = raw_qdrant_key.strip()
+            if candidate.lower() not in PLACEHOLDER_API_KEYS:
+                cleaned_qdrant_key = candidate
 
         raw_threshold = source.get("KNOWLEDGE_SIMILARITY_THRESHOLD", "0.62")
         try:
@@ -280,6 +312,7 @@ class KnowledgeRuntimeConfig:
             use_fastembed_onnx=use_onnx,
             similarity_threshold=parsed_threshold,
             qdrant_url=raw_url,
+            qdrant_api_key=cleaned_qdrant_key,
             qdrant_host=raw_host,
             qdrant_port=parsed_port,
             qdrant_collection_name=source.get("QDRANT_COLLECTION_NAME", "trackflow_knowledge"),

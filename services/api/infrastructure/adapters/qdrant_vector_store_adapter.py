@@ -17,6 +17,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from domain.knowledge.entities import (
+    PLACEHOLDER_API_KEYS,
     KnowledgeChunk,
     KnowledgeRuntimeConfig,
     RetrievedContext,
@@ -42,6 +43,7 @@ class QdrantVectorStoreAdapter(VectorStorePort):
         vector_dimensions: int = DEFAULT_VECTOR_DIMENSIONS,
         location: Optional[str] = None,
         url: Optional[str] = None,
+        api_key: Optional[str] = None,
         host: Optional[str] = None,
         port: Optional[int] = None,
         path: Optional[str] = None,
@@ -56,6 +58,7 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             vector_dimensions: Embedding vector dimensionality (defaults to 384).
             location: Optional Qdrant location (e.g. ':memory:').
             url: Optional Qdrant HTTP URL.
+            api_key: Optional Qdrant API key for authenticated remote clusters.
             host: Optional Qdrant hostname.
             port: Optional Qdrant port (defaults to 6333 when host is set).
             path: Optional local filesystem persistence path.
@@ -72,29 +75,72 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             self._client = client
             return
 
-        resolved_url = url if url is not None else self.config.qdrant_url
-        resolved_host = host if host is not None else self.config.qdrant_host
-        resolved_path = path or os.getenv("QDRANT_PATH")
+        raw_api_key = api_key if api_key is not None else self.config.qdrant_api_key
+        resolved_api_key: Optional[str] = None
+        if raw_api_key and raw_api_key.strip():
+            stripped_key = raw_api_key.strip()
+            if stripped_key.lower() not in PLACEHOLDER_API_KEYS:
+                resolved_api_key = stripped_key
+
         resolved_port = port if port is not None else self.config.qdrant_port
+        explicit_url = url.strip() if url and url.strip() else None
+        explicit_host = host.strip() if host and host.strip() else None
+        explicit_path = path.strip() if path and path.strip() else None
+        env_path = (os.getenv("QDRANT_PATH") or "").strip() or None
 
         try:
             if location is not None:
                 self._client = QdrantClient(location=location)
-            elif resolved_url:
-                self._client = QdrantClient(url=resolved_url, timeout=int(timeout))
-            elif resolved_host:
+            elif explicit_url:
                 self._client = QdrantClient(
-                    host=resolved_host, port=resolved_port, timeout=int(timeout)
+                    url=explicit_url,
+                    api_key=resolved_api_key,
+                    timeout=int(timeout),
                 )
-            elif resolved_path:
-                os.makedirs(resolved_path, exist_ok=True)
-                self._client = QdrantClient(path=resolved_path)
+            elif explicit_host:
+                self._client = QdrantClient(
+                    host=explicit_host,
+                    port=resolved_port,
+                    api_key=resolved_api_key,
+                    timeout=int(timeout),
+                )
+            elif explicit_path:
+                os.makedirs(explicit_path, exist_ok=True)
+                self._client = QdrantClient(path=explicit_path)
+            elif self.config.qdrant_url:
+                self._client = QdrantClient(
+                    url=self.config.qdrant_url,
+                    api_key=resolved_api_key,
+                    timeout=int(timeout),
+                )
+            elif self.config.qdrant_host:
+                self._client = QdrantClient(
+                    host=self.config.qdrant_host,
+                    port=resolved_port,
+                    api_key=resolved_api_key,
+                    timeout=int(timeout),
+                )
+            elif env_path:
+                os.makedirs(env_path, exist_ok=True)
+                self._client = QdrantClient(path=env_path)
             else:
                 self._client = QdrantClient(location=":memory:")
         except Exception as exc:
             raise KnowledgeBaseUnavailableException(
-                f"Failed to initialize Qdrant client: {exc}"
+                self._format_qdrant_error("Failed to initialize Qdrant client", exc)
             ) from exc
+
+    def _format_qdrant_error(self, prefix: str, exc: Exception) -> str:
+        """Sanitize Qdrant exception details and add actionable hint on 401/403 auth errors."""
+        sanitized_detail = self.config.sanitize_text(str(exc))
+        lower_detail = sanitized_detail.lower()
+        if "403" in lower_detail or "401" in lower_detail or "forbidden" in lower_detail or "unauthorized" in lower_detail:
+            return (
+                f"{prefix}: {sanitized_detail} "
+                f"(Verify QDRANT_API_KEY is set and has write/manage permissions for the QDRANT_URL cluster, "
+                f"or clear QDRANT_URL in services/api/.env to use local storage.)"
+            )
+        return f"{prefix}: {sanitized_detail}"
 
     def ensure_collection(self) -> None:
         """Ensure the `trackflow_knowledge` collection and payload indexes exist.
@@ -128,7 +174,9 @@ class QdrantVectorStoreAdapter(VectorStorePort):
                             pass
         except Exception as exc:
             raise KnowledgeBaseUnavailableException(
-                f"Unable to ensure Qdrant collection '{self.collection_name}': {exc}"
+                self._format_qdrant_error(
+                    f"Unable to ensure Qdrant collection '{self.collection_name}'", exc
+                )
             ) from exc
 
     def upsert_chunks(self, chunks: List[KnowledgeChunk]) -> Dict[str, int]:
@@ -207,7 +255,10 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             raise
         except Exception as exc:
             raise KnowledgeBaseUnavailableException(
-                f"Failed to upsert chunks into Qdrant collection '{self.collection_name}': {exc}"
+                self._format_qdrant_error(
+                    f"Failed to upsert chunks into Qdrant collection '{self.collection_name}'",
+                    exc,
+                )
             ) from exc
 
     def search(
@@ -296,7 +347,10 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             return results
         except Exception as exc:
             raise KnowledgeBaseUnavailableException(
-                f"Vector search failed on collection '{self.collection_name}': {exc}"
+                self._format_qdrant_error(
+                    f"Vector search failed on collection '{self.collection_name}'",
+                    exc,
+                )
             ) from exc
 
     def get_health_status(self) -> Dict[str, Any]:
@@ -330,5 +384,5 @@ class QdrantVectorStoreAdapter(VectorStorePort):
             }
         except Exception as exc:
             raise KnowledgeBaseUnavailableException(
-                f"Qdrant health check failed: {exc}"
+                self._format_qdrant_error("Qdrant health check failed", exc)
             ) from exc

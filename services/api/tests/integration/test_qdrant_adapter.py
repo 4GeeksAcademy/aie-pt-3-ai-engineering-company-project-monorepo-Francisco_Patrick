@@ -10,9 +10,11 @@ Verifies:
 
 import dataclasses
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 import pytest
 
 from application.services.chunking import MarkdownSemanticChunker
+from domain.knowledge.entities import KnowledgeRuntimeConfig
 from domain.knowledge.exceptions import (
     IngestionException,
     KnowledgeBaseUnavailableException,
@@ -95,3 +97,97 @@ class TestQdrantVectorStoreAdapterIntegration:
 
         with pytest.raises(KnowledgeBaseUnavailableException):
             adapter.search(query_vector=[0.1, 0.2], top_k=3)
+
+    def test_forwards_api_key_from_config_and_constructor_for_url_and_host(self) -> None:
+        """QdrantVectorStoreAdapter must forward api_key to QdrantClient when url or host is configured."""
+        config = KnowledgeRuntimeConfig.from_env(
+            env={
+                "QDRANT_URL": "https://cluster-xyz.europe-west6-0.gcp.cloud.qdrant.io",
+                "QDRANT_API_KEY": "qdrant-cloud-secret-jwt-token-xyz",
+            },
+            load_dotenv_file=False,
+        )
+
+        with patch(
+            "infrastructure.adapters.qdrant_vector_store_adapter.QdrantClient"
+        ) as mock_qdrant_client:
+            QdrantVectorStoreAdapter(config=config, timeout=7.0)
+            mock_qdrant_client.assert_called_once_with(
+                url="https://cluster-xyz.europe-west6-0.gcp.cloud.qdrant.io",
+                api_key="qdrant-cloud-secret-jwt-token-xyz",
+                timeout=7,
+            )
+
+        host_config = KnowledgeRuntimeConfig.from_env(
+            env={
+                "QDRANT_HOST": "qdrant.internal",
+                "QDRANT_PORT": "6334",
+                "QDRANT_API_KEY": "host-config-key",
+            },
+            load_dotenv_file=False,
+        )
+
+        with patch(
+            "infrastructure.adapters.qdrant_vector_store_adapter.QdrantClient"
+        ) as mock_qdrant_client:
+            QdrantVectorStoreAdapter(
+                config=host_config,
+                api_key="explicit-constructor-key",
+                timeout=6.0,
+            )
+            mock_qdrant_client.assert_called_once_with(
+                host="qdrant.internal",
+                port=6334,
+                api_key="explicit-constructor-key",
+                timeout=6,
+            )
+
+    def test_explicit_path_and_location_take_precedence_over_config_url(
+        self, tmp_path: Path
+    ) -> None:
+        """Explicit path or location constructor arguments must not be overridden by config.qdrant_url."""
+        remote_config = KnowledgeRuntimeConfig.from_env(
+            env={
+                "QDRANT_URL": "https://cluster-xyz.europe-west6-0.gcp.cloud.qdrant.io",
+                "QDRANT_API_KEY": "qdrant-cloud-secret-jwt-token-xyz",
+            },
+            load_dotenv_file=False,
+        )
+        local_dir = tmp_path / "local_qdrant_store"
+
+        with patch(
+            "infrastructure.adapters.qdrant_vector_store_adapter.QdrantClient"
+        ) as mock_qdrant_client:
+            QdrantVectorStoreAdapter(path=str(local_dir), config=remote_config)
+            mock_qdrant_client.assert_called_once_with(path=str(local_dir))
+
+        with patch(
+            "infrastructure.adapters.qdrant_vector_store_adapter.QdrantClient"
+        ) as mock_qdrant_client:
+            QdrantVectorStoreAdapter(location=":memory:", config=remote_config)
+            mock_qdrant_client.assert_called_once_with(location=":memory:")
+
+    def test_forbidden_403_error_includes_actionable_hint_and_masks_secret(self) -> None:
+        """403 Forbidden from Qdrant Cloud must surface a clear hint and never leak QDRANT_API_KEY."""
+        secret_qdrant_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.superSecretQdrantToken"
+        config = KnowledgeRuntimeConfig.from_env(
+            env={
+                "QDRANT_URL": "https://cluster-xyz.europe-west6-0.gcp.cloud.qdrant.io",
+                "QDRANT_API_KEY": secret_qdrant_key,
+            },
+            load_dotenv_file=False,
+        )
+        mock_client = MagicMock()
+        mock_client.collection_exists.side_effect = RuntimeError(
+            f"Unexpected Response: 403 (Forbidden) with token {secret_qdrant_key}"
+        )
+
+        adapter = QdrantVectorStoreAdapter(client=mock_client, config=config)
+        with pytest.raises(KnowledgeBaseUnavailableException) as exc_info:
+            adapter.ensure_collection()
+
+        msg = str(exc_info.value)
+        assert "Unable to ensure Qdrant collection 'trackflow_knowledge'" in msg
+        assert "QDRANT_API_KEY" in msg
+        assert secret_qdrant_key not in msg
+        assert "***REDACTED***" in msg

@@ -31,6 +31,8 @@ class TestKnowledgeRuntimeConfig:
         assert config.use_fastembed_onnx is False
         assert config.similarity_threshold == 0.62
         assert config.qdrant_url is None
+        assert config.qdrant_api_key is None
+        assert config.has_qdrant_api_key is False
         assert config.qdrant_host is None
         assert config.qdrant_port == 6333
         assert config.qdrant_collection_name == "trackflow_knowledge"
@@ -46,6 +48,7 @@ class TestKnowledgeRuntimeConfig:
             "USE_FASTEMBED_ONNX": "true",
             "KNOWLEDGE_SIMILARITY_THRESHOLD": "0.71",
             "QDRANT_URL": "http://qdrant.internal:6333",
+            "QDRANT_API_KEY": "qdrant-cloud-secret-jwt-token-12345",
             "QDRANT_HOST": "qdrant.internal",
             "QDRANT_PORT": "6334",
             "QDRANT_COLLECTION_NAME": "trackflow_knowledge_custom",
@@ -60,17 +63,20 @@ class TestKnowledgeRuntimeConfig:
         assert config.use_fastembed_onnx is True
         assert config.similarity_threshold == 0.71
         assert config.qdrant_url == "http://qdrant.internal:6333"
+        assert config.qdrant_api_key == "qdrant-cloud-secret-jwt-token-12345"
+        assert config.has_qdrant_api_key is True
         assert config.qdrant_host == "qdrant.internal"
         assert config.qdrant_port == 6334
         assert config.qdrant_collection_name == "trackflow_knowledge_custom"
 
     def test_placeholder_api_keys_treated_as_unconfigured(self) -> None:
-        """Placeholder values for LLM_API_KEY must set has_live_llm_key to False."""
+        """Placeholder values for LLM_API_KEY and QDRANT_API_KEY must be treated as unconfigured."""
         placeholders = [
             "",
             "   ",
             "your_llm_api_key_here",
             "YOUR_LLM_API_KEY_HERE",
+            "your_qdrant_api_key_here",
             "your_api_key_here",
             "changeme",
             "none",
@@ -78,10 +84,12 @@ class TestKnowledgeRuntimeConfig:
         ]
         for placeholder in placeholders:
             config = KnowledgeRuntimeConfig.from_env(
-                env={"LLM_API_KEY": placeholder},
+                env={"LLM_API_KEY": placeholder, "QDRANT_API_KEY": placeholder},
                 load_dotenv_file=False,
             )
-            assert config.has_live_llm_key is False, f"Expected False for placeholder '{placeholder}'"
+            assert config.has_live_llm_key is False, f"Expected False for LLM placeholder '{placeholder}'"
+            assert config.qdrant_api_key is None, f"Expected None for Qdrant placeholder '{placeholder}'"
+            assert config.has_qdrant_api_key is False, f"Expected False for Qdrant placeholder '{placeholder}'"
 
     def test_deterministic_provider_disables_live_llm_key(self) -> None:
         """When LLM_PROVIDER is explicitly 'deterministic', has_live_llm_key must be False."""
@@ -115,10 +123,15 @@ class TestKnowledgeRuntimeConfig:
         assert invalid.similarity_threshold == 0.62
 
     def test_secret_masking_in_repr_str_and_sanitized_dict(self) -> None:
-        """Raw LLM_API_KEY must never appear in repr(), str(), or to_sanitized_dict()."""
+        """Raw LLM_API_KEY and QDRANT_API_KEY must never appear in repr(), str(), or to_sanitized_dict()."""
         raw_secret = "AIzaSySecretKeyTrackFlowDoNotLeak12345"
+        raw_qdrant_secret = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.qdrantSecret"
         config = KnowledgeRuntimeConfig.from_env(
-            env={"LLM_API_KEY": raw_secret, "LLM_MODEL": "gemini-2.5-flash"},
+            env={
+                "LLM_API_KEY": raw_secret,
+                "QDRANT_API_KEY": raw_qdrant_secret,
+                "LLM_MODEL": "gemini-2.5-flash",
+            },
             load_dotenv_file=False,
         )
 
@@ -129,33 +142,47 @@ class TestKnowledgeRuntimeConfig:
         assert raw_secret not in repr_str
         assert raw_secret not in str_val
         assert raw_secret not in str(sanitized)
+        assert raw_qdrant_secret not in repr_str
+        assert raw_qdrant_secret not in str_val
+        assert raw_qdrant_secret not in str(sanitized)
         assert "***REDACTED***" in repr_str
         assert sanitized["llm_api_key"] == "***REDACTED***"
         assert sanitized["has_live_llm_key"] is True
+        assert sanitized["qdrant_api_key"] == "***REDACTED***"
+        assert sanitized["has_qdrant_api_key"] is True
         assert sanitized["llm_model"] == "gemini-2.5-flash"
 
     def test_unconfigured_secret_masking_shows_unconfigured_marker(self) -> None:
-        """When LLM_API_KEY is unset or placeholder, sanitized representations show <unconfigured>."""
+        """When LLM_API_KEY and QDRANT_API_KEY are unset or placeholder, sanitized representations show <unconfigured>."""
         config = KnowledgeRuntimeConfig.from_env(
-            env={"LLM_API_KEY": "your_llm_api_key_here"},
+            env={
+                "LLM_API_KEY": "your_llm_api_key_here",
+                "QDRANT_API_KEY": "your_qdrant_api_key_here",
+            },
             load_dotenv_file=False,
         )
 
         assert "your_llm_api_key_here" not in repr(config)
+        assert "your_qdrant_api_key_here" not in repr(config)
         assert "<unconfigured>" in repr(config)
         assert config.to_sanitized_dict()["llm_api_key"] == "<unconfigured>"
+        assert config.to_sanitized_dict()["qdrant_api_key"] == "<unconfigured>"
 
     def test_sanitize_text_redacts_secret_occurrences(self) -> None:
-        """sanitize_text must strip any accidental occurrence of the raw API key from log strings."""
+        """sanitize_text must strip any accidental occurrence of raw API keys from log strings."""
         raw_secret = "sk-proj-super-secret-token-xyz987"
+        raw_qdrant_secret = "qdrant-secret-bearer-token-998877"
         config = KnowledgeRuntimeConfig.from_env(
-            env={"LLM_API_KEY": raw_secret},
+            env={"LLM_API_KEY": raw_secret, "QDRANT_API_KEY": raw_qdrant_secret},
             load_dotenv_file=False,
         )
 
-        error_msg = f"HTTP request failed for key={raw_secret} with status 401"
+        error_msg = (
+            f"HTTP request failed for key={raw_secret} and qdrant={raw_qdrant_secret} with status 403"
+        )
         cleaned = config.sanitize_text(error_msg)
         assert raw_secret not in cleaned
+        assert raw_qdrant_secret not in cleaned
         assert "***REDACTED***" in cleaned
 
     def test_from_env_reads_os_environ_by_default(self) -> None:

@@ -24,6 +24,7 @@
      USE_FASTEMBED_ONNX=false
      KNOWLEDGE_SIMILARITY_THRESHOLD=0.62
      QDRANT_URL=
+     QDRANT_API_KEY=
      QDRANT_HOST=
      QDRANT_PORT=6333
      QDRANT_COLLECTION_NAME=trackflow_knowledge
@@ -154,10 +155,10 @@ curl -X POST http://localhost:8000/api/v1/knowledge/query \
 ---
 
 ### Scenario 5: Environment Configuration & Credential Safety Validation (P2)
-1. Verify `services/api/.env.example` contains documented variables: `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `AGENT_MODEL`, `EMBEDDING_MODEL`, `USE_FASTEMBED_ONNX`, `KNOWLEDGE_SIMILARITY_THRESHOLD`, `QDRANT_URL`, `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION_NAME`.
+1. Verify `services/api/.env.example` contains documented variables: `LLM_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`, `AGENT_MODEL`, `EMBEDDING_MODEL`, `USE_FASTEMBED_ONNX`, `KNOWLEDGE_SIMILARITY_THRESHOLD`, `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_COLLECTION_NAME`.
 2. Run with default/placeholder `LLM_API_KEY=your_llm_api_key_here`:
    - Confirm queries succeed with HTTP 200 using deterministic grounded synthesis fallback.
-   - Confirm `repr(config)` and `config.to_sanitized_dict()` never expose any raw `LLM_API_KEY` value.
+   - Confirm `repr(config)` and `config.to_sanitized_dict()` never expose any raw `LLM_API_KEY` or `QDRANT_API_KEY` value.
 
 ---
 
@@ -181,9 +182,9 @@ curl -X POST http://localhost:8000/api/v1/knowledge/query \
 
 Run all automated quality gates:
 ```bash
-# Backend test suite
+# Backend test suite (cross-platform: Windows PowerShell & POSIX shells)
 cd services/api
-uv run pytest tests/unit/test_knowledge*.py tests/integration/test_knowledge*.py -v
+uv run pytest tests/unit/test_knowledge_chunking.py tests/unit/test_knowledge_config.py tests/unit/test_knowledge_guardrails.py tests/unit/test_knowledge_service.py tests/integration/test_knowledge_routes.py tests/integration/test_qdrant_adapter.py -v
 
 # Monorepo TypeScript and build integrity
 cd ../..

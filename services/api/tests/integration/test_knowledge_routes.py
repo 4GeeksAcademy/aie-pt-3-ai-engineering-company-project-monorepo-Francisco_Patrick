@@ -14,6 +14,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-knowledge-integration-tests")
+# Force deterministic :memory: Qdrant in route integration tests even if services/api/.env has QDRANT_URL
+os.environ["QDRANT_URL"] = ""
+os.environ["QDRANT_HOST"] = ""
+os.environ["QDRANT_PATH"] = ""
 
 from main import app  # noqa: E402
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException  # noqa: E402
@@ -234,6 +238,7 @@ class TestKnowledgeRoutesIntegration:
             "USE_FASTEMBED_ONNX",
             "KNOWLEDGE_SIMILARITY_THRESHOLD",
             "QDRANT_URL",
+            "QDRANT_API_KEY",
             "QDRANT_HOST",
             "QDRANT_PORT",
             "QDRANT_COLLECTION_NAME",
@@ -243,9 +248,11 @@ class TestKnowledgeRoutesIntegration:
         # Test with live-looking secret key + failing upstream HTTP client to verify
         # seamless deterministic fallback and zero credential leakage in HTTP response
         test_secret = "AIzaSyIntegrationTestSecretKeyDoNotExpose999"
+        test_qdrant_secret = "qdrantSecretTokenIntegrationTestDoNotExpose888"
         runtime_cfg = KnowledgeRuntimeConfig.from_env(
             env={
                 "LLM_API_KEY": test_secret,
+                "QDRANT_API_KEY": test_qdrant_secret,
                 "LLM_PROVIDER": "gemini",
                 "LLM_MODEL": "gemini-2.5-flash-exp",
                 "AGENT_MODEL": "gemini-2.5-pro-exp",
@@ -283,6 +290,7 @@ class TestKnowledgeRoutesIntegration:
             assert res.status_code == 200
             raw_text = res.text
             assert test_secret not in raw_text
+            assert test_qdrant_secret not in raw_text
             data = res.json()
             assert data["is_refusal"] is False
             assert "Miguel Torres" in data["answer"]

@@ -22,7 +22,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from application.services.chunking import MarkdownSemanticChunker  # noqa: E402
-from domain.knowledge.entities import KnowledgeChunk  # noqa: E402
+from domain.knowledge.entities import (  # noqa: E402
+    KnowledgeChunk,
+    KnowledgeRuntimeConfig,
+)
 from domain.knowledge.exceptions import KnowledgeBaseException  # noqa: E402
 from domain.knowledge.ports import (  # noqa: E402
     EmbeddingServicePort,
@@ -109,15 +112,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     docs_path = Path(args.docs_dir).resolve()
     try:
+        config = KnowledgeRuntimeConfig.from_env()
         if args.in_memory:
-            vector_store = QdrantVectorStoreAdapter(location=":memory:")
-        elif os.getenv("QDRANT_URL") or os.getenv("QDRANT_HOST") or os.getenv("QDRANT_PATH"):
-            vector_store = QdrantVectorStoreAdapter()
+            vector_store = QdrantVectorStoreAdapter(location=":memory:", config=config)
+        elif config.qdrant_url or config.qdrant_host or os.getenv("QDRANT_PATH"):
+            vector_store = QdrantVectorStoreAdapter(config=config)
         else:
             default_storage = REPO_ROOT / ".qdrant_storage"
-            vector_store = QdrantVectorStoreAdapter(path=str(default_storage))
+            vector_store = QdrantVectorStoreAdapter(path=str(default_storage), config=config)
 
-        embedder = FastEmbedAdapter()
+        embedder = FastEmbedAdapter(config=config)
         ingest_corpus(docs_dir=docs_path, vector_store=vector_store, embedder=embedder)
         return 0
     except KnowledgeBaseException as exc:
