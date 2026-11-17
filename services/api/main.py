@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from core.exceptions import register_exception_handlers  # noqa: E402
 from infrastructure.persistence.sqlmodel.client import init_db  # noqa: E402
 from presentation.api.v1 import (  # noqa: E402
+    agent,
     auth,
     incidents,
     inventory,
@@ -53,6 +54,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (reporting.router, f"{API_V1_PREFIX}/reporting", "/reporting"),
     (tasks.router, f"{API_V1_PREFIX}/tasks", "/tasks"),
     (knowledge.router, f"{API_V1_PREFIX}/knowledge", "/knowledge"),
+    (agent.router, f"{API_V1_PREFIX}/agent", "/agent"),
 ]
 
 

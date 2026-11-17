@@ -10,8 +10,8 @@
 
 **Purpose**: Environment preparation, core agent domain directory structure, and dependency initialization.
 
-- [ ] T001 Initialize domain and application directories for agent workflow in `services/api/domain/agent/` and `services/api/application/services/`
-- [ ] T002 Verify LangGraph and testing dependencies (`langgraph`, `langgraph-checkpoint`, `fastapi`, `pydantic`, `pytest`, `httpx`) in `services/api/pyproject.toml`
+- [X] T001 Initialize domain and application directories for agent workflow in `services/api/domain/agent/` and `services/api/application/services/`
+- [X] T002 Verify LangGraph and testing dependencies (`langgraph`, `langgraph-checkpoint`, `fastapi`, `pydantic`, `pytest`, `httpx`) in `services/api/pyproject.toml`
 
 ---
 
@@ -21,11 +21,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 [P] Implement `AgentState` TypedDict and domain entity models in `services/api/domain/agent/entities.py`
-- [ ] T004 [P] Implement agent domain exceptions (`GraphCompilationError`, `WorkflowExecutionError`, `StateValidationError`) in `services/api/domain/agent/exceptions.py`
-- [ ] T005 [P] Define application and service port interfaces (`SupportAgentServicePort`, `TraceRegistryPort`) in `services/api/domain/agent/ports.py`
-- [ ] T006 Expose domain agent contracts and models in `services/api/domain/agent/__init__.py`
-- [ ] T007 Implement thread-safe in-memory `TraceRegistry` for queryable execution traces in `services/api/application/services/trace_registry.py`
+- [X] T003 [P] Implement `AgentState` TypedDict and domain entity models in `services/api/domain/agent/entities.py`
+- [X] T004 [P] Implement agent domain exceptions (`GraphCompilationError`, `WorkflowExecutionError`, `StateValidationError`) in `services/api/domain/agent/exceptions.py`
+- [X] T005 [P] Define application and service port interfaces (`SupportAgentServicePort`, `TraceRegistryPort`) in `services/api/domain/agent/ports.py`
+- [X] T006 Expose domain agent contracts and models in `services/api/domain/agent/__init__.py`
+- [X] T007 Implement thread-safe in-memory `TraceRegistry` for queryable execution traces in `services/api/application/services/trace_registry.py`
 
 **Checkpoint**: Foundation ready — domain contracts and shared telemetry storage established. User story implementation can now begin.
 
@@ -39,15 +39,15 @@
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T008 [P] [US1] Unit test for single-responsibility nodes (`intake_node`, `retrieval_node`, `generation_node`) in `services/api/tests/unit/test_agent_workflow.py`
-- [ ] T009 [P] [US1] Integration test for standard reasoning workflow execution in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T008 [P] [US1] Unit test for single-responsibility nodes (`intake_node`, `retrieval_node`, `generation_node`) in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T009 [P] [US1] Integration test for standard reasoning workflow execution in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement `intake_node` for input sanitization, length validation, and trace metadata initialization in `services/api/application/services/agent_workflow.py`
-- [ ] T011 [US1] Implement `retrieval_node` reusing `VectorStorePort` and `EmbeddingServicePort` to populate `contexts` in `services/api/application/services/agent_workflow.py`
-- [ ] T012 [US1] Implement `generation_node` consuming pre-retrieved `contexts`, invoking generation with guardrails, and extracting citations in `services/api/application/services/agent_workflow.py`
-- [ ] T013 [US1] Assemble and compile the primary linear reasoning graph (`build_support_agent_graph`) in `services/api/application/services/agent_workflow.py`
+- [X] T010 [US1] Implement `intake_node` for input sanitization, length validation, and trace metadata initialization in `services/api/application/services/agent_workflow.py`
+- [X] T011 [US1] Implement `retrieval_node` reusing `VectorStorePort` and `EmbeddingServicePort` to populate `contexts` in `services/api/application/services/agent_workflow.py`
+- [X] T012 [US1] Implement `generation_node` consuming pre-retrieved `contexts`, invoking generation with guardrails, and extracting citations in `services/api/application/services/agent_workflow.py`
+- [X] T013 [US1] Assemble and compile the primary linear reasoning graph (`build_support_agent_graph`) in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: At this point, User Story 1 delivers a functional MVP with explicit, single-responsibility nodes for standard inquiries.
 
@@ -61,15 +61,15 @@
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T014 [P] [US2] Unit tests for conditional routing functions (`route_after_intake`, `route_after_retrieval`) in `services/api/tests/unit/test_agent_workflow.py`
-- [ ] T015 [P] [US2] Unit test for `refusal_node` honest refusal formatting in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T014 [P] [US2] Unit tests for conditional routing functions (`route_after_intake`, `route_after_retrieval`) in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T015 [P] [US2] Unit test for `refusal_node` honest refusal formatting in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Implement `refusal_node` to format standardized honest refusal messages and set `is_refusal=True` in `services/api/application/services/agent_workflow.py`
-- [ ] T017 [US2] Implement conditional edge `route_after_intake` to intercept blank/short queries before retrieval in `services/api/application/services/agent_workflow.py`
-- [ ] T018 [US2] Implement conditional edge `route_after_retrieval` to enforce the 0.62 similarity threshold and branch to `refusal_node` when `len(contexts) == 0` in `services/api/application/services/agent_workflow.py`
-- [ ] T019 [US2] Update graph compilation in `services/api/application/services/agent_workflow.py` to register conditional edges and build-time reachability validation
+- [X] T016 [US2] Implement `refusal_node` to format standardized honest refusal messages and set `is_refusal=True` in `services/api/application/services/agent_workflow.py`
+- [X] T017 [US2] Implement conditional edge `route_after_intake` to intercept blank/short queries before retrieval in `services/api/application/services/agent_workflow.py`
+- [X] T018 [US2] Implement conditional edge `route_after_retrieval` to enforce the 0.62 similarity threshold and branch to `refusal_node` when `len(contexts) == 0` in `services/api/application/services/agent_workflow.py`
+- [X] T019 [US2] Update graph compilation in `services/api/application/services/agent_workflow.py` to register conditional edges and build-time reachability validation
 
 **Checkpoint**: Both User Story 1 and User Story 2 work independently — empty and out-of-scope inquiries are safely intercepted.
 
@@ -83,14 +83,14 @@
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T020 [P] [US3] Unit test for execution tracing telemetry and step latency measurement in `services/api/tests/unit/test_agent_workflow.py`
-- [ ] T021 [P] [US3] Unit test for state checkpointing and recovery with `MemorySaver` in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T020 [P] [US3] Unit test for execution tracing telemetry and step latency measurement in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T021 [P] [US3] Unit test for state checkpointing and recovery with `MemorySaver` in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Integrate `MemorySaver` checkpointer and thread-scoped configuration into `build_support_agent_graph` in `services/api/application/services/agent_workflow.py`
-- [ ] T023 [US3] Implement execution step timing and telemetry tracking inside workflow node transitions in `services/api/application/services/agent_workflow.py`
-- [ ] T024 [US3] Implement `SupportAgentService` coordinating compiled graph invocation, trace construction, and trace persistence into `TraceRegistry` in `services/api/application/services/support_agent_service.py`
+- [X] T022 [US3] Integrate `MemorySaver` checkpointer and thread-scoped configuration into `build_support_agent_graph` in `services/api/application/services/agent_workflow.py`
+- [X] T023 [US3] Implement execution step timing and telemetry tracking inside workflow node transitions in `services/api/application/services/agent_workflow.py`
+- [X] T024 [US3] Implement `SupportAgentService` coordinating compiled graph invocation, trace construction, and trace persistence into `TraceRegistry` in `services/api/application/services/support_agent_service.py`
 
 **Checkpoint**: State transitions are checkpointed per thread and execution runs produce queryable traces in `TraceRegistry`.
 
@@ -104,11 +104,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T025 [P] [US4] Define `EvaluationTestCase` entity and verification fixtures in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T026 [P] [US4] Implement Eval Scenario 1: Standard policy reasoning flow and node sequence verification (`["intake", "retrieval", "generation"]`) in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T027 [P] [US4] Implement Eval Scenario 2: Conditional refusal verification for unindexed/low-similarity queries (`["intake", "retrieval", "refusal"]`) in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T028 [P] [US4] Implement Eval Scenario 3: Input validation and early termination for empty queries in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T029 [P] [US4] Implement Eval Scenario 4: Factual knowledge grounding verification for return policy (30 days) and warehouse storage pricing (€18 Zaragoza, $25 Los Angeles) in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T025 [P] [US4] Define `EvaluationTestCase` entity and verification fixtures in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T026 [P] [US4] Implement Eval Scenario 1: Standard policy reasoning flow and node sequence verification (`["intake", "retrieval", "generation"]`) in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T027 [P] [US4] Implement Eval Scenario 2: Conditional refusal verification for unindexed/low-similarity queries (`["intake", "retrieval", "refusal"]`) in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T028 [P] [US4] Implement Eval Scenario 3: Input validation and early termination for empty queries in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T029 [P] [US4] Implement Eval Scenario 4: Factual knowledge grounding verification for return policy (30 days) and warehouse storage pricing (€18 Zaragoza, $25 Los Angeles) in `tests/pipelines/test_support_agent_evaluation.py`
 
 **Checkpoint**: Automated evaluation gate validates workflow topology and factual policy grounding in CI/CD without regressions.
 
@@ -122,16 +122,16 @@
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T030 [P] [US5] Integration test for `POST /api/v1/agent/query` (success and refusal paths) in `services/api/tests/integration/test_agent_routes.py`
-- [ ] T031 [P] [US5] Integration test for `GET /api/v1/agent/trace/{trace_id}` and `GET /api/v1/agent/health` in `services/api/tests/integration/test_agent_routes.py`
-- [ ] T032 [P] [US5] Integration test for defensive error shielding and zero raw stack trace leakage under synthetic faults in `services/api/tests/integration/test_agent_routes.py`
+- [X] T030 [P] [US5] Integration test for `POST /api/v1/agent/query` (success and refusal paths) in `services/api/tests/integration/test_agent_routes.py`
+- [X] T031 [P] [US5] Integration test for `GET /api/v1/agent/trace/{trace_id}` and `GET /api/v1/agent/health` in `services/api/tests/integration/test_agent_routes.py`
+- [X] T032 [P] [US5] Integration test for defensive error shielding and zero raw stack trace leakage under synthetic faults in `services/api/tests/integration/test_agent_routes.py`
 
 ### Implementation for User Story 5
 
-- [ ] T033 [P] [US5] Define Pydantic request and response schemas (`AgentQueryRequestSchema`, `AgentQueryResponseSchema`, `AgentTraceResponseSchema`, `AgentHealthResponseSchema`) matching OpenAPI contract in `services/api/presentation/schemas/agent.py`
-- [ ] T034 [US5] Configure FastAPI dependency providers `get_support_agent_service` and `get_trace_registry` using `Depends` in `services/api/presentation/dependencies.py`
-- [ ] T035 [US5] Implement FastAPI route controllers (`POST /query`, `GET /trace/{trace_id}`, `GET /health`) with `run_in_threadpool` and defensive exception handling in `services/api/presentation/api/v1/agent.py`
-- [ ] T036 [US5] Register the agent router in the main FastAPI application in `services/api/main.py`
+- [X] T033 [P] [US5] Define Pydantic request and response schemas (`AgentQueryRequestSchema`, `AgentQueryResponseSchema`, `AgentTraceResponseSchema`, `AgentHealthResponseSchema`) matching OpenAPI contract in `services/api/presentation/schemas/agent.py`
+- [X] T034 [US5] Configure FastAPI dependency providers `get_support_agent_service` and `get_trace_registry` using `Depends` in `services/api/presentation/dependencies.py`
+- [X] T035 [US5] Implement FastAPI route controllers (`POST /query`, `GET /trace/{trace_id}`, `GET /health`) with `run_in_threadpool` and defensive exception handling in `services/api/presentation/api/v1/agent.py`
+- [X] T036 [US5] Register the agent router in the main FastAPI application in `services/api/main.py`
 
 **Checkpoint**: Full end-to-end integration complete — agent is accessible over HTTP REST with defensive error boundaries.
 
@@ -141,10 +141,10 @@
 
 **Purpose**: End-to-end quickstart validation, documentation, performance verification, and full regression sweep across monorepo test gates.
 
-- [ ] T037 [P] Execute end-to-end verification scenarios defined in `specs/027-support-agent-langgraph/quickstart.md`
-- [ ] T038 Validate build-time graph compilation and fail-fast behavior on disconnected nodes in `services/api/tests/unit/test_agent_workflow.py`
-- [ ] T039 [P] Run static type checking and linting across `services/api` to verify zero type errors and zero `any` usage
-- [ ] T040 Run complete monorepo backend regression suite (`pytest services/api/` and `pytest tests/pipelines/`) to verify zero regressions
+- [X] T037 [P] Execute end-to-end verification scenarios defined in `specs/027-support-agent-langgraph/quickstart.md`
+- [X] T038 Validate build-time graph compilation and fail-fast behavior on disconnected nodes in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T039 [P] Run static type checking and linting across `services/api` to verify zero type errors and zero `any` usage
+- [X] T040 Run complete monorepo backend regression suite (`pytest services/api/` and `pytest tests/pipelines/`) to verify zero regressions
 
 ---
 
