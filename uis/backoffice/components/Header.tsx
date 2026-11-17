@@ -143,6 +143,17 @@ export default function Header(): React.ReactElement | null {
               >
                 Reporting
               </Link>
+
+              <Link
+                href="/knowledge"
+                className={`${
+                  pathname?.startsWith('/knowledge')
+                    ? 'border-emerald-500 text-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors`}
+              >
+                Knowledge Base
+              </Link>
             </nav>
           </div>
           <div className="flex items-center">

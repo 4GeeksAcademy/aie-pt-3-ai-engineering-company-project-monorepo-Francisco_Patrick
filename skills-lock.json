@@ -1,77 +1,83 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "celery": {
       "source": "bobmatnyc/claude-mpm-skills",
       "sourceType": "github",
       "skillPath": "toolchains/python/async/celery/SKILL.md",
-      "computedHash": "00e6aae8ae91e9a050c34801cf63e012ff5b233f95243b67a6ab8682e5ffc0a6"
+      "computedHash": ""
     },
     "core-web-vitals": {
       "source": "addyosmani/web-quality-skills",
       "sourceType": "github",
       "skillPath": "skills/core-web-vitals/SKILL.md",
-      "computedHash": "ceaa3e9c9dfa6209ffe923714c0a093b950d0922213d0cf375c27f3d602cc857"
+      "computedHash": "de50c203aa9dafa8dee9dd8c06782e3fc610704b83c1c408e4c5ee2337c4cd2a"
     },
     "deployment-pipeline-design": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "skillPath": "plugins/cicd-automation/skills/deployment-pipeline-design/SKILL.md",
-      "computedHash": "fb952bfdc4dac88f91eacb90a745887195f0ebb0aaf6e94123419edd7b10247b"
+      "computedHash": "9258dcf4c70860c04bd6ed068b9afbd9bcd01c2991f00053283b8b0075bbd381"
     },
     "multi-stage-dockerfile": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
       "skillPath": "skills/multi-stage-dockerfile/SKILL.md",
-      "computedHash": "698bf93a84dae18fd7bd0b1d35c21427307fde78fbdf4624be9726f5f98189ca"
+      "computedHash": ""
     },
     "nextjs-best-practices": {
       "source": "sickn33/agentic-awesome-skills",
       "sourceType": "github",
       "skillPath": "skills/nextjs-best-practices/SKILL.md",
-      "computedHash": "0a3dd1e299ea935e8f5435895d549a139c86a5c1152c85cc1ad5f0eab4d3d89c"
+      "computedHash": "cf5b46b2cfba1edf3302f9142d55c10ea0944f09bbdc0c2a3a6c13422e6dc2eb"
     },
     "pandas-best-practices": {
       "source": "mindrally/skills",
       "sourceType": "github",
       "skillPath": "pandas-best-practices/SKILL.md",
-      "computedHash": "257718463935cbd02899304f565952b2a2d4abeac3e7c42b34909d9fe6d70396"
+      "computedHash": "3fe943fb5f382410ec506e0b69d1578a1078f197edd5a7c577b83dde40af449a"
     },
     "performance": {
       "source": "addyosmani/web-quality-skills",
       "sourceType": "github",
       "skillPath": "skills/performance/SKILL.md",
-      "computedHash": "25074989a0bbf636fd92e9079270b262a1c63422ed72a854494a8241dea0fcc5"
+      "computedHash": "06902ebc4a8b91bfb8d1a99a03f186f0535b03d1a776ef751206104ef9b86c4c"
     },
     "prefect-flow-builder": {
       "source": "jeremylongshore/tons-of-skills-marketplace",
       "sourceType": "github",
       "skillPath": "skills/11-data-pipelines/prefect-flow-builder/SKILL.md",
-      "computedHash": "2ee6782d0393e03a8dac2f51d44058069e4585dbfe5f3e24ad5c6e78be1af8bd"
+      "computedHash": "dc209f7fa5bcac1da3ab55d80e752b2b50e62085f54398fc96c445ce510e6b70"
     },
     "python-best-practices": {
       "source": "alleneubank/claude-code",
       "sourceType": "github",
       "skillPath": ".claude/skills/python-best-practices/SKILL.md",
-      "computedHash": "9096f9ba1660f3dc864206f05f2851f77a3872dded644514a63a509d5052466d"
+      "computedHash": "89c23e10d94d0eda65ee2be49dff4d7008f9eee0c51e917d6212f089d946dec7"
+    },
+    "qdrant": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "skillPath": "plugins/developer-kit-java/skills/qdrant/SKILL.md",
+      "computedHash": "518f89a672652cab8ada5e4038cc4676b74900eded4eec51319f5d9bed2e3b8b"
     },
     "redis-core": {
       "source": "redis/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/redis-core/SKILL.md",
-      "computedHash": "7805229f286490b074aa105bc9650060202e247764f09102b928421789380b63"
+      "computedHash": "90a1693b597e61a3224a203661e26022f94d2c17cea1f659d826cd783aea34d5"
     },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/react-best-practices/SKILL.md",
-      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+      "computedHash": ""
     },
     "web-perf": {
       "source": "cloudflare/skills",
       "sourceType": "github",
       "skillPath": "skills/web-perf/SKILL.md",
-      "computedHash": "603b94fca24096cc1d3063c3e70eca8d0cc3eb63467bcf7ddc0a95d21133d128"
+      "computedHash": "6a3d1d5c19cd30d770d7b01ea63c0736a70152b4a3894a5e12755bc9cbd62e98"
     }
   }
 }
