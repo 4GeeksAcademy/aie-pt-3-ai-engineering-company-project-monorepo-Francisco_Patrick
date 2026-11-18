@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrackFlow MCP Server Tools Catalog",
+  "description": "Standardized MCP tools exposed by mcps/trackflow-server",
+  "tools": [
+    {
+      "name": "create_incident",
+      "description": "Create a new operational incident ticket in the central Incidents Manager. Returns the created incident record in 'open' status.",
+      "required_scope": "incidents:write",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "Concise summary title of the operational incident"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 2000,
+            "description": "Detailed description of the incident context and symptoms"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "warehouse",
+              "delay",
+              "damage",
+              "billing",
+              "stock",
+              "system",
+              "reverse_logistics",
+              "last_mile",
+              "customer_experience",
+              "other"
+            ],
+            "description": "Incident classification category"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "branch",
+              "internal",
+              "warehouse",
+              "carrier",
+              "partner"
+            ],
+            "description": "Reporting source channel"
+          },
+          "branch": {
+            "type": "string",
+            "enum": [
+              "zaragoza",
+              "los_angeles",
+              "valencia",
+              "central",
+              "madrid",
+              "barcelona",
+              "bilbao",
+              "sevilla"
+            ],
+            "description": "Operational branch or warehouse associated with the incident"
+          }
+        },
+        "required": ["title", "description", "category", "origin", "branch"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_incidents",
+      "description": "Query operational incident records by unique ID or search filters (status, category, origin, branch). Results are ordered by recency and capped at 20 items.",
+      "required_scope": "incidents:read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "description": "Exact incident identifier (e.g., 'INC-001', 'inc_a1b2c3')"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "in_progress", "resolved", "discarded"],
+            "description": "Filter incidents by lifecycle status"
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter incidents by category"
+          },
+          "origin": {
+            "type": "string",
+            "description": "Filter incidents by reporting origin"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Filter incidents by branch"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "transition_incident_status",
+      "description": "Transition the lifecycle status of an existing incident ticket. Strictly validates transitions against the Incidents Manager state machine.",
+      "required_scope": "incidents:lifecycle",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "description": "Exact identifier of the incident to update"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["in_progress", "resolved", "discarded"],
+            "description": "Target lifecycle status to transition to"
+          }
+        },
+        "required": ["ticket_id", "status"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_inventory",
+      "description": "Query warehouse inventory stock projections and availability by SKU or product ID. STRICTLY READ-ONLY: Any attempt to mutate stock or submit orders is rejected.",
+      "required_scope": "inventory:read",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Stock Keeping Unit code (e.g. 'TF-001')"
+          },
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numerical product ID"
+          },
+          "query": {
+            "type": "string",
+            "description": "Free text query matching product name or description"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}
