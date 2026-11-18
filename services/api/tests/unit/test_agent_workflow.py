@@ -384,6 +384,9 @@ class TestUserStory3TracingAndCheckpointing:
         for node_name in ("intake", "retrieval", "generation"):
             assert node_name in trace.step_latencies
             assert trace.step_latencies[node_name] > 0.0
+            assert node_name in trace.node_outputs
+        assert trace.node_outputs["retrieval"]["context_count"] == 1
+        assert trace.node_outputs["generation"]["answer"] == result.answer
         assert trace.total_duration_ms >= sum(trace.step_latencies.values())
         assert trace.source_count == 1
         assert trace.final_answer == result.answer

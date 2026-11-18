@@ -7,10 +7,16 @@ Implements:
 - Per-node latency telemetry and `MemorySaver` state checkpointing.
 """
 
+from pathlib import Path
 import re
+import sys
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Set
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -22,6 +28,10 @@ from application.services.knowledge_service import (
     DEFAULT_SIMILARITY_THRESHOLD,
     STANDARD_REFUSAL_MESSAGE,
     build_refusal_message,
+)
+from data.pipelines.rag_pipeline import (
+    generate_answer as rag_generate_answer,
+    retrieve as rag_retrieve,
 )
 from domain.agent.entities import (
     AgentState,
@@ -113,6 +123,15 @@ def intake_node(state: AgentState) -> AgentState:
     step_latencies = dict(state.get("step_latencies") or {})
     step_latencies["intake"] = elapsed_ms
 
+    node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
+    node_outputs["intake"] = {
+        "query": sanitized_query,
+        "language": language,
+        "top_k": top_k,
+        "min_score": min_score,
+        "is_valid": not is_invalid,
+    }
+
     return {
         "query": sanitized_query,
         "language": language,
@@ -125,6 +144,7 @@ def intake_node(state: AgentState) -> AgentState:
         "trace_id": trace_id,
         "node_history": node_history,
         "step_latencies": step_latencies,
+        "node_outputs": node_outputs,
         "error": state.get("error"),
     }
 
@@ -135,7 +155,7 @@ def retrieval_node(
     embedding_service: EmbeddingServicePort,
     default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
 ) -> AgentState:
-    """Single-responsibility retrieval node reusing EmbeddingServicePort and VectorStorePort.
+    """Single-responsibility retrieval node reusing `retrieve()` from `data.pipelines.rag_pipeline`.
 
     Embeds the sanitized query, performs cosine similarity search, and filters candidates
     strictly against the calibrated `min_score` threshold (0.62 default).
@@ -147,7 +167,7 @@ def retrieval_node(
         default_min_score: Fallback minimum similarity threshold.
 
     Returns:
-        Updated AgentState with threshold-qualified `contexts`, `node_history`, and `step_latencies`.
+        Updated AgentState with threshold-qualified `contexts`, `node_history`, `step_latencies`, and `node_outputs`.
     """
     start_ns = time.perf_counter()
 
@@ -156,11 +176,12 @@ def retrieval_node(
     min_score = float(state.get("min_score", default_min_score))
 
     try:
-        query_vector = embedding_service.embed_query(query)
-        candidates = vector_store.search(
-            query_vector=query_vector,
+        qualified_contexts: List[RetrievedContext] = rag_retrieve(
+            question=query,
+            vector_store=vector_store,
+            embedding_service=embedding_service,
             top_k=top_k,
-            language=None,
+            min_score=min_score,
         )
     except KnowledgeBaseUnavailableException:
         raise
@@ -170,10 +191,6 @@ def retrieval_node(
             trace_id=state.get("trace_id"),
         ) from exc
 
-    qualified_contexts: List[RetrievedContext] = [
-        ctx for ctx in candidates if ctx.similarity_score >= min_score
-    ]
-
     node_history = list(state.get("node_history") or [])
     node_history.append("retrieval")
 
@@ -181,10 +198,24 @@ def retrieval_node(
     step_latencies = dict(state.get("step_latencies") or {})
     step_latencies["retrieval"] = elapsed_ms
 
+    node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
+    node_outputs["retrieval"] = {
+        "context_count": len(qualified_contexts),
+        "retrieved_chunks": [
+            {
+                "source_document": ctx.chunk.source_document,
+                "section": ctx.chunk.section,
+                "similarity_score": round(ctx.similarity_score, 4),
+            }
+            for ctx in qualified_contexts
+        ],
+    }
+
     return {
         "contexts": qualified_contexts,
         "node_history": node_history,
         "step_latencies": step_latencies,
+        "node_outputs": node_outputs,
     }
 
 
@@ -193,10 +224,11 @@ def generation_node(
     llm_generator: LLMGenerationPort,
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
 ) -> AgentState:
-    """Single-responsibility generation node consuming pre-retrieved contexts.
+    """Single-responsibility generation node calling `generate_answer(question, context)` over pre-retrieved contexts.
 
     Strictly separated from retrieval (FR-004): consumes `state['contexts']`, invokes
-    grounded synthesis, enforces TrackFlow corporate guardrails, and extracts citations.
+    `generate_answer` from `data.pipelines.rag_pipeline`, enforces TrackFlow corporate guardrails,
+    and extracts citations without re-invoking retrieval.
 
     Args:
         state: Current AgentState containing qualified `contexts`.
@@ -204,7 +236,7 @@ def generation_node(
         guardrail_validator: Optional BusinessGuardrailValidator instance.
 
     Returns:
-        Updated AgentState with `answer`, `is_refusal=False`, `sources`, `node_history`, and `step_latencies`.
+        Updated AgentState with `answer`, `is_refusal=False`, `sources`, `node_history`, `step_latencies`, and `node_outputs`.
     """
     start_ns = time.perf_counter()
     validator = guardrail_validator or BusinessGuardrailValidator()
@@ -214,30 +246,18 @@ def generation_node(
     contexts: List[RetrievedContext] = list(state.get("contexts") or [])
 
     try:
-        raw_answer = llm_generator.generate_grounded_answer(
-            query=query,
-            contexts=contexts,
+        enforced_answer, citations = rag_generate_answer(
+            question=query,
+            context=contexts,
+            llm_generator=llm_generator,
+            guardrail_validator=validator,
             language=language,
-        )
-        enforced_answer = validator.enforce(
-            query=query,
-            answer=raw_answer,
-            contexts=contexts,
         )
     except Exception as exc:
         raise WorkflowExecutionError(
             message="Answer generation failed during support agent execution.",
             trace_id=state.get("trace_id"),
         ) from exc
-
-    citations: List[SourceCitation] = [
-        SourceCitation(
-            source_document=ctx.chunk.source_document,
-            section=ctx.chunk.section,
-            similarity_score=round(max(0.0, min(1.0, ctx.similarity_score)), 4),
-        )
-        for ctx in contexts
-    ]
 
     node_history = list(state.get("node_history") or [])
     node_history.append("generation")
@@ -246,12 +266,28 @@ def generation_node(
     step_latencies = dict(state.get("step_latencies") or {})
     step_latencies["generation"] = elapsed_ms
 
+    node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
+    node_outputs["generation"] = {
+        "answer": enforced_answer,
+        "is_refusal": False,
+        "source_count": len(citations),
+        "sources": [
+            {
+                "source_document": c.source_document,
+                "section": c.section,
+                "similarity_score": c.similarity_score,
+            }
+            for c in citations
+        ],
+    }
+
     return {
         "answer": enforced_answer,
         "is_refusal": False,
         "sources": citations,
         "node_history": node_history,
         "step_latencies": step_latencies,
+        "node_outputs": node_outputs,
     }
 
 
@@ -282,12 +318,20 @@ def refusal_node(state: AgentState) -> AgentState:
     step_latencies = dict(state.get("step_latencies") or {})
     step_latencies["refusal"] = elapsed_ms
 
+    node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
+    node_outputs["refusal"] = {
+        "answer": refusal_text,
+        "is_refusal": True,
+        "source_count": 0,
+    }
+
     return {
         "answer": refusal_text,
         "is_refusal": True,
         "sources": [],
         "node_history": node_history,
         "step_latencies": step_latencies,
+        "node_outputs": node_outputs,
     }
 
 

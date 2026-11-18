@@ -94,6 +94,13 @@
         "type": "number"
       }
     },
+    "node_outputs": {
+      "type": "object",
+      "description": "Structured output payload produced by each visited node.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
     "error": {
       "type": ["string", "null"],
       "description": "Sanitized error message if a failure occurred during node execution."

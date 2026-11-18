@@ -142,6 +142,7 @@ class SupportAgentService(SupportAgentServicePort):
             "trace_id": trace_id,
             "node_history": [],
             "step_latencies": {},
+            "node_outputs": {},
             "error": None,
         }
         run_config: Dict[str, Any] = {"configurable": {"thread_id": trace_id}}
@@ -174,6 +175,11 @@ class SupportAgentService(SupportAgentServicePort):
         final_answer = str(final_state.get("answer") or "")
         is_refusal = bool(final_state.get("is_refusal", False))
         sources: List[SourceCitation] = list(final_state.get("sources") or [])
+        node_outputs: Dict[str, Dict[str, Any]] = {
+            str(k): dict(v)
+            for k, v in (final_state.get("node_outputs") or {}).items()
+            if isinstance(v, dict)
+        }
 
         checkpoints = self.get_checkpoints(trace_id)
         trace = AgentTrace(
@@ -185,6 +191,7 @@ class SupportAgentService(SupportAgentServicePort):
             is_refusal=is_refusal,
             final_answer=final_answer,
             source_count=len(sources),
+            node_outputs=node_outputs,
             created_at=datetime.now(timezone.utc),
             checkpoints=checkpoints,
         )

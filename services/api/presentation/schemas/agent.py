@@ -6,7 +6,7 @@ Conforms strictly to:
 - Monorepo Constitution Principle IV (Defensive Error Handling & Zero Sensitive Data Leaks).
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from presentation.schemas.knowledge import KnowledgeSourceCitationSchema
@@ -86,6 +86,10 @@ class AgentTraceResponseSchema(BaseModel):
     is_refusal: bool = Field(..., description="Whether the run ended in an honest refusal")
     final_answer: str = Field(..., description="Final answer or refusal message produced")
     source_count: int = Field(..., ge=0, description="Number of cited knowledge sources")
+    node_outputs: Dict[str, Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Structured output produced by each visited node during the run",
+    )
 
 
 class AgentHealthResponseSchema(BaseModel):

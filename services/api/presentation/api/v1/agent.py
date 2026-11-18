@@ -151,6 +151,7 @@ async def get_agent_trace(
         is_refusal=trace.is_refusal,
         final_answer=trace.final_answer,
         source_count=trace.source_count,
+        node_outputs=trace.node_outputs,
     )
 
 

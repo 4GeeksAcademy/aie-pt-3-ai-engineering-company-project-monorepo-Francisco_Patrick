@@ -1,21 +1,20 @@
 """Automated evaluation test suite for TrackFlow Support Agent with LangGraph (T025–T029).
 
 Verifies:
-- T025: `EvaluationTestCase` entity and end-to-end knowledge base seeded evaluation fixtures
-- T026 (Eval Scenario 1): Standard policy reasoning flow (`["intake", "retrieval", "generation"]`)
-- T027 (Eval Scenario 2): Conditional refusal routing (`["intake", "retrieval", "refusal"]`) for unindexed topics
-- T028 (Eval Scenario 3): Input validation and early termination (`["intake", "refusal"]`) for empty/whitespace queries
-- T029 (Eval Scenario 4): Factual policy grounding against `docs/company-knowledge-base/` for return policy (30 days) and warehouse storage pricing (Los Angeles 18 USD / Zaragoza 16 EUR).
+- T025: `EvaluationTestCase` entity and trace-driven evaluation fixtures
+- T026 (Eval Scenario 1): Standard policy reasoning flow (`["intake", "retrieval", "generation"]`) evaluated against the trace
+- T027 (Eval Scenario 2): Conditional refusal routing (`["intake", "retrieval", "refusal"]`) for unindexed topics evaluated against the trace
+- T028 (Eval Scenario 3): Input validation and early termination (`["intake", "refusal"]`) for empty/whitespace queries evaluated against the trace
+- T029 (Eval Scenario 4): Factual policy grounding against `docs/company-knowledge-base/` and `docs/rag/trackflow-BRIEFING.en.md` for return policy (30 days), warehouse storage pricing (Los Angeles 18 USD / Zaragoza 16 EUR), and Miguel Torres commercial governance.
 """
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import sys
-from typing import List
+from typing import Dict, List
 
 import pytest
 
@@ -30,7 +29,14 @@ from application.services.chunking import MarkdownSemanticChunker  # noqa: E402
 from application.services.guardrails import BusinessGuardrailValidator  # noqa: E402
 from application.services.support_agent_service import SupportAgentService  # noqa: E402
 from application.services.trace_registry import TraceRegistry  # noqa: E402
-from domain.agent.entities import AgentQueryRequest  # noqa: E402
+from data.pipelines.rag_pipeline import (  # noqa: E402
+    embed,
+    generate_answer,
+    query as rag_query,
+    retrieve,
+    setup,
+)
+from domain.agent.entities import AgentQueryRequest, AgentTrace  # noqa: E402
 from domain.knowledge.entities import KnowledgeRuntimeConfig  # noqa: E402
 from infrastructure.adapters.embedding_adapter import FastEmbedAdapter  # noqa: E402
 from infrastructure.adapters.grounded_generation_adapter import (  # noqa: E402
@@ -93,12 +99,18 @@ EVALUATION_TEST_CASES: List[EvaluationTestCase] = [
     ),
     EvaluationTestCase(
         test_id="EVAL-004",
-        description="Warehouse storage pricing inquiry grounds response in Los Angeles (18 USD) and Zaragoza (16 EUR) rates",
-        query="What is the standard monthly storage rate in Los Angeles versus Zaragoza?",
+        description="Warehouse storage pricing and discount governance grounds response in Los Angeles (18 USD), Zaragoza (16 EUR), and Miguel Torres approval per BRIEFING",
+        query="What is the standard monthly storage rate in Los Angeles versus Zaragoza and can we offer a storage discount?",
         expected_node_sequence=["intake", "retrieval", "generation"],
         expected_is_refusal=False,
         prohibited_nodes=["refusal"],
-        expected_text_contains=["18 USD", "16 EUR", "Los Angeles", "Zaragoza", "30"],
+        expected_text_contains=[
+            "18 USD",
+            "16 EUR",
+            "Los Angeles",
+            "Zaragoza",
+            "Miguel Torres",
+        ],
         expected_sources_min=1,
     ),
 ]
@@ -106,7 +118,7 @@ EVALUATION_TEST_CASES: List[EvaluationTestCase] = [
 
 @pytest.fixture(scope="module")
 def seeded_support_agent_service() -> SupportAgentService:
-    """Create a deterministic SupportAgentService seeded with the 4 canonical TrackFlow policy documents."""
+    """Create a deterministic SupportAgentService seeded via `data.pipelines.rag_pipeline` (`setup` + `embed`)."""
     os.environ["QDRANT_Path"] = ""
     os.environ["QDRANT_PATH"] = ""
     config = KnowledgeRuntimeConfig.from_env(
@@ -122,17 +134,20 @@ def seeded_support_agent_service() -> SupportAgentService:
     )
 
     embedder = FastEmbedAdapter(config=config)
-    vector_store = QdrantVectorStoreAdapter(config=config)
-    vector_store.ensure_collection()
+    vector_store = setup(
+        vector_store=QdrantVectorStoreAdapter(config=config),
+        config=config,
+    )
 
     docs_dir = REPO_ROOT / "docs" / "company-knowledge-base"
     chunker = MarkdownSemanticChunker()
     _, chunks = chunker.load_and_chunk_directory(docs_dir)
-    vectors = embedder.embed_documents([c.text for c in chunks])
-    embedded_chunks = [
-        dataclasses.replace(c, vector=v) for c, v in zip(chunks, vectors)
-    ]
-    vector_store.upsert_chunks(embedded_chunks)
+    embed(
+        inputs=chunks,
+        embedding_service=embedder,
+        vector_store=vector_store,
+        config=config,
+    )
 
     llm_generator = GroundedGenerationAdapter(
         guardrail_validator=BusinessGuardrailValidator(),
@@ -149,125 +164,188 @@ def seeded_support_agent_service() -> SupportAgentService:
     )
 
 
-def test_eval_standard_policy_reasoning_flow(
+@pytest.fixture(scope="module")
+def recorded_evaluation_traces(
     seeded_support_agent_service: SupportAgentService,
-) -> None:
-    """T026 (Eval Scenario 1): Verify standard policy query executes intake -> retrieval -> generation and cites returns-policy."""
-    case = EVALUATION_TEST_CASES[0]
-    result = seeded_support_agent_service.query(
-        AgentQueryRequest(query=case.query, top_k=3, min_score=0.62)
-    )
-
-    assert result.node_sequence == case.expected_node_sequence
-    assert result.is_refusal is case.expected_is_refusal
-    assert len(result.sources) >= case.expected_sources_min
-    assert any(src.source_document == "returns-policy" for src in result.sources)
-    assert all(src.similarity_score >= 0.62 for src in result.sources)
-
-    for phrase in case.expected_text_contains:
-        assert phrase.lower() in result.answer.lower()
-
-    trace = seeded_support_agent_service.get_trace(result.trace_id)
-    assert trace.node_sequence == ["intake", "retrieval", "generation"]
-    for prohibited in case.prohibited_nodes:
-        assert prohibited not in trace.node_sequence
-    assert set(trace.step_latencies.keys()) == {"intake", "retrieval", "generation"}
-
-
-def test_eval_conditional_refusal_for_unindexed_topic(
-    seeded_support_agent_service: SupportAgentService,
-) -> None:
-    """T027 (Eval Scenario 2): Verify unindexed topic routes to intake -> retrieval -> refusal without invoking generation."""
-    case = EVALUATION_TEST_CASES[1]
-    result = seeded_support_agent_service.query(
-        AgentQueryRequest(query=case.query, top_k=3, min_score=0.62)
-    )
-
-    assert result.node_sequence == case.expected_node_sequence
-    assert result.is_refusal is True
-    assert result.sources == []
-    for phrase in case.expected_text_contains:
-        assert phrase.lower() in result.answer.lower()
-
-    trace = seeded_support_agent_service.get_trace(result.trace_id)
-    assert trace.node_sequence == ["intake", "retrieval", "refusal"]
-    assert "generation" not in trace.node_sequence
-    assert trace.source_count == 0
-
-
-def test_eval_empty_query_early_termination(
-    seeded_support_agent_service: SupportAgentService,
-) -> None:
-    """T028 (Eval Scenario 3): Verify empty/whitespace query halts at intake -> refusal without executing retrieval or generation."""
-    case = EVALUATION_TEST_CASES[2]
-    result = seeded_support_agent_service.query(
-        AgentQueryRequest(query=case.query, top_k=3, min_score=0.62)
-    )
-
-    assert result.node_sequence == case.expected_node_sequence
-    assert result.is_refusal is True
-    assert result.sources == []
-
-    trace = seeded_support_agent_service.get_trace(result.trace_id)
-    assert trace.node_sequence == ["intake", "refusal"]
-    assert "retrieval" not in trace.node_sequence
-    assert "generation" not in trace.node_sequence
-    assert trace.total_duration_ms < 50.0
-
-
-def test_eval_storage_pricing_grounding(
-    seeded_support_agent_service: SupportAgentService,
-) -> None:
-    """T029 (Eval Scenario 4): Verify factual grounding for warehouse storage pricing and return policy against company docs."""
-    case = EVALUATION_TEST_CASES[3]
-    result = seeded_support_agent_service.query(
-        AgentQueryRequest(query=case.query, top_k=3, min_score=0.62)
-    )
-
-    assert result.node_sequence == ["intake", "retrieval", "generation"]
-    assert result.is_refusal is False
-    assert any(src.source_document == "storage-pricing" for src in result.sources)
-    for phrase in case.expected_text_contains:
-        assert phrase.lower() in result.answer.lower()
-
-    # Cross-check against source policy file in docs/company-knowledge-base/
-    storage_doc_text = (
-        REPO_ROOT / "docs" / "company-knowledge-base" / "trackflow-storage-pricing.en.md"
-    ).read_text(encoding="utf-8")
-    assert "18 USD" in storage_doc_text and "18 USD" in result.answer
-    assert "16 EUR" in storage_doc_text and "16 EUR" in result.answer
-
-    returns_doc_text = (
-        REPO_ROOT / "docs" / "company-knowledge-base" / "trackflow-returns-policy.en.md"
-    ).read_text(encoding="utf-8")
-    return_res = seeded_support_agent_service.query(
-        AgentQueryRequest(query="What is TrackFlow's standard return window?")
-    )
-    assert "30 days" in returns_doc_text and "30 days" in return_res.answer
-
-
-def test_evaluation_matrix_all_scenarios_pass(
-    seeded_support_agent_service: SupportAgentService,
-) -> None:
-    """T025: Execute the full EVALUATION_TEST_CASES matrix and verify 100% pass rate and checkpoint persistence."""
-    assert len(EVALUATION_TEST_CASES) >= 4
+) -> Dict[str, AgentTrace]:
+    """Generate and persist traces once so all evaluation tests run against recorded traces rather than live re-executions."""
+    traces_by_test_id: Dict[str, AgentTrace] = {}
     for case in EVALUATION_TEST_CASES:
-        result = seeded_support_agent_service.query(
+        thread_id = f"trace-{case.test_id.lower()}"
+        seeded_support_agent_service.query(
             AgentQueryRequest(
                 query=case.query,
                 top_k=3,
                 min_score=0.62,
-                thread_id=f"eval-matrix-{case.test_id.lower()}",
+                thread_id=thread_id,
             )
         )
-        assert result.node_sequence == case.expected_node_sequence, f"Failed {case.test_id}"
-        assert result.is_refusal is case.expected_is_refusal, f"Failed {case.test_id}"
+        traces_by_test_id[case.test_id] = seeded_support_agent_service.get_trace(
+            thread_id
+        )
+    return traces_by_test_id
+
+
+def test_eval_standard_policy_reasoning_flow(
+    recorded_evaluation_traces: Dict[str, AgentTrace],
+) -> None:
+    """T026 (Eval Scenario 1): Verify against recorded trace that `retrieval` ran before `generation` and cited `returns-policy`."""
+    case = EVALUATION_TEST_CASES[0]
+    trace = recorded_evaluation_traces[case.test_id]
+
+    assert trace.node_sequence == case.expected_node_sequence
+    assert trace.node_sequence.index("retrieval") < trace.node_sequence.index(
+        "generation"
+    )
+    assert trace.is_refusal is case.expected_is_refusal
+    assert trace.source_count >= case.expected_sources_min
+
+    for prohibited in case.prohibited_nodes:
+        assert prohibited not in trace.node_sequence
+    assert set(trace.step_latencies.keys()) == {"intake", "retrieval", "generation"}
+
+    # Verify per-node outputs recorded in the trace
+    assert set(trace.node_outputs.keys()) == {"intake", "retrieval", "generation"}
+    retrieval_out = trace.node_outputs["retrieval"]
+    assert retrieval_out["context_count"] >= 1
+    assert any(
+        c["source_document"] == "returns-policy"
+        for c in retrieval_out["retrieved_chunks"]
+    )
+    assert all(
+        c["similarity_score"] >= 0.62 for c in retrieval_out["retrieved_chunks"]
+    )
+
+    generation_out = trace.node_outputs["generation"]
+    assert generation_out["answer"] == trace.final_answer
+    for phrase in case.expected_text_contains:
+        assert phrase.lower() in trace.final_answer.lower()
+
+
+def test_eval_conditional_refusal_for_unindexed_topic(
+    recorded_evaluation_traces: Dict[str, AgentTrace],
+) -> None:
+    """T027 (Eval Scenario 2): Verify against recorded trace that unindexed topic routes `intake -> retrieval -> refusal` without `generation`."""
+    case = EVALUATION_TEST_CASES[1]
+    trace = recorded_evaluation_traces[case.test_id]
+
+    assert trace.node_sequence == case.expected_node_sequence
+    assert "generation" not in trace.node_sequence
+    assert trace.is_refusal is True
+    assert trace.source_count == 0
+
+    assert set(trace.node_outputs.keys()) == {"intake", "retrieval", "refusal"}
+    assert trace.node_outputs["retrieval"]["context_count"] == 0
+    assert trace.node_outputs["refusal"]["is_refusal"] is True
+
+    for phrase in case.expected_text_contains:
+        assert phrase.lower() in trace.final_answer.lower()
+
+
+def test_eval_empty_query_early_termination(
+    recorded_evaluation_traces: Dict[str, AgentTrace],
+) -> None:
+    """T028 (Eval Scenario 3): Verify against recorded trace that empty/whitespace query halts at `intake -> refusal` without `retrieval` or `generation`."""
+    case = EVALUATION_TEST_CASES[2]
+    trace = recorded_evaluation_traces[case.test_id]
+
+    assert trace.node_sequence == case.expected_node_sequence
+    assert "retrieval" not in trace.node_sequence
+    assert "generation" not in trace.node_sequence
+    assert trace.is_refusal is True
+    assert trace.source_count == 0
+    assert trace.total_duration_ms < 50.0
+
+    assert set(trace.node_outputs.keys()) == {"intake", "refusal"}
+    assert trace.node_outputs["intake"]["is_valid"] is False
+    assert trace.node_outputs["refusal"]["is_refusal"] is True
+
+
+def test_eval_storage_pricing_grounding(
+    recorded_evaluation_traces: Dict[str, AgentTrace],
+) -> None:
+    """T029 (Eval Scenario 4): Verify against recorded trace that answers remain anchored in `trackflow-BRIEFING.en.md` and policy docs."""
+    case = EVALUATION_TEST_CASES[3]
+    trace = recorded_evaluation_traces[case.test_id]
+
+    assert trace.node_sequence == ["intake", "retrieval", "generation"]
+    assert trace.is_refusal is False
+    assert any(
+        c["source_document"] == "storage-pricing"
+        for c in trace.node_outputs["retrieval"]["retrieved_chunks"]
+    )
+    for phrase in case.expected_text_contains:
+        assert phrase.lower() in trace.final_answer.lower()
+
+    # Cross-check against source policy files and BRIEFING
+    briefing_text = (
+        REPO_ROOT / "docs" / "rag" / "trackflow-BRIEFING.en.md"
+    ).read_text(encoding="utf-8")
+    assert "Miguel Torres" in briefing_text
+    assert "Miguel Torres" in trace.final_answer
+
+    storage_doc_text = (
+        REPO_ROOT / "docs" / "company-knowledge-base" / "trackflow-storage-pricing.en.md"
+    ).read_text(encoding="utf-8")
+    assert "18 USD" in storage_doc_text and "18 USD" in trace.final_answer
+    assert "16 EUR" in storage_doc_text and "16 EUR" in trace.final_answer
+
+    returns_doc_text = (
+        REPO_ROOT / "docs" / "company-knowledge-base" / "trackflow-returns-policy.en.md"
+    ).read_text(encoding="utf-8")
+    returns_trace = recorded_evaluation_traces["EVAL-001"]
+    assert "30 days" in returns_doc_text and "30 days" in returns_trace.final_answer
+
+
+def test_evaluation_matrix_all_scenarios_pass(
+    recorded_evaluation_traces: Dict[str, AgentTrace],
+) -> None:
+    """T025: Evaluate the full EVALUATION_TEST_CASES matrix against recorded traces and verify checkpoint persistence."""
+    assert len(EVALUATION_TEST_CASES) >= 4
+    for case in EVALUATION_TEST_CASES:
+        trace = recorded_evaluation_traces[case.test_id]
+        assert trace.node_sequence == case.expected_node_sequence, f"Failed {case.test_id}"
+        assert trace.is_refusal is case.expected_is_refusal, f"Failed {case.test_id}"
         for prohibited in case.prohibited_nodes:
-            assert prohibited not in result.node_sequence, f"Failed {case.test_id}"
-        assert len(result.sources) >= case.expected_sources_min, f"Failed {case.test_id}"
+            assert prohibited not in trace.node_sequence, f"Failed {case.test_id}"
+        assert trace.source_count >= case.expected_sources_min, f"Failed {case.test_id}"
         for expected_snippet in case.expected_text_contains:
-            assert expected_snippet.lower() in result.answer.lower(), (
-                f"Failed {case.test_id}: missing '{expected_snippet}' in '{result.answer}'"
+            assert expected_snippet.lower() in trace.final_answer.lower(), (
+                f"Failed {case.test_id}: missing '{expected_snippet}' in '{trace.final_answer}'"
             )
-        checkpoints = seeded_support_agent_service.get_checkpoints(result.trace_id)
-        assert len(checkpoints) >= 1
+        assert len(trace.checkpoints) >= 1
+        assert set(trace.node_outputs.keys()) == set(trace.node_sequence)
+
+
+def test_rag_pipeline_contract_separation_and_reuse(
+    seeded_support_agent_service: SupportAgentService,
+) -> None:
+    """Verify `data.pipelines.rag_pipeline` exposes separated `retrieve()` and `generate_answer(question, context)`, and `query()` skips `retrieve()` when given pre-retrieved chunks."""
+    question = "What is TrackFlow's standard return window?"
+    contexts = retrieve(
+        question=question,
+        vector_store=seeded_support_agent_service._vector_store,
+        embedding_service=seeded_support_agent_service._embedding_service,
+        top_k=3,
+        min_score=0.62,
+    )
+    assert len(contexts) >= 1
+
+    answer, citations = generate_answer(
+        question=question,
+        context=contexts,
+        llm_generator=seeded_support_agent_service._llm_generator,
+    )
+    assert "30 days" in answer
+    assert len(citations) == len(contexts)
+
+    # Passing pre-retrieved context to rag_query must skip internal retrieval
+    grounded = rag_query(
+        question=question,
+        vector_store=seeded_support_agent_service._vector_store,
+        embedding_service=seeded_support_agent_service._embedding_service,
+        llm_generator=seeded_support_agent_service._llm_generator,
+        context=contexts,
+    )
+    assert grounded.is_refusal is False
+    assert "30 days" in grounded.answer

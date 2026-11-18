@@ -156,7 +156,7 @@ Implement a specialized automated evaluation suite in `tests/pipelines/test_supp
    - `retrieval` and `generation` nodes were NEVER executed
    - Latency < 50ms (zero vector compute).
 4. **Eval 4 (Warehouse Storage Rates Grounding)**: Query storage pricing across locations ("What are the monthly storage rates for standard pallet in Zaragoza and Los Angeles?"). Assert:
-   - Answer accurately reflects €18/pallet (Zaragoza) and $25/pallet (Los Angeles) per company briefing.
+   - Answer accurately reflects 16 EUR/pallet (Zaragoza) and 18 USD/pallet (Los Angeles) per company briefing.
 
 ### Rationale
 - **Fulfills FR-009, FR-010, FR-011, and SC-003**: Executable via `pytest tests/pipelines/` in a single command, verifying trace topology, conditional edges, and factual adherence against `docs/company-knowledge-base/` without regression.

@@ -24,6 +24,7 @@ class AgentState(TypedDict, total=False):
     trace_id: str
     node_history: List[str]
     step_latencies: Dict[str, float]
+    node_outputs: Dict[str, Dict[str, Any]]
     error: Optional[str]
 ```
 
@@ -40,6 +41,7 @@ class AgentState(TypedDict, total=False):
 | `trace_id` | `str` | Yes | `UUID4` | Unique execution identifier used for checkpointing and telemetry correlation. |
 | `node_history` | `List[str]` | Yes | `[]` | Ordered list of executed node names (e.g., `["intake", "retrieval", "generation"]`). |
 | `step_latencies` | `Dict[str, float]` | No | `{}` | Execution duration in milliseconds keyed by node name (e.g., `{"intake": 1.2, "retrieval": 18.4}`). |
+| `node_outputs` | `Dict[str, Dict[str, Any]]` | No | `{}` | Structured output payload produced by each executed node. |
 | `error` | `Optional[str]` | No | `None` | User-safe sanitized error message if an unhandled node failure occurs. |
 
 ---

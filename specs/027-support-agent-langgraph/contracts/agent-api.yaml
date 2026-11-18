@@ -200,6 +200,11 @@ components:
           type: string
         source_count:
           type: integer
+        node_outputs:
+          type: object
+          description: Structured output produced by each visited node
+          additionalProperties:
+            type: object
 
     AgentHealthResponseSchema:
       type: object

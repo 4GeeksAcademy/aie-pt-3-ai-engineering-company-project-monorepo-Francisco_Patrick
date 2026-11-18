@@ -108,7 +108,7 @@
 - [X] T026 [P] [US4] Implement Eval Scenario 1: Standard policy reasoning flow and node sequence verification (`["intake", "retrieval", "generation"]`) in `tests/pipelines/test_support_agent_evaluation.py`
 - [X] T027 [P] [US4] Implement Eval Scenario 2: Conditional refusal verification for unindexed/low-similarity queries (`["intake", "retrieval", "refusal"]`) in `tests/pipelines/test_support_agent_evaluation.py`
 - [X] T028 [P] [US4] Implement Eval Scenario 3: Input validation and early termination for empty queries in `tests/pipelines/test_support_agent_evaluation.py`
-- [X] T029 [P] [US4] Implement Eval Scenario 4: Factual knowledge grounding verification for return policy (30 days) and warehouse storage pricing (€18 Zaragoza, $25 Los Angeles) in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T029 [P] [US4] Implement Eval Scenario 4: Factual knowledge grounding verification for return policy (30 days) and warehouse storage pricing ($18 Los Angeles, €16 Zaragoza) in `tests/pipelines/test_support_agent_evaluation.py`
 
 **Checkpoint**: Automated evaluation gate validates workflow topology and factual policy grounding in CI/CD without regressions.
 

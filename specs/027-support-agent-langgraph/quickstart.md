@@ -43,7 +43,7 @@ pytest tests/pipelines/test_support_agent_evaluation.py -v
 - `test_eval_standard_policy_reasoning_flow`: Verifies node sequence `["intake", "retrieval", "generation"]`, non-empty sources, and grounded return policy answer (30 days).
 - `test_eval_conditional_refusal_for_unindexed_topic`: Verifies query about pharmaceutical refrigeration routes to `["intake", "retrieval", "refusal"]`, never executes `generation`, and emits `is_refusal=True`.
 - `test_eval_empty_query_early_termination`: Verifies empty or whitespace query terminates at intake without executing retrieval or generation.
-- `test_eval_storage_pricing_grounding`: Verifies answer accurately quotes Zaragoza (€18) and Los Angeles ($25) storage rates.
+- `test_eval_storage_pricing_grounding`: Verifies answer accurately quotes Zaragoza (16 EUR) and Los Angeles (18 USD) storage rates.
 
 ---
 

@@ -33,6 +33,7 @@ class AgentState(TypedDict, total=False):
     trace_id: str
     node_history: List[str]
     step_latencies: Dict[str, float]
+    node_outputs: Dict[str, Dict[str, Any]]
     error: Optional[str]
 
 
@@ -84,6 +85,7 @@ class AgentTrace:
     is_refusal: bool
     final_answer: str
     source_count: int
+    node_outputs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     checkpoints: List[AgentCheckpoint] = field(default_factory=list)
 

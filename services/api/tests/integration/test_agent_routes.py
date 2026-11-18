@@ -82,6 +82,13 @@ class TestSupportAgentRoutesIntegration:
         )
         assert trace_data["is_refusal"] is False
         assert trace_data["source_count"] == len(data["sources"])
+        assert set(trace_data["node_outputs"].keys()) == {
+            "intake",
+            "retrieval",
+            "generation",
+        }
+        assert trace_data["node_outputs"]["retrieval"]["context_count"] >= 1
+        assert trace_data["node_outputs"]["generation"]["answer"] == data["answer"]
 
     def test_t030_query_endpoint_honest_refusal_path(self) -> None:
         """T030: POST /api/v1/agent/query on out-of-scope topic routes to refusal without generation."""
