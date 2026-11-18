@@ -32,3 +32,13 @@ db.json
 
 # Git backup
 .git_backup/
+
+# Logs & OS / IDE
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+

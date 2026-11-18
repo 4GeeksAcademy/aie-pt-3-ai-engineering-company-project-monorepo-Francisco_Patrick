@@ -144,6 +144,9 @@ class KnowledgeRuntimeConfig:
     qdrant_host: Optional[str] = None
     qdrant_port: int = 6333
     qdrant_collection_name: str = "trackflow_knowledge"
+    agent_tool_timeout_seconds: float = 4.0
+    agent_api_base_url: Optional[str] = None
+    agent_internal_api_token: Optional[str] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Normalize fields and clamp similarity_threshold within [0.0, 1.0]."""
@@ -174,6 +177,26 @@ class KnowledgeRuntimeConfig:
             else:
                 object.__setattr__(self, "qdrant_api_key", stripped_qdrant_key)
 
+        try:
+            raw_timeout = float(self.agent_tool_timeout_seconds)
+        except (ValueError, TypeError):
+            raw_timeout = 4.0
+        clamped_timeout = max(3.0, min(5.0, raw_timeout))
+        object.__setattr__(self, "agent_tool_timeout_seconds", round(clamped_timeout, 3))
+
+        if self.agent_api_base_url is not None:
+            stripped_base_url = self.agent_api_base_url.strip().rstrip("/")
+            object.__setattr__(
+                self, "agent_api_base_url", stripped_base_url if stripped_base_url else None
+            )
+
+        if self.agent_internal_api_token is not None:
+            stripped_token = self.agent_internal_api_token.strip()
+            if not stripped_token or stripped_token.lower() in PLACEHOLDER_API_KEYS:
+                object.__setattr__(self, "agent_internal_api_token", None)
+            else:
+                object.__setattr__(self, "agent_internal_api_token", stripped_token)
+
     @property
     def has_live_llm_key(self) -> bool:
         """Return True only when a non-placeholder LLM_API_KEY is configured and provider is live."""
@@ -192,6 +215,14 @@ class KnowledgeRuntimeConfig:
         normalized = self.qdrant_api_key.strip().lower()
         return normalized not in PLACEHOLDER_API_KEYS
 
+    @property
+    def has_agent_internal_api_token(self) -> bool:
+        """Return True only when a non-placeholder AGENT_INTERNAL_API_TOKEN is configured."""
+        if not self.agent_internal_api_token:
+            return False
+        normalized = self.agent_internal_api_token.strip().lower()
+        return normalized not in PLACEHOLDER_API_KEYS
+
     def _masked_key_label(self) -> str:
         """Return the safe redacted label for llm_api_key."""
         return "***REDACTED***" if self.has_live_llm_key else "<unconfigured>"
@@ -200,12 +231,16 @@ class KnowledgeRuntimeConfig:
         """Return the safe redacted label for qdrant_api_key."""
         return "***REDACTED***" if self.has_qdrant_api_key else "<unconfigured>"
 
+    def _masked_agent_token_label(self) -> str:
+        """Return the safe redacted label for agent_internal_api_token."""
+        return "***REDACTED***" if self.has_agent_internal_api_token else "<unconfigured>"
+
     def sanitize_text(self, text: str) -> str:
         """Remove any accidental occurrence of raw API keys from a string."""
         if not text:
             return text
         cleaned = text
-        for secret in (self.llm_api_key, self.qdrant_api_key):
+        for secret in (self.llm_api_key, self.qdrant_api_key, self.agent_internal_api_token):
             if secret and secret.strip():
                 raw_key = secret.strip()
                 if len(raw_key) >= 4 and raw_key in cleaned:
@@ -229,6 +264,10 @@ class KnowledgeRuntimeConfig:
             "qdrant_host": self.qdrant_host,
             "qdrant_port": self.qdrant_port,
             "qdrant_collection_name": self.qdrant_collection_name,
+            "agent_tool_timeout_seconds": self.agent_tool_timeout_seconds,
+            "agent_api_base_url": self.agent_api_base_url,
+            "agent_internal_api_token": self._masked_agent_token_label(),
+            "has_agent_internal_api_token": self.has_agent_internal_api_token,
         }
 
     def __repr__(self) -> str:
@@ -246,7 +285,10 @@ class KnowledgeRuntimeConfig:
             f"qdrant_api_key='{self._masked_qdrant_key_label()}', "
             f"qdrant_host={self.qdrant_host!r}, "
             f"qdrant_port={self.qdrant_port}, "
-            f"qdrant_collection_name='{self.qdrant_collection_name}')"
+            f"qdrant_collection_name='{self.qdrant_collection_name}', "
+            f"agent_tool_timeout_seconds={self.agent_tool_timeout_seconds}, "
+            f"agent_api_base_url={self.agent_api_base_url!r}, "
+            f"agent_internal_api_token='{self._masked_agent_token_label()}')"
         )
 
     def __str__(self) -> str:
@@ -303,6 +345,20 @@ class KnowledgeRuntimeConfig:
         raw_url = source.get("QDRANT_URL", "").strip() or None
         raw_host = source.get("QDRANT_HOST", "").strip() or None
 
+        raw_tool_timeout = source.get("AGENT_TOOL_TIMEOUT_SECONDS", "4.0")
+        try:
+            parsed_tool_timeout = float(raw_tool_timeout)
+        except (ValueError, TypeError):
+            parsed_tool_timeout = 4.0
+
+        raw_agent_base_url = source.get("AGENT_API_BASE_URL", "").strip() or None
+        raw_agent_token = source.get("AGENT_INTERNAL_API_TOKEN")
+        cleaned_agent_token: Optional[str] = None
+        if raw_agent_token and raw_agent_token.strip():
+            token_candidate = raw_agent_token.strip()
+            if token_candidate.lower() not in PLACEHOLDER_API_KEYS:
+                cleaned_agent_token = token_candidate
+
         return cls(
             llm_api_key=cleaned_key,
             llm_provider=source.get("LLM_PROVIDER", "gemini"),
@@ -316,5 +372,8 @@ class KnowledgeRuntimeConfig:
             qdrant_host=raw_host,
             qdrant_port=parsed_port,
             qdrant_collection_name=source.get("QDRANT_COLLECTION_NAME", "trackflow_knowledge"),
+            agent_tool_timeout_seconds=parsed_tool_timeout,
+            agent_api_base_url=raw_agent_base_url,
+            agent_internal_api_token=cleaned_agent_token,
         )
 

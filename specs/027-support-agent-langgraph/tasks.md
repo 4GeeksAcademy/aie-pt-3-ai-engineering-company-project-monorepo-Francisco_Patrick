@@ -17,9 +17,9 @@
 
 **Purpose**: Environment preparation, package structure verification, and runtime configuration for LangGraph and operational tool timeouts/transport.
 
-- [ ] T001 Verify Python >= 3.14 and LangGraph/testing dependencies (`langgraph`, `langgraph-checkpoint`, `fastapi`, `pydantic`, `tinydb`, `sqlmodel`, `pytest`, `httpx`) in `services/api/pyproject.toml`
-- [ ] T002 [P] Ensure agent domain, application, infrastructure adapter, and test package directories exist in `services/api/domain/agent/`, `services/api/application/services/`, `services/api/infrastructure/adapters/`, and `services/api/tests/`
-- [ ] T003 [P] Add operational tool configuration settings (`AGENT_TOOL_TIMEOUT_SECONDS=4.0` default within `3.0`–`5.0`s, optional `AGENT_API_BASE_URL`, and optional `AGENT_INTERNAL_API_TOKEN`) to runtime configuration in `services/api/domain/knowledge/entities.py`
+- [X] T001 Verify Python >= 3.14 and LangGraph/testing dependencies (`langgraph`, `langgraph-checkpoint`, `fastapi`, `pydantic`, `tinydb`, `sqlmodel`, `pytest`, `httpx`) in `services/api/pyproject.toml`
+- [X] T002 [P] Ensure agent domain, application, infrastructure adapter, and test package directories exist in `services/api/domain/agent/`, `services/api/application/services/`, `services/api/infrastructure/adapters/`, and `services/api/tests/`
+- [X] T003 [P] Add operational tool configuration settings (`AGENT_TOOL_TIMEOUT_SECONDS=4.0` default within `3.0`–`5.0`s, optional `AGENT_API_BASE_URL`, and optional `AGENT_INTERNAL_API_TOKEN`) to runtime configuration in `services/api/domain/knowledge/entities.py`
 
 ---
 
@@ -29,12 +29,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 [P] Define expanded minimal `AgentState` TypedDict (`selected_sources`, `sources_consulted`, `ticket_tool_input`, `ticket_tool_output`, `inventory_tool_input`, `inventory_tool_output`, `fallback_triggered`, `fallback_messages`, `contexts`, `answer`, `is_refusal`, `sources`, `trace_id`, `node_history`, `step_latencies`, `node_outputs`, `error`) in `services/api/domain/agent/entities.py`
-- [ ] T005 [P] Define frozen domain dataclasses for read-only operational tool contracts (`ToolCallStatus`, `TicketToolInput`, `TicketRecordDTO`, `TicketToolOutput`, `InventoryToolInput`, `InventoryRecordDTO`, `InventoryToolOutput`) and expanded `AgentTrace` / `AgentQueryResult` models in `services/api/domain/agent/entities.py`
-- [ ] T006 [P] Implement agent domain exceptions (`AgentDomainException`, `GraphCompilationError`, `WorkflowExecutionError`, `StateValidationError`, `TraceNotFoundError`, `ToolExecutionTimeoutError`) in `services/api/domain/agent/exceptions.py`
-- [ ] T007 [P] Define abstract port interfaces (`SupportTicketToolPort`, `InventoryStockToolPort`, `TraceRegistryPort`, `SupportAgentServicePort`) in `services/api/domain/agent/ports.py`
-- [ ] T008 Export all agent domain entities, tool contracts, exceptions, and ports in `services/api/domain/agent/__init__.py`
-- [ ] T009 Implement thread-safe in-memory `TraceRegistry` supporting multi-source `AgentTrace` persistence and lookup in `services/api/application/services/trace_registry.py`
+- [X] T004 [P] Define expanded minimal `AgentState` TypedDict (`selected_sources`, `sources_consulted`, `ticket_tool_input`, `ticket_tool_output`, `inventory_tool_input`, `inventory_tool_output`, `fallback_triggered`, `fallback_messages`, `contexts`, `answer`, `is_refusal`, `sources`, `trace_id`, `node_history`, `step_latencies`, `node_outputs`, `error`) in `services/api/domain/agent/entities.py`
+- [X] T005 [P] Define frozen domain dataclasses for read-only operational tool contracts (`ToolCallStatus`, `TicketToolInput`, `TicketRecordDTO`, `TicketToolOutput`, `InventoryToolInput`, `InventoryRecordDTO`, `InventoryToolOutput`) and expanded `AgentTrace` / `AgentQueryResult` models in `services/api/domain/agent/entities.py`
+- [X] T006 [P] Implement agent domain exceptions (`AgentDomainException`, `GraphCompilationError`, `WorkflowExecutionError`, `StateValidationError`, `TraceNotFoundError`, `ToolExecutionTimeoutError`) in `services/api/domain/agent/exceptions.py`
+- [X] T007 [P] Define abstract port interfaces (`SupportTicketToolPort`, `InventoryStockToolPort`, `TraceRegistryPort`, `SupportAgentServicePort`) in `services/api/domain/agent/ports.py`
+- [X] T008 Export all agent domain entities, tool contracts, exceptions, and ports in `services/api/domain/agent/__init__.py`
+- [X] T009 Implement thread-safe in-memory `TraceRegistry` supporting multi-source `AgentTrace` persistence and lookup in `services/api/application/services/trace_registry.py`
 
 **Checkpoint**: Foundation ready — minimal `AgentState`, read-only tool contracts, ports, exceptions, and `TraceRegistry` are in place.
 
@@ -48,14 +48,14 @@
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T010 [P] [US1] Add unit tests for single-responsibility `intake_node`, `retrieval_node`, `generation_node`, and build-time graph compilation validation in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T010 [P] [US1] Add unit tests for single-responsibility `intake_node`, `retrieval_node`, `generation_node`, and build-time graph compilation validation in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement `sanitize_agent_query` and base `intake_node` input validation, length bounding (`3..500` chars), and trace state initialization in `services/api/application/services/agent_workflow.py`
-- [ ] T012 [US1] Implement `retrieval_node` and `create_retrieval_node` reusing `retrieve()` from `data.pipelines.rag_pipeline` (`VectorStorePort` and `EmbeddingServicePort`) and recording `"rag"` in `sources_consulted` in `services/api/application/services/agent_workflow.py`
-- [ ] T013 [US1] Implement `generation_node` and `create_generation_node` consuming pre-retrieved `contexts` and structured tool outputs without re-invoking retrieval or external services in `services/api/application/services/agent_workflow.py`
-- [ ] T014 [US1] Implement `compile_and_validate_graph` to enforce build-time node registration, BFS reachability from `START`, and dead-end detection before compiling the `StateGraph` in `services/api/application/services/agent_workflow.py`
+- [X] T011 [US1] Implement `sanitize_agent_query` and base `intake_node` input validation, length bounding (`3..500` chars), and trace state initialization in `services/api/application/services/agent_workflow.py`
+- [X] T012 [US1] Implement `retrieval_node` and `create_retrieval_node` reusing `retrieve()` from `data.pipelines.rag_pipeline` (`VectorStorePort` and `EmbeddingServicePort`) and recording `"rag"` in `sources_consulted` in `services/api/application/services/agent_workflow.py`
+- [X] T013 [US1] Implement `generation_node` and `create_generation_node` consuming pre-retrieved `contexts` and structured tool outputs without re-invoking retrieval or external services in `services/api/application/services/agent_workflow.py`
+- [X] T014 [US1] Implement `compile_and_validate_graph` to enforce build-time node registration, BFS reachability from `START`, and dead-end detection before compiling the `StateGraph` in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: User Story 1 delivers an explicit, single-responsibility compiled state graph for grounded policy inquiries.
 
@@ -69,15 +69,15 @@
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T015 [P] [US2] Add unit tests for `IncidentSupportTicketToolAdapter` covering exact ticket ID lookup, filter queries (`status`, `category`, `origin`, `branch`), 20-record cap with `total_matched`, and strict read-only contract in `services/api/tests/unit/test_operational_tools.py`
-- [ ] T016 [P] [US2] Add unit tests for autonomous ticket intent classification (`classify_and_plan_query`), `ticket_tool_node`, and hybrid canonical ordering (`ticket_tool` → `retrieval` → `generation`) in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T015 [P] [US2] Add unit tests for `IncidentSupportTicketToolAdapter` covering exact ticket ID lookup, filter queries (`status`, `category`, `origin`, `branch`), 20-record cap with `total_matched`, and strict read-only contract in `services/api/tests/unit/test_operational_tools.py`
+- [X] T016 [P] [US2] Add unit tests for autonomous ticket intent classification (`classify_and_plan_query`), `ticket_tool_node`, and hybrid canonical ordering (`ticket_tool` → `retrieval` → `generation`) in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [P] [US2] Implement `IncidentSupportTicketToolAdapter` (`SupportTicketToolPort`) reading live incident records from `IncidentService` (with optional `AGENT_API_BASE_URL` / `AGENT_INTERNAL_API_TOKEN` HTTP support) and enforcing the 20-record most-recent slice plus `total_matched` in `services/api/infrastructure/adapters/support_ticket_tool_adapter.py`
-- [ ] T018 [US2] Implement autonomous intent classifier and parameter extractor (`classify_and_plan_query`) in `intake_node` to detect ticket inquiries, extract `TicketToolInput`, and order `selected_sources` canonically (`["ticket_tool", "inventory_tool", "rag"]`) in `services/api/application/services/agent_workflow.py`
-- [ ] T019 [US2] Implement `ticket_tool_node` and `create_ticket_tool_node` invoking `SupportTicketToolPort.query_tickets`, appending `"ticket_tool"` to `sources_consulted`, and recording structured `node_outputs["ticket_tool"]` in `services/api/application/services/agent_workflow.py`
-- [ ] T020 [US2] Update `generation_node` to synthesize grounded answers from live `ticket_tool_output` records alone or combined with static `contexts` in hybrid inquiries in `services/api/application/services/agent_workflow.py`
+- [X] T017 [P] [US2] Implement `IncidentSupportTicketToolAdapter` (`SupportTicketToolPort`) reading live incident records from `IncidentService` (with optional `AGENT_API_BASE_URL` / `AGENT_INTERNAL_API_TOKEN` HTTP support) and enforcing the 20-record most-recent slice plus `total_matched` in `services/api/infrastructure/adapters/support_ticket_tool_adapter.py`
+- [X] T018 [US2] Implement autonomous intent classifier and parameter extractor (`classify_and_plan_query`) in `intake_node` to detect ticket inquiries, extract `TicketToolInput`, and order `selected_sources` canonically (`["ticket_tool", "inventory_tool", "rag"]`) in `services/api/application/services/agent_workflow.py`
+- [X] T019 [US2] Implement `ticket_tool_node` and `create_ticket_tool_node` invoking `SupportTicketToolPort.query_tickets`, appending `"ticket_tool"` to `sources_consulted`, and recording structured `node_outputs["ticket_tool"]` in `services/api/application/services/agent_workflow.py`
+- [X] T020 [US2] Update `generation_node` to synthesize grounded answers from live `ticket_tool_output` records alone or combined with static `contexts` in hybrid inquiries in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: User Story 2 enables autonomous live support ticket lookups and hybrid ticket + policy synthesis against real Incident Manager data.
 
@@ -91,14 +91,14 @@
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T021 [P] [US3] Add unit tests for `4.0`s numerical timeout enforcement (`status="timeout"`), service error handling (`status="error"`), and missing record handling (`status="not_found"`) in `services/api/tests/unit/test_operational_tools.py`
-- [ ] T022 [P] [US3] Add unit tests for `tool_fallback_node`, `route_after_ticket_tool`, `route_after_tool_fallback`, pure tool fallback termination, and hybrid graceful partial answers in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T021 [P] [US3] Add unit tests for `4.0`s numerical timeout enforcement (`status="timeout"`), service error handling (`status="error"`), and missing record handling (`status="not_found"`) in `services/api/tests/unit/test_operational_tools.py`
+- [X] T022 [P] [US3] Add unit tests for `tool_fallback_node`, `route_after_ticket_tool`, `route_after_tool_fallback`, pure tool fallback termination, and hybrid graceful partial answers in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [P] [US3] Enforce bounded numerical timeout execution (default `4.0`s via `ThreadPoolExecutor` / `httpx.Timeout`) and sanitized error capture inside `IncidentSupportTicketToolAdapter` in `services/api/infrastructure/adapters/support_ticket_tool_adapter.py`
-- [ ] T024 [US3] Implement `tool_fallback_node` to record `"tool_fallback"` in `node_history`, construct honest non-hallucinating inability-to-confirm messages (`fallback_messages`), and set `answer` when no partial context exists in `services/api/application/services/agent_workflow.py`
-- [ ] T025 [US3] Implement conditional routing edges `route_after_ticket_tool`, `route_after_retrieval`, and `route_after_tool_fallback` to route degraded/missing tool lookups through `tool_fallback` and support graceful partial hybrid synthesis in `services/api/application/services/agent_workflow.py`
+- [X] T023 [P] [US3] Enforce bounded numerical timeout execution (default `4.0`s via `ThreadPoolExecutor` / `httpx.Timeout`) and sanitized error capture inside `IncidentSupportTicketToolAdapter` in `services/api/infrastructure/adapters/support_ticket_tool_adapter.py`
+- [X] T024 [US3] Implement `tool_fallback_node` to record `"tool_fallback"` in `node_history`, construct honest non-hallucinating inability-to-confirm messages (`fallback_messages`), and set `answer` when no partial context exists in `services/api/application/services/agent_workflow.py`
+- [X] T025 [US3] Implement conditional routing edges `route_after_ticket_tool`, `route_after_retrieval`, and `route_after_tool_fallback` to route degraded/missing tool lookups through `tool_fallback` and support graceful partial hybrid synthesis in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: All P1 stories (US1, US2, US3) are complete — operational tool calls are bounded by explicit numerical timeouts and recover honestly via `tool_fallback`.
 
@@ -112,15 +112,15 @@
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T026 [P] [US4] Add unit tests for `InventoryStockQueryToolAdapter` covering SKU/product ID lookup, search/low-stock filtering, 20-record cap with `total_matched`, `4.0`s timeout enforcement, and read-only compliance in `services/api/tests/unit/test_operational_tools.py`
-- [ ] T027 [P] [US4] Add unit tests for autonomous inventory intent routing, `inventory_tool_node`, `route_after_inventory_tool`, and multi-tool canonical sequencing (`ticket_tool` → `inventory_tool` → `retrieval`) in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T026 [P] [US4] Add unit tests for `InventoryStockQueryToolAdapter` covering SKU/product ID lookup, search/low-stock filtering, 20-record cap with `total_matched`, `4.0`s timeout enforcement, and read-only compliance in `services/api/tests/unit/test_operational_tools.py`
+- [X] T027 [P] [US4] Add unit tests for autonomous inventory intent routing, `inventory_tool_node`, `route_after_inventory_tool`, and multi-tool canonical sequencing (`ticket_tool` → `inventory_tool` → `retrieval`) in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 4
 
-- [ ] T028 [P] [US4] Implement `InventoryStockQueryToolAdapter` (`InventoryStockToolPort`) reading live product stock from `InventoryService` (with `4.0`s timeout and 20-record cap + `total_matched`) in `services/api/infrastructure/adapters/inventory_stock_tool_adapter.py`
-- [ ] T029 [US4] Extend `classify_and_plan_query` in `intake_node` to detect SKU/product stock inquiries and populate `InventoryToolInput` while preserving canonical source order in `services/api/application/services/agent_workflow.py`
-- [ ] T030 [US4] Implement `inventory_tool_node`, `create_inventory_tool_node`, and `route_after_inventory_tool`, and extend `tool_fallback_node` and `generation_node` to handle `inventory_tool_output` in `services/api/application/services/agent_workflow.py`
-- [ ] T031 [US4] Update `REQUIRED_WORKFLOW_NODES` (`intake`, `ticket_tool`, `inventory_tool`, `retrieval`, `tool_fallback`, `generation`, `refusal`) and wire all 7 nodes and 5 conditional edges in `build_support_agent_graph` in `services/api/application/services/agent_workflow.py`
+- [X] T028 [P] [US4] Implement `InventoryStockQueryToolAdapter` (`InventoryStockToolPort`) reading live product stock from `InventoryService` (with `4.0`s timeout and 20-record cap + `total_matched`) in `services/api/infrastructure/adapters/inventory_stock_tool_adapter.py`
+- [X] T029 [US4] Extend `classify_and_plan_query` in `intake_node` to detect SKU/product stock inquiries and populate `InventoryToolInput` while preserving canonical source order in `services/api/application/services/agent_workflow.py`
+- [X] T030 [US4] Implement `inventory_tool_node`, `create_inventory_tool_node`, and `route_after_inventory_tool`, and extend `tool_fallback_node` and `generation_node` to handle `inventory_tool_output` in `services/api/application/services/agent_workflow.py`
+- [X] T031 [US4] Update `REQUIRED_WORKFLOW_NODES` (`intake`, `ticket_tool`, `inventory_tool`, `retrieval`, `tool_fallback`, `generation`, `refusal`) and wire all 7 nodes and 5 conditional edges in `build_support_agent_graph` in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: Both single-responsibility operational tools (`ticket_tool` and `inventory_tool`) and the full 7-node topology are integrated and independently verifiable.
 
@@ -134,12 +134,12 @@
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T032 [P] [US5] Add unit tests for empty-query early termination, write/mutation guardrail refusal at intake, and `< 0.62` similarity policy refusal in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T032 [P] [US5] Add unit tests for empty-query early termination, write/mutation guardrail refusal at intake, and `< 0.62` similarity policy refusal in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 5
 
-- [ ] T033 [US5] Implement write/mutation intent detection guardrail in `intake_node` to refuse prompts attempting to create, update, close, or delete tickets or modify inventory stock in `services/api/application/services/agent_workflow.py`
-- [ ] T034 [US5] Update `refusal_node`, `route_after_intake`, and `route_after_retrieval` to format standardized policy refusals and read-only mutation refusal notices with `is_refusal=True` in `services/api/application/services/agent_workflow.py`
+- [X] T033 [US5] Implement write/mutation intent detection guardrail in `intake_node` to refuse prompts attempting to create, update, close, or delete tickets or modify inventory stock in `services/api/application/services/agent_workflow.py`
+- [X] T034 [US5] Update `refusal_node`, `route_after_intake`, and `route_after_retrieval` to format standardized policy refusals and read-only mutation refusal notices with `is_refusal=True` in `services/api/application/services/agent_workflow.py`
 
 **Checkpoint**: Empty queries, write-mutation attempts, and unindexed policy queries are deterministically refused.
 
@@ -153,12 +153,12 @@
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T035 [P] [US6] Add unit tests for multi-source `AgentTrace` recording (`sources_consulted`, `fallback_triggered`, `tool_calls`, `step_latencies`) and `MemorySaver` checkpoint inspection in `services/api/tests/unit/test_agent_workflow.py`
+- [X] T035 [P] [US6] Add unit tests for multi-source `AgentTrace` recording (`sources_consulted`, `fallback_triggered`, `tool_calls`, `step_latencies`) and `MemorySaver` checkpoint inspection in `services/api/tests/unit/test_agent_workflow.py`
 
 ### Implementation for User Story 6
 
-- [ ] T036 [US6] Update `SupportAgentService` to wire `SupportTicketToolPort` and `InventoryStockToolPort` into `build_support_agent_graph`, initialize expanded `AgentState` fields, and populate `sources_consulted`, `fallback_triggered`, and `tool_calls` in `AgentTrace` and `AgentQueryResult` in `services/api/application/services/support_agent_service.py`
-- [ ] T037 [US6] Update `SupportAgentService.get_checkpoints` to include `sources_consulted` and `fallback_triggered` in checkpoint state deltas in `services/api/application/services/support_agent_service.py`
+- [X] T036 [US6] Update `SupportAgentService` to wire `SupportTicketToolPort` and `InventoryStockToolPort` into `build_support_agent_graph`, initialize expanded `AgentState` fields, and populate `sources_consulted`, `fallback_triggered`, and `tool_calls` in `AgentTrace` and `AgentQueryResult` in `services/api/application/services/support_agent_service.py`
+- [X] T037 [US6] Update `SupportAgentService.get_checkpoints` to include `sources_consulted` and `fallback_triggered` in checkpoint state deltas in `services/api/application/services/support_agent_service.py`
 
 **Checkpoint**: Every agent run emits a complete multi-source `AgentTrace` and thread-scoped checkpoints.
 
@@ -172,11 +172,11 @@
 
 ### Implementation for User Story 7
 
-- [ ] T038 [US7] Expand `EvaluationTestCase` and deterministic test fixtures in `tests/pipelines/test_support_agent_evaluation.py` to seed real TinyDB incident records (`INC-001`) and SQLModel inventory records (`TF-1001`) into `SupportAgentService`
-- [ ] T039 [US7] Implement `EVAL-005` (`test_eval_autonomous_ticket_tool_routing`) and `EVAL-006` (`test_eval_autonomous_rag_vs_tool_separation`) verifying autonomous source selection between `ticket_tool` and `rag` in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T040 [US7] Implement `EVAL-007` (`test_eval_autonomous_inventory_tool_routing`) verifying autonomous `inventory_tool` routing and stock threshold reporting in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T041 [US7] Implement `EVAL-008` (`test_eval_tool_fallback_on_missing_ticket_or_unavailable_service`) verifying `tool_fallback` traversal and honest non-hallucinating responses on missing ticket (`INC-999999`) and simulated tool timeout/error in `tests/pipelines/test_support_agent_evaluation.py`
-- [ ] T042 [US7] Implement `EVAL-009` (`test_eval_hybrid_multi_source_canonical_order_and_partial_fallback`) verifying canonical execution order (`ticket_tool` → `retrieval` → `generation`) and graceful partial answers when a tool lookup fails in a hybrid query in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T038 [US7] Expand `EvaluationTestCase` and deterministic test fixtures in `tests/pipelines/test_support_agent_evaluation.py` to seed real TinyDB incident records (`INC-001`) and SQLModel inventory records (`TF-1001`) into `SupportAgentService`
+- [X] T039 [US7] Implement `EVAL-005` (`test_eval_autonomous_ticket_tool_routing`) and `EVAL-006` (`test_eval_autonomous_rag_vs_tool_separation`) verifying autonomous source selection between `ticket_tool` and `rag` in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T040 [US7] Implement `EVAL-007` (`test_eval_autonomous_inventory_tool_routing`) verifying autonomous `inventory_tool` routing and stock threshold reporting in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T041 [US7] Implement `EVAL-008` (`test_eval_tool_fallback_on_missing_ticket_or_unavailable_service`) verifying `tool_fallback` traversal and honest non-hallucinating responses on missing ticket (`INC-999999`) and simulated tool timeout/error in `tests/pipelines/test_support_agent_evaluation.py`
+- [X] T042 [US7] Implement `EVAL-009` (`test_eval_hybrid_multi_source_canonical_order_and_partial_fallback`) verifying canonical execution order (`ticket_tool` → `retrieval` → `generation`) and graceful partial answers when a tool lookup fails in a hybrid query in `tests/pipelines/test_support_agent_evaluation.py`
 
 **Checkpoint**: Automated pipeline evaluation suite verifies all Part 1 and Part 2 routing, grounding, and fallback gates in a single command.
 
@@ -190,14 +190,14 @@
 
 ### Tests for User Story 8 ⚠️
 
-- [ ] T043 [P] [US8] Add integration tests for `POST /api/v1/agent/query`, `GET /api/v1/agent/trace/{trace_id}`, and `GET /api/v1/agent/health` covering live tool routing, honest fallback responses, 7-node health reporting, and zero stack trace leakage in `services/api/tests/integration/test_agent_routes.py`
+- [X] T043 [P] [US8] Add integration tests for `POST /api/v1/agent/query`, `GET /api/v1/agent/trace/{trace_id}`, and `GET /api/v1/agent/health` covering live tool routing, honest fallback responses, 7-node health reporting, and zero stack trace leakage in `services/api/tests/integration/test_agent_routes.py`
 
 ### Implementation for User Story 8
 
-- [ ] T044 [P] [US8] Update Pydantic schemas (`ToolCallTraceSchema`, `AgentQueryResponseSchema`, `AgentTraceResponseSchema`) with `fallback_triggered`, `sources_consulted`, and `tool_calls` fields matching `contracts/agent-api.yaml` in `services/api/presentation/schemas/agent.py`
-- [ ] T045 [US8] Add FastAPI dependency providers `get_support_ticket_tool_dep` and `get_inventory_stock_tool_dep` and wire them into `get_support_agent_service` in `services/api/presentation/dependencies.py`
-- [ ] T046 [US8] Update FastAPI route handlers (`query_support_agent`, `get_agent_trace`, `get_agent_health`) to project `fallback_triggered`, `sources_consulted`, and `tool_calls` with `run_in_threadpool` and defensive exception shielding in `services/api/presentation/api/v1/agent.py`
-- [ ] T047 [US8] Verify agent router registration at both `/api/v1/agent` and `/agent` prefixes in `services/api/main.py`
+- [X] T044 [P] [US8] Update Pydantic schemas (`ToolCallTraceSchema`, `AgentQueryResponseSchema`, `AgentTraceResponseSchema`) with `fallback_triggered`, `sources_consulted`, and `tool_calls` fields matching `contracts/agent-api.yaml` in `services/api/presentation/schemas/agent.py`
+- [X] T045 [US8] Add FastAPI dependency providers `get_support_ticket_tool_dep` and `get_inventory_stock_tool_dep` and wire them into `get_support_agent_service` in `services/api/presentation/dependencies.py`
+- [X] T046 [US8] Update FastAPI route handlers (`query_support_agent`, `get_agent_trace`, `get_agent_health`) to project `fallback_triggered`, `sources_consulted`, and `tool_calls` with `run_in_threadpool` and defensive exception shielding in `services/api/presentation/api/v1/agent.py`
+- [X] T047 [US8] Verify agent router registration at both `/api/v1/agent` and `/agent` prefixes in `services/api/main.py`
 
 **Checkpoint**: All 8 user stories are complete and exposed through backward-compatible, zero-leakage REST API endpoints.
 
@@ -207,9 +207,9 @@
 
 **Purpose**: Quickstart scenario validation, contract conformance checks, static analysis, and full monorepo regression verification.
 
-- [ ] T048 [P] Validate OpenAPI and JSON Schema contracts (`contracts/agent-api.yaml`, `contracts/agent-state.json`, `contracts/tools-schema.json`) against implemented domain entities and Pydantic schemas in `specs/027-support-agent-langgraph/contracts/`
-- [ ] T049 Execute all quickstart validation commands and verification gates defined in `specs/027-support-agent-langgraph/quickstart.md`
-- [ ] T050 Run complete backend and pipeline regression test suites (`uv run --project services/api pytest services/api/ tests/pipelines/ -v`) to confirm 100% pass rate and zero regressions
+- [X] T048 [P] Validate OpenAPI and JSON Schema contracts (`contracts/agent-api.yaml`, `contracts/agent-state.json`, `contracts/tools-schema.json`) against implemented domain entities and Pydantic schemas in `specs/027-support-agent-langgraph/contracts/`
+- [X] T049 Execute all quickstart validation commands and verification gates defined in `specs/027-support-agent-langgraph/quickstart.md`
+- [X] T050 Run complete backend and pipeline regression test suites (`uv run --project services/api pytest services/api/ tests/pipelines/ -v`) to confirm 100% pass rate and zero regressions
 
 ---
 

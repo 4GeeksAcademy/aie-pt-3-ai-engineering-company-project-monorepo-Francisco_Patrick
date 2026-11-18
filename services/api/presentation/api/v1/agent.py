@@ -1,4 +1,4 @@
-"""FastAPI presentation router for the TrackFlow Support Agent with LangGraph (T035).
+"""FastAPI presentation router for the TrackFlow Support Agent with LangGraph (T046).
 
 Adheres strictly to Monorepo Constitution Principles II & IV:
 - Explicit Pydantic `response_model` on all endpoints
@@ -24,6 +24,7 @@ from presentation.schemas.agent import (
     AgentTraceResponseSchema,
     KnowledgeSourceCitationSchema,
     SanitizedErrorResponse,
+    ToolCallTraceSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,10 +84,24 @@ async def query_support_agent(
             content=err_payload.model_dump(),
         )
 
+    tool_call_schemas = [
+        ToolCallTraceSchema(
+            tool_name=tc.get("tool_name", "ticket_tool"),
+            status=tc.get("status", "success"),
+            total_matched=int(tc.get("total_matched", 0)),
+            returned_count=int(tc.get("returned_count", 0)),
+            latency_ms=float(tc.get("latency_ms", 0.0)),
+            error_message=tc.get("error_message"),
+        )
+        for tc in getattr(result, "tool_calls", [])
+        if isinstance(tc, dict)
+    ]
+
     return AgentQueryResponseSchema(
         query=result.query,
         answer=result.answer,
         is_refusal=result.is_refusal,
+        fallback_triggered=bool(getattr(result, "fallback_triggered", False)),
         sources=[
             KnowledgeSourceCitationSchema(
                 source_document=src.source_document,
@@ -95,6 +110,8 @@ async def query_support_agent(
             )
             for src in result.sources
         ],
+        sources_consulted=list(getattr(result, "sources_consulted", [])),
+        tool_calls=tool_call_schemas,
         trace_id=result.trace_id,
         node_sequence=result.node_sequence,
         execution_time_ms=result.execution_time_ms,
@@ -115,7 +132,7 @@ async def get_agent_trace(
     trace_id: str,
     agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
 ) -> AgentTraceResponseSchema | JSONResponse:
-    """Retrieve the structured execution trace including node sequence, latencies, and metadata."""
+    """Retrieve the structured execution trace including node sequence, consulted sources, latencies, and metadata."""
     try:
         trace = await run_in_threadpool(agent_service.get_trace, trace_id)
     except TraceNotFoundError:
@@ -142,10 +159,26 @@ async def get_agent_trace(
             content=err_payload.model_dump(),
         )
 
+    tool_call_schemas = [
+        ToolCallTraceSchema(
+            tool_name=tc.get("tool_name", "ticket_tool"),
+            status=tc.get("status", "success"),
+            total_matched=int(tc.get("total_matched", 0)),
+            returned_count=int(tc.get("returned_count", 0)),
+            latency_ms=float(tc.get("latency_ms", 0.0)),
+            error_message=tc.get("error_message"),
+        )
+        for tc in getattr(trace, "tool_calls", [])
+        if isinstance(tc, dict)
+    ]
+
     return AgentTraceResponseSchema(
         trace_id=trace.trace_id,
         query=trace.query,
         node_sequence=trace.node_sequence,
+        sources_consulted=list(getattr(trace, "sources_consulted", [])),
+        fallback_triggered=bool(getattr(trace, "fallback_triggered", False)),
+        tool_calls=tool_call_schemas,
         step_latencies=trace.step_latencies,
         total_duration_ms=trace.total_duration_ms,
         is_refusal=trace.is_refusal,
