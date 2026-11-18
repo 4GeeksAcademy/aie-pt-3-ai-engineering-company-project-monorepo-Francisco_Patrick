@@ -1,0 +1,35 @@
+[project]
+name = "trackflow-server"
+version = "0.1.0"
+description = "Standardized Model Context Protocol (MCP) Server for TrackFlow Incidents Manager and Read-Only Inventory"
+readme = "README.md"
+authors = [
+    { name = "MrStegmann", email = "pjstegmann@outlook.es" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "cryptography>=50.0.2",
+    "fastmcp>=4.2.1",
+    "httpx>=0.28.1",
+    "mcpauth>=0.1.1",
+    "pydantic>=2.14.3",
+    "pyjwt>=2.15.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "pytest-cov>=7.1.0",
+    "starlette>=1.10.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+trackflow-mcp = "trackflow_server.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", ".", "tests"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

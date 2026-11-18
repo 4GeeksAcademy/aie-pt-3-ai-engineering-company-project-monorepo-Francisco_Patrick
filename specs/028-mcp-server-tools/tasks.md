@@ -15,9 +15,9 @@
 
 **Purpose**: Project initialization and package structure setup for MCP server and agent dependencies.
 
-- [ ] T001 Initialize MCP server package configuration with FastMCP and OAuth dependencies in mcps/trackflow-server/pyproject.toml
-- [ ] T002 [P] Initialize package entrypoints and CLI runner in mcps/trackflow-server/src/trackflow_server/__init__.py and mcps/trackflow-server/src/trackflow_server/main.py
-- [ ] T003 [P] Add langchain-mcp-adapters dependency to services/api/pyproject.toml
+- [X] T001 Initialize MCP server package configuration with FastMCP and OAuth dependencies in mcps/trackflow-server/pyproject.toml
+- [X] T002 [P] Initialize package entrypoints and CLI runner in mcps/trackflow-server/src/trackflow_server/__init__.py and mcps/trackflow-server/src/trackflow_server/main.py
+- [X] T003 [P] Add langchain-mcp-adapters dependency to services/api/pyproject.toml
 
 ---
 
@@ -27,11 +27,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this foundational phase is complete.
 
-- [ ] T004 Implement domain schemas and canonical error models in mcps/trackflow-server/src/trackflow_server/models/schemas.py and mcps/trackflow-server/src/trackflow_server/models/errors.py
-- [ ] T005 [P] Implement resilient HTTP client for upstream Incidents and Inventory APIs in mcps/trackflow-server/src/trackflow_server/clients/upstream_client.py
-- [ ] T006 [P] Implement structured JSON audit logging with PII and credential masking in mcps/trackflow-server/src/trackflow_server/logging/audit.py
-- [ ] T007 [P] Implement FastMCP application initialization and Starlette ASGI routing in mcps/trackflow-server/src/trackflow_server/app.py
-- [ ] T008 [P] Setup shared pytest fixtures and mock JWT token helpers in mcps/trackflow-server/tests/conftest.py
+- [X] T004 Implement domain schemas and canonical error models in mcps/trackflow-server/src/trackflow_server/models/schemas.py and mcps/trackflow-server/src/trackflow_server/models/errors.py
+- [X] T005 [P] Implement resilient HTTP client for upstream Incidents and Inventory APIs in mcps/trackflow-server/src/trackflow_server/clients/upstream_client.py
+- [X] T006 [P] Implement structured JSON audit logging with PII and credential masking in mcps/trackflow-server/src/trackflow_server/logging/audit.py
+- [X] T007 [P] Implement FastMCP application initialization and Starlette ASGI routing in mcps/trackflow-server/src/trackflow_server/app.py
+- [X] T008 [P] Setup shared pytest fixtures and mock JWT token helpers in mcps/trackflow-server/tests/conftest.py
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel.
 
@@ -46,13 +46,13 @@
 ### Tests for User Story 1 ⚠️
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Create unit tests for incident tools and lifecycle state transitions in mcps/trackflow-server/tests/test_incident_tools.py
+- [X] T009 [P] [US1] Create unit tests for incident tools and lifecycle state transitions in mcps/trackflow-server/tests/test_incident_tools.py
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement create_incident, query_incidents, and transition_incident_status tools delegating to upstream API in mcps/trackflow-server/src/trackflow_server/tools/incidents.py
-- [ ] T011 [US1] Register incident tools with FastMCP server instance in mcps/trackflow-server/src/trackflow_server/app.py
-- [ ] T012 [US1] Enforce lifecycle state machine validation rules and error mapping for status transitions in mcps/trackflow-server/src/trackflow_server/tools/incidents.py
+- [X] T010 [US1] Implement create_incident, query_incidents, and transition_incident_status tools delegating to upstream API in mcps/trackflow-server/src/trackflow_server/tools/incidents.py
+- [X] T011 [US1] Register incident tools with FastMCP server instance in mcps/trackflow-server/src/trackflow_server/app.py
+- [X] T012 [US1] Enforce lifecycle state machine validation rules and error mapping for status transitions in mcps/trackflow-server/src/trackflow_server/tools/incidents.py
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently (MVP Complete).
 
@@ -67,13 +67,13 @@
 ### Tests for User Story 2 ⚠️
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T013 [P] [US2] Create unit tests for inventory queries and structural mutation rejection in mcps/trackflow-server/tests/test_inventory_tool.py
+- [X] T013 [P] [US2] Create unit tests for inventory queries and structural mutation rejection in mcps/trackflow-server/tests/test_inventory_tool.py
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Implement read-only query_inventory tool delegating to upstream inventory API in mcps/trackflow-server/src/trackflow_server/tools/inventory.py
-- [ ] T015 [US2] Register inventory tool with FastMCP server instance in mcps/trackflow-server/src/trackflow_server/app.py
-- [ ] T016 [US2] Implement mutation rejection guard intercepting write parameters with INVENTORY_MUTATION_REJECTED in mcps/trackflow-server/src/trackflow_server/tools/inventory.py
+- [X] T014 [US2] Implement read-only query_inventory tool delegating to upstream inventory API in mcps/trackflow-server/src/trackflow_server/tools/inventory.py
+- [X] T015 [US2] Register inventory tool with FastMCP server instance in mcps/trackflow-server/src/trackflow_server/app.py
+- [X] T016 [US2] Implement mutation rejection guard intercepting write parameters with INVENTORY_MUTATION_REJECTED in mcps/trackflow-server/src/trackflow_server/tools/inventory.py
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently.
 
@@ -88,16 +88,16 @@
 ### Tests for User Story 3 ⚠️
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T017 [P] [US3] Create unit and integration tests for OAuth authentication and scope enforcement in mcps/trackflow-server/tests/test_auth.py
-- [ ] T018 [P] [US3] Create unit tests for structured audit logging and PII masking in mcps/trackflow-server/tests/test_audit_logging.py
+- [X] T017 [P] [US3] Create unit and integration tests for OAuth authentication and scope enforcement in mcps/trackflow-server/tests/test_auth.py
+- [X] T018 [P] [US3] Create unit tests for structured audit logging and PII masking in mcps/trackflow-server/tests/test_audit_logging.py
 
 ### Implementation for User Story 3
 
-- [ ] T019 [P] [US3] Implement OAuth 2.1 Bearer verification middleware and mcpauth integration in mcps/trackflow-server/src/trackflow_server/auth/middleware.py
-- [ ] T020 [P] [US3] Implement RFC 9728 Protected Resource Metadata endpoint in mcps/trackflow-server/src/trackflow_server/auth/metadata.py
-- [ ] T021 [US3] Implement fine-grained scope enforcement decorators and permission matrix in mcps/trackflow-server/src/trackflow_server/auth/scopes.py
-- [ ] T022 [US3] Integrate authentication middleware and audit logging middleware into ASGI application in mcps/trackflow-server/src/trackflow_server/app.py
-- [ ] T023 [US3] Configure MCP tool discovery metadata and schemas matching contracts in mcps/trackflow-server/src/trackflow_server/app.py
+- [X] T019 [P] [US3] Implement OAuth 2.1 Bearer verification middleware and mcpauth integration in mcps/trackflow-server/src/trackflow_server/auth/middleware.py
+- [X] T020 [P] [US3] Implement RFC 9728 Protected Resource Metadata endpoint in mcps/trackflow-server/src/trackflow_server/auth/metadata.py
+- [X] T021 [US3] Implement fine-grained scope enforcement decorators and permission matrix in mcps/trackflow-server/src/trackflow_server/auth/scopes.py
+- [X] T022 [US3] Integrate authentication middleware and audit logging middleware into ASGI application in mcps/trackflow-server/src/trackflow_server/app.py
+- [X] T023 [US3] Configure MCP tool discovery metadata and schemas matching contracts in mcps/trackflow-server/src/trackflow_server/app.py
 
 **Checkpoint**: All MCP server endpoints are secured by OAuth 2.1, fine-grained scopes are enforced, and tool discovery metadata is published.
 
@@ -112,15 +112,15 @@
 ### Tests for User Story 4 ⚠️
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T024 [P] [US4] Create unit tests for MCP ticket tool adapter in services/api/tests/unit/test_mcp_ticket_tool_adapter.py
-- [ ] T025 [P] [US4] Update integration tests for agent routing and tool execution in services/api/tests/integration/test_agent_routes.py
+- [X] T024 [P] [US4] Create unit tests for MCP ticket tool adapter in services/api/tests/unit/test_mcp_ticket_tool_adapter.py
+- [X] T025 [P] [US4] Update integration tests for agent routing and tool execution in services/api/tests/integration/test_agent_routes.py
 
 ### Implementation for User Story 4
 
-- [ ] T026 [US4] Implement McpTicketToolAdapter conforming to SupportTicketToolPort using langchain-mcp-adapters in services/api/infrastructure/adapters/mcp_ticket_tool_adapter.py
-- [ ] T027 [US4] Inject McpTicketToolAdapter for SupportTicketToolPort in services/api/presentation/dependencies.py
-- [ ] T028 [US4] Refactor agent workflow service to consume MCP adapter and decommission legacy direct incident calling node in services/api/application/services/agent_workflow.py
-- [ ] T029 [US4] Deprecate legacy direct support ticket tool adapter in services/api/infrastructure/adapters/support_ticket_tool_adapter.py
+- [X] T026 [US4] Implement McpTicketToolAdapter conforming to SupportTicketToolPort using langchain-mcp-adapters in services/api/infrastructure/adapters/mcp_ticket_tool_adapter.py
+- [X] T027 [US4] Inject McpTicketToolAdapter for SupportTicketToolPort in services/api/presentation/dependencies.py
+- [X] T028 [US4] Refactor agent workflow service to consume MCP adapter and decommission legacy direct incident calling node in services/api/application/services/agent_workflow.py
+- [X] T029 [US4] Deprecate legacy direct support ticket tool adapter in services/api/infrastructure/adapters/support_ticket_tool_adapter.py
 
 **Checkpoint**: All user stories should now be independently functional and integrated end-to-end.
 
@@ -130,9 +130,9 @@
 
 **Purpose**: Documentation, end-to-end scenario verification, type integrity, and test suite execution.
 
-- [ ] T030 [P] Add README and developer documentation in mcps/trackflow-server/README.md
-- [ ] T031 Run quickstart.md validation scenarios against running MCP server and agent in specs/028-mcp-server-tools/quickstart.md
-- [ ] T032 Verify static type integrity, linting, and backend test suite execution across mcps/trackflow-server and services/api
+- [X] T030 [P] Add README and developer documentation in mcps/trackflow-server/README.md
+- [X] T031 Run quickstart.md validation scenarios against running MCP server and agent in specs/028-mcp-server-tools/quickstart.md
+- [X] T032 Verify static type integrity, linting, and backend test suite execution across mcps/trackflow-server and services/api
 
 ---
 
