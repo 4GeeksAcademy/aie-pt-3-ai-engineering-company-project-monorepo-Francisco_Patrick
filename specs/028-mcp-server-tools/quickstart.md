@@ -36,12 +36,20 @@ The MCP server supports both HTTP/SSE transport (for remote clients, inspection 
 
 ```powershell
 cd mcps/trackflow-server
-uv run python -m trackflow_server.main --transport sse --port 8001
+uv run python -m trackflow_server.main --transport sse --host 0.0.0.0 --port 8001
 ```
 
-- **SSE Stream Endpoint**: `http://localhost:8001/sse`
-- **Messages Endpoint**: `http://localhost:8001/messages/`
-- **Protected Resource Metadata**: `http://localhost:8001/.well-known/oauth-protected-resource`
+- **Local SSE Stream Endpoint**: `http://localhost:8001/sse`
+- **GitHub Codespaces Public Forwarded SSE Endpoint (for MCP Playground)**: `https://<codespace-name>-8001.app.github.dev/sse`
+- **Messages Endpoint**: `https://<codespace-name>-8001.app.github.dev/messages/`
+- **Protected Resource Metadata**: `https://<codespace-name>-8001.app.github.dev/.well-known/oauth-protected-resource`
+
+### Scenario B: Connecting from MCP Playground via GitHub Codespaces Public URL
+
+1. Forward port `8001` in GitHub Codespaces and change **Port Visibility** to **Public** (`gh codespace ports visibility 8001:public`).
+2. Mint a Bearer JWT token with `uv run python -m trackflow_server.testing.token_helper`.
+3. Paste `https://<codespace-name>-8001.app.github.dev/sse` into **MCP Playground** (do not use `localhost` in Playground) with header `Authorization: Bearer <TOKEN>`.
+4. Execute complete flows for `create_incident`, `query_incidents`, `transition_incident_status`, and `query_inventory` (both read and rejected write attempts returning `INVENTORY_MUTATION_REJECTED`).
 
 ---
 

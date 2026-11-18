@@ -136,7 +136,7 @@ class UpstreamClient:
             title=str(raw.get("title") or ""),
             description=str(raw.get("description") or ""),
             status=str(raw.get("status") or "open"),
-            category=str(raw.get("category") or "other"),
+            category=str(raw.get("category") or "warehouse"),
             origin=str(raw.get("origin") or "customer"),
             branch=str(raw.get("branch") or "central"),
             created_at=str(raw.get("created_at") or ""),

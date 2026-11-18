@@ -32,7 +32,7 @@ class TestIncidentTools:
             title="Conveyor belt jam in Zaragoza Sector B",
             description="Main sorting conveyor halted due to sensor fault.",
             category="warehouse",
-            origin="warehouse",
+            origin="branch",
             branch="zaragoza",
         )
 
@@ -40,7 +40,7 @@ class TestIncidentTools:
         assert result["status"] == "open"
         assert result["title"] == "Conveyor belt jam in Zaragoza Sector B"
         assert result["category"] == "warehouse"
-        assert result["origin"] == "warehouse"
+        assert result["origin"] == "branch"
         assert result["branch"] == "zaragoza"
         assert "created_at" in result
         assert "updated_at" in result
@@ -49,7 +49,7 @@ class TestIncidentTools:
             "title": "Conveyor belt jam in Zaragoza Sector B",
             "description": "Main sorting conveyor halted due to sensor fault.",
             "category": "warehouse",
-            "origin": "warehouse",
+            "origin": "branch",
             "branch": "zaragoza",
         }) in mock_upstream_backend.request_log
 
@@ -167,9 +167,16 @@ class TestIncidentTools:
         assert exc_timeout.value.error_code == McpErrorCode.UPSTREAM_UNAVAILABLE
 
     async def test_fastmcp_registered_incident_tools_execution(
-        self, mock_upstream_backend: MockUpstreamBackend
+        self,
+        mock_upstream_backend: MockUpstreamBackend,
+        token_factory: Any,
     ) -> None:
-        """T011: Verify incident tools are registered on FastMCP server and callable via protocol."""
+        """T011: Verify incident tools are registered on FastMCP server and callable via protocol with valid token."""
+        from trackflow_server.auth.middleware import (
+            set_current_security_context,
+            verify_bearer_token,
+        )
+
         mcp = create_mcp_server()
         tools = await mcp.list_tools()
         tool_names = {t.name for t in tools}
@@ -177,9 +184,15 @@ class TestIncidentTools:
         assert "query_incidents" in tool_names
         assert "transition_incident_status" in tool_names
 
-        tool_result = await mcp.call_tool(
-            "query_incidents", {"ticket_id": "INC-001"}
+        set_current_security_context(
+            verify_bearer_token(token_factory(scopes=["incidents:read"]))
         )
+        try:
+            tool_result = await mcp.call_tool(
+                "query_incidents", {"ticket_id": "INC-001"}
+            )
+        finally:
+            set_current_security_context(None)
         assert tool_result is not None
         text_blocks = [
             getattr(c, "text", "") for c in tool_result.content if hasattr(c, "text")

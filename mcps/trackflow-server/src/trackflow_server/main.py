@@ -56,6 +56,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     from trackflow_server.app import create_asgi_app, get_mcp_server
 
     if args.transport == "stdio":
+        from trackflow_server.auth.middleware import (
+            set_current_security_context,
+            verify_bearer_token,
+        )
+
+        stdio_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+        if stdio_token:
+            set_current_security_context(verify_bearer_token(stdio_token))
         mcp = get_mcp_server()
         mcp.run(transport="stdio")
         return 0

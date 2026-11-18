@@ -90,9 +90,16 @@ class TestInventoryTool:
         assert len(mock_upstream_backend.request_log) == requests_before
 
     async def test_fastmcp_exposes_only_read_only_inventory_tool(
-        self, mock_upstream_backend: MockUpstreamBackend
+        self,
+        mock_upstream_backend: MockUpstreamBackend,
+        token_factory: Any,
     ) -> None:
         """T015: Verify query_inventory is registered and no write inventory tools exist."""
+        from trackflow_server.auth.middleware import (
+            set_current_security_context,
+            verify_bearer_token,
+        )
+
         mcp = create_mcp_server()
         tools = await mcp.list_tools()
         tool_names = {t.name for t in tools}
@@ -109,7 +116,13 @@ class TestInventoryTool:
         }
         assert tool_names.isdisjoint(prohibited_tools)
 
-        tool_result = await mcp.call_tool("query_inventory", {"sku": "TF-001"})
+        set_current_security_context(
+            verify_bearer_token(token_factory(scopes=["inventory:read"]))
+        )
+        try:
+            tool_result = await mcp.call_tool("query_inventory", {"sku": "TF-001"})
+        finally:
+            set_current_security_context(None)
         text_blocks = [
             getattr(c, "text", "") for c in tool_result.content if hasattr(c, "text")
         ]

@@ -100,6 +100,11 @@ class TestOAuthAndDiscovery:
             "query_inventory": "inventory:read",
         }
 
+        # Unauthenticated security_context (None) is rejected with AuthenticationRequiredError
+        with pytest.raises(AuthenticationRequiredError) as exc_unauth:
+            check_tool_scope("query_incidents", None)
+        assert exc_unauth.value.error_code == McpErrorCode.AUTHENTICATION_REQUIRED
+
         read_only_token = token_factory(scopes=["incidents:read"], client_id="reader-bot")
         ctx = verify_bearer_token(read_only_token)
 

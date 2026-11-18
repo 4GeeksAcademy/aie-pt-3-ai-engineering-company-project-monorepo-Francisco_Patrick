@@ -1,169 +1,215 @@
 """Standardized MCP Client Adapter for the TrackFlow Support Agent (`McpTicketToolAdapter`).
 
 Implements `SupportTicketToolPort` (FR-013, FR-014, FR-015, T026) using `langchain-mcp-adapters`:
-- Connects to the TrackFlow MCP Server via `MultiServerMCPClient` (`SSEConnection`) with
-  OAuth 2.1 Bearer authentication (`incidents:read` scope).
+- Connects to the TrackFlow MCP Server (`mcps/trackflow-server`) via `MultiServerMCPClient`
+  (`SSEConnection`) with OAuth 2.1 Bearer authentication (`incidents:read` scope).
 - Discovers and invokes the standardized `query_incidents` MCP tool via `langchain-mcp-adapters`.
-- Provides an embedded MCP tool execution client when `MCP_SERVER_URL` is not pointing to a
-  separate network process, ensuring deterministic in-process execution during unit and
-  integration test runs while exercising the full `langchain-mcp-adapters` tool interface.
+- Zero direct calls to `IncidentService` or `TinyDB`: 100% of queries are routed through the
+  OAuth 2.1 protected TrackFlow MCP Server (`mcps/trackflow-server`) and its `UpstreamClient`
+  against the `/api/incidents` REST API.
 """
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import json
 import os
+from pathlib import Path
+import sys
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import httpx
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient, SSEConnection
 
-from application.services.incident_service import IncidentService
 from domain.agent.entities import (
     TicketRecordDTO,
     TicketToolInput,
     TicketToolOutput,
 )
 from domain.agent.ports import SupportTicketToolPort
-from domain.incident_model import Incident
+from domain.common.exceptions import IncidentNotFoundError as CommonIncidentNotFoundError
+from domain.exceptions import IncidentNotFoundError as DomainIncidentNotFoundError
 from domain.knowledge.entities import KnowledgeRuntimeConfig
 
 DEFAULT_TOOL_TIMEOUT_SECONDS = 4.0
 MAX_TOOL_RECORDS = 20
 
+_MCP_SERVER_SRC = (
+    Path(__file__).resolve().parents[4]
+    / "mcps"
+    / "trackflow-server"
+    / "src"
+)
 
-class _EmbeddedMcpServerClient:
-    """In-process MCP tool client exposing `query_incidents` as a LangChain StructuredTool."""
 
-    def __init__(
-        self,
-        incident_service: Optional[IncidentService] = None,
-        incident_service_factory: Optional[Callable[[], IncidentService]] = None,
-    ) -> None:
-        self._incident_service = incident_service
-        self._incident_service_factory = incident_service_factory
+def _ensure_mcp_server_importable() -> None:
+    """Ensure `mcps/trackflow-server/src` is on `sys.path` for ASGI bridge execution."""
+    mcp_src_str = str(_MCP_SERVER_SRC)
+    if _MCP_SERVER_SRC.exists() and mcp_src_str not in sys.path:
+        sys.path.insert(0, mcp_src_str)
 
-    def _resolve_service(self) -> IncidentService:
-        if self._incident_service is not None:
-            return self._incident_service
-        if self._incident_service_factory is not None:
-            return self._incident_service_factory()
-        from infrastructure.adapters.tiny_db_incident_repository import (
-            TinyDBIncidentRepository,
+
+_CACHED_UPSTREAM_APP: Optional[FastAPI] = None
+
+
+def _build_upstream_incidents_fastapi_app() -> FastAPI:
+    """Build or return cached ASGI FastAPI wrapper mounting the canonical `/api/incidents` router."""
+    global _CACHED_UPSTREAM_APP
+    if _CACHED_UPSTREAM_APP is not None:
+        return _CACHED_UPSTREAM_APP
+
+    from presentation.api.v1 import incidents as incidents_router
+
+    upstream_app = FastAPI(title="TrackFlow Incidents Upstream API")
+
+    @upstream_app.exception_handler(CommonIncidentNotFoundError)
+    async def _handle_common_not_found(
+        _req: Request, exc: CommonIncidentNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @upstream_app.exception_handler(DomainIncidentNotFoundError)
+    async def _handle_domain_not_found(
+        _req: Request, exc: DomainIncidentNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    upstream_app.include_router(incidents_router.router, prefix="/api/incidents")
+    _CACHED_UPSTREAM_APP = upstream_app
+    return _CACHED_UPSTREAM_APP
+
+
+class _TrackFlowMcpHttpBridgeClient:
+    """MCP Client communicating with `mcps/trackflow-server` over OAuth 2.1 protected JSON-RPC HTTP."""
+
+    def __init__(self, auth_token: Optional[str] = None, timeout_seconds: float = 4.0) -> None:
+        self._auth_token = auth_token
+        self._timeout_seconds = timeout_seconds
+
+    def _resolve_bearer_token(self) -> str:
+        """Return configured OAuth 2.1 Bearer JWT or mint a least-privilege `incidents:read` token."""
+        if self._auth_token and self._auth_token.strip():
+            return self._auth_token.strip()
+        _ensure_mcp_server_importable()
+        from trackflow_server.testing.token_helper import create_access_token
+
+        return str(
+            create_access_token(
+                scopes=["incidents:read"],
+                client_id="trackflow-langgraph-support-agent",
+                subject="support-agent-mcp-client",
+            )
         )
-        from infrastructure.persistence.tinydb.client import get_tinydb
-
-        return IncidentService(repo=TinyDBIncidentRepository(get_tinydb()))
-
-    @staticmethod
-    def _serialize_incident(inc: Incident | Dict[str, Any]) -> Dict[str, Any]:
-        if isinstance(inc, dict):
-            return {
-                "id": str(inc.get("id") or inc.get("legacy_id") or ""),
-                "title": str(inc.get("title") or ""),
-                "description": str(inc.get("description") or ""),
-                "status": str(inc.get("status") or "open"),
-                "category": str(inc.get("category") or "other"),
-                "origin": str(inc.get("origin") or "customer"),
-                "branch": str(inc.get("branch") or "central"),
-                "created_at": str(inc.get("created_at") or ""),
-                "updated_at": str(inc.get("updated_at") or ""),
-            }
-        raw = inc.to_dict()
-        return {
-            "id": str(raw.get("id") or ""),
-            "title": str(raw.get("title") or ""),
-            "description": str(raw.get("description") or ""),
-            "status": str(raw.get("status") or "open"),
-            "category": str(raw.get("category") or "other"),
-            "origin": str(raw.get("origin") or "customer"),
-            "branch": str(raw.get("branch") or "central"),
-            "created_at": str(raw.get("created_at") or ""),
-            "updated_at": str(raw.get("updated_at") or ""),
-        }
 
     async def get_tools(self) -> List[BaseTool]:
-        """Return the MCP `query_incidents` tool wrapped as a LangChain StructuredTool."""
+        """Discover `query_incidents` from `mcps/trackflow-server` via OAuth 2.1 JSON-RPC `tools/list`."""
+        _ensure_mcp_server_importable()
+        from trackflow_server.app import create_asgi_app, set_upstream_client
+        from trackflow_server.clients.upstream_client import UpstreamClient
 
-        async def _query_incidents_mcp(
+        upstream_fastapi = _build_upstream_incidents_fastapi_app()
+        upstream_transport = httpx.ASGITransport(app=upstream_fastapi)
+        set_upstream_client(
+            UpstreamClient(
+                base_url="http://trackflow-upstream.internal",
+                timeout_seconds=self._timeout_seconds,
+                transport=upstream_transport,
+            )
+        )
+
+        mcp_asgi_app = create_asgi_app(transport="sse")
+        mcp_transport = httpx.ASGITransport(app=mcp_asgi_app)
+        bearer_token = self._resolve_bearer_token()
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(
+            transport=mcp_transport,
+            base_url="http://trackflow-mcp.internal",
+            timeout=self._timeout_seconds,
+        ) as http_client:
+            list_res = await http_client.post(
+                "/messages/",
+                headers=headers,
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+            if list_res.status_code != 200:
+                raise RuntimeError(
+                    f"MCP Server discovery failed with HTTP {list_res.status_code}: {list_res.text}"
+                )
+            discovered_tools = (list_res.json().get("result") or {}).get("tools") or []
+            query_meta = next(
+                (t for t in discovered_tools if t.get("name") == "query_incidents"),
+                None,
+            )
+            if query_meta is None:
+                raise RuntimeError(
+                    "MCP Server did not expose required 'query_incidents' tool."
+                )
+
+        async def _call_mcp_query_incidents(
             ticket_id: Optional[str] = None,
             status: Optional[str] = None,
             category: Optional[str] = None,
             origin: Optional[str] = None,
             branch: Optional[str] = None,
         ) -> str:
-            service = self._resolve_service()
-            matched: List[Dict[str, Any]] = []
-
-            if ticket_id:
-                target_id = ticket_id.strip()
-                exact = service.get_incident_by_id(target_id)
-                if exact is not None:
-                    matched = [self._serialize_incident(exact)]
-                else:
-                    repo = getattr(service, "repo", None)
-                    if repo is not None and hasattr(repo, "find_by_legacy_id"):
-                        leg = repo.find_by_legacy_id(target_id)
-                        if leg is not None:
-                            matched = [self._serialize_incident(leg)]
-                    if not matched:
-                        norm = target_id.lower()
-                        for inc in service.list_all_incidents():
-                            inc_id = str(getattr(inc, "id", "") or "").lower()
-                            leg_id = str(getattr(inc, "legacy_id", "") or "").lower()
-                            if norm in (inc_id, leg_id):
-                                matched.append(self._serialize_incident(inc))
-            else:
-                incidents = service.list_all_incidents(
-                    status=status.lower() if status else None,
-                    origin=origin.lower() if origin else None,
-                    branch=branch.lower() if branch else None,
-                    category=category.lower() if category else None,
-                )
-                if not incidents and branch:
-                    unfiltered = service.list_all_incidents(
-                        status=status.lower() if status else None,
-                        origin=origin.lower() if origin else None,
-                        branch=None,
-                        category=category.lower() if category else None,
-                    )
-                    target_br = branch.strip().lower()
-                    incidents = [
-                        inc
-                        for inc in unfiltered
-                        if str(getattr(inc, "branch", "") or "").strip().lower()
-                        == target_br
-                    ]
-                matched = [self._serialize_incident(inc) for inc in incidents]
-
-            return json.dumps(
-                {
-                    "status": "success" if matched else "not_found",
-                    "records": matched,
-                    "total_matched": len(matched),
-                    "queried_criteria": {
-                        k: v
-                        for k, v in {
-                            "ticket_id": ticket_id,
-                            "status": status,
-                            "category": category,
-                            "origin": origin,
-                            "branch": branch,
-                        }.items()
-                        if v is not None
+            arguments: Dict[str, Any] = {
+                k: v
+                for k, v in {
+                    "ticket_id": ticket_id,
+                    "status": status,
+                    "category": category,
+                    "origin": origin,
+                    "branch": branch,
+                }.items()
+                if v is not None
+            }
+            async with httpx.AsyncClient(
+                transport=mcp_transport,
+                base_url="http://trackflow-mcp.internal",
+                timeout=self._timeout_seconds,
+            ) as call_client:
+                call_res = await call_client.post(
+                    "/messages/",
+                    headers=headers,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "query_incidents",
+                            "arguments": arguments,
+                        },
                     },
-                }
-            )
+                )
+                payload = call_res.json()
+                if call_res.status_code == 404 or payload.get("error_code") == "RESOURCE_NOT_FOUND":
+                    return json.dumps(
+                        {
+                            "status": "not_found",
+                            "records": [],
+                            "total_matched": 0,
+                            "queried_criteria": arguments,
+                        }
+                    )
+                if call_res.status_code != 200 or "error" in payload:
+                    err_msg = payload.get("message") or (payload.get("error") or {}).get(
+                        "message", "MCP tool call failed"
+                    )
+                    raise RuntimeError(str(err_msg))
+                return json.dumps(payload.get("result") or {})
 
         return [
             StructuredTool.from_function(
-                coroutine=_query_incidents_mcp,
-                name="query_incidents",
-                description=(
-                    "Query operational incident records by unique ID or search filters "
-                    "(status, category, origin, branch) via TrackFlow MCP Server."
-                ),
+                coroutine=_call_mcp_query_incidents,
+                name=str(query_meta["name"]),
+                description=str(query_meta.get("description") or "Query incidents via MCP"),
             )
         ]
 
@@ -178,8 +224,6 @@ class McpTicketToolAdapter(SupportTicketToolPort):
         auth_token: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
         mcp_client: Optional[Any] = None,
-        incident_service: Optional[IncidentService] = None,
-        incident_service_factory: Optional[Callable[[], IncidentService]] = None,
     ) -> None:
         self._config = config or KnowledgeRuntimeConfig.from_env()
         resolved_timeout = (
@@ -206,9 +250,9 @@ class McpTicketToolAdapter(SupportTicketToolPort):
             )
         )
         self._mcp_client = mcp_client
-        self._embedded_client = _EmbeddedMcpServerClient(
-            incident_service=incident_service,
-            incident_service_factory=incident_service_factory,
+        self._bridge_client = _TrackFlowMcpHttpBridgeClient(
+            auth_token=self._auth_token,
+            timeout_seconds=self._timeout_seconds,
         )
 
     @property
@@ -216,12 +260,15 @@ class McpTicketToolAdapter(SupportTicketToolPort):
         """Return configured numerical timeout in seconds."""
         return self._timeout_seconds
 
+    def _resolve_bearer_token(self) -> str:
+        """Return configured OAuth 2.1 Bearer token or mint a least-privilege `incidents:read` token."""
+        return self._bridge_client._resolve_bearer_token()
+
     def build_connection_config(self) -> Dict[str, SSEConnection]:
         """Build `MultiServerMCPClient` connection dictionary using `SSEConnection`."""
         url = self._mcp_server_url or "http://127.0.0.1:8001/sse"
-        headers: Dict[str, Any] = {}
-        if self._auth_token:
-            headers["Authorization"] = f"Bearer {self._auth_token}"
+        token = self._auth_token if self._auth_token else self._resolve_bearer_token()
+        headers: Dict[str, Any] = {"Authorization": f"Bearer {token}"}
         conn: SSEConnection = {
             "transport": "sse",
             "url": url,
@@ -232,12 +279,12 @@ class McpTicketToolAdapter(SupportTicketToolPort):
         return {"trackflow": conn}
 
     def _resolve_mcp_client(self) -> Any:
-        """Resolve either the injected/remote `MultiServerMCPClient` or the embedded MCP client."""
+        """Resolve either the injected/remote `MultiServerMCPClient` or the MCP ASGI HTTP bridge."""
         if self._mcp_client is not None:
             return self._mcp_client
         if self._mcp_server_url:
             return MultiServerMCPClient(self.build_connection_config())
-        return self._embedded_client
+        return self._bridge_client
 
     @staticmethod
     def _dict_to_dto(raw: Dict[str, Any]) -> TicketRecordDTO:
@@ -311,6 +358,10 @@ class McpTicketToolAdapter(SupportTicketToolPort):
 
     def query_tickets(self, tool_input: TicketToolInput) -> TicketToolOutput:
         """Query live incident tickets via MCP Server with a strict timeout and 20-record cap."""
+        if self._mcp_client is None and not self._mcp_server_url:
+            _ensure_mcp_server_importable()
+            _build_upstream_incidents_fastapi_app()
+
         start_ns = time.perf_counter()
         criteria_dict = tool_input.to_dict()
         cap_limit = max(1, min(MAX_TOOL_RECORDS, int(tool_input.limit)))

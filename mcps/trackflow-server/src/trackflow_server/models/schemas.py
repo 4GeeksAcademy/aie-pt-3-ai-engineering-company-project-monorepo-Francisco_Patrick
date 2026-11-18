@@ -23,29 +23,20 @@ class IncidentTransitionTargetEnum(str, Enum):
 
 
 class IncidentCategoryEnum(str, Enum):
-    """Problem classification categories in the Incidents Manager."""
+    """Problem classification categories in the Incidents Manager (aligned with shared.incidents.enums.IncidentCategory)."""
 
     WAREHOUSE = "warehouse"
-    DELAY = "delay"
-    DAMAGE = "damage"
-    BILLING = "billing"
-    STOCK = "stock"
-    SYSTEM = "system"
     REVERSE_LOGISTICS = "reverse_logistics"
     LAST_MILE = "last_mile"
     CUSTOMER_EXPERIENCE = "customer_experience"
-    OTHER = "other"
 
 
 class IncidentOriginEnum(str, Enum):
-    """Reporting source channels in the Incidents Manager."""
+    """Reporting source channels in the Incidents Manager (aligned with shared.incidents.enums.IncidentOrigin)."""
 
     CUSTOMER = "customer"
     BRANCH = "branch"
     INTERNAL = "internal"
-    WAREHOUSE = "warehouse"
-    CARRIER = "carrier"
-    PARTNER = "partner"
 
 
 class IncidentBranchEnum(str, Enum):

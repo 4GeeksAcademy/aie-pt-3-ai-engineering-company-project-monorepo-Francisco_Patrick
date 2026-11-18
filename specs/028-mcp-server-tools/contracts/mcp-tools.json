@@ -26,15 +26,9 @@
             "type": "string",
             "enum": [
               "warehouse",
-              "delay",
-              "damage",
-              "billing",
-              "stock",
-              "system",
               "reverse_logistics",
               "last_mile",
-              "customer_experience",
-              "other"
+              "customer_experience"
             ],
             "description": "Incident classification category"
           },
@@ -43,10 +37,7 @@
             "enum": [
               "customer",
               "branch",
-              "internal",
-              "warehouse",
-              "carrier",
-              "partner"
+              "internal"
             ],
             "description": "Reporting source channel"
           },

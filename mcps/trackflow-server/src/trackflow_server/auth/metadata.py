@@ -1,7 +1,8 @@
 """RFC 9728 OAuth 2.0 Protected Resource Metadata endpoint and mcpauth configuration (T020)."""
 
+from contextvars import ContextVar
 import os
-from typing import List
+from typing import List, Optional
 
 from mcpauth import MCPAuth
 from mcpauth.config import (
@@ -9,6 +10,7 @@ from mcpauth.config import (
     AuthServerConfig,
     AuthServerType,
 )
+from mcpauth.types import AuthInfo
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -40,14 +42,17 @@ def get_protected_resource_metadata() -> ProtectedResourceMetadata:
     )
 
 
-def create_mcp_auth_instance() -> MCPAuth:
+def create_mcp_auth_instance(
+    context_var: Optional[ContextVar[Optional[AuthInfo]]] = None,
+) -> MCPAuth:
     """Create and configure the `mcpauth.MCPAuth` instance for the authorization server."""
     issuer = get_oauth_issuer().rstrip("/")
+    jwks_uri = os.environ.get("MCP_OAUTH_JWKS_URI", f"{issuer}/.well-known/jwks.json")
     metadata = AuthorizationServerMetadata(
         issuer=issuer,
         authorization_endpoint=f"{issuer}/oauth/authorize",
         token_endpoint=f"{issuer}/oauth/token",
-        jwks_uri=f"{issuer}/.well-known/jwks.json",
+        jwks_uri=jwks_uri,
         registration_endpoint=f"{issuer}/oauth/register",
         response_types_supported=["code", "token"],
         grant_types_supported=["authorization_code", "client_credentials"],
@@ -58,6 +63,8 @@ def create_mcp_auth_instance() -> MCPAuth:
         metadata=metadata,
         type=AuthServerType.OAUTH,
     )
+    if context_var is not None:
+        return MCPAuth(server=server_config, context_var=context_var)
     return MCPAuth(server=server_config)
 
 

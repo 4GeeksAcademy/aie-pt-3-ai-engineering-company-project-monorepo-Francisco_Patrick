@@ -22,24 +22,15 @@ from trackflow_server.models.schemas import (
 
 IncidentCategoryLiteral = Literal[
     "warehouse",
-    "delay",
-    "damage",
-    "billing",
-    "stock",
-    "system",
     "reverse_logistics",
     "last_mile",
     "customer_experience",
-    "other",
 ]
 
 IncidentOriginLiteral = Literal[
     "customer",
     "branch",
     "internal",
-    "warehouse",
-    "carrier",
-    "partner",
 ]
 
 IncidentBranchLiteral = Literal[

@@ -28,8 +28,8 @@ Represents an operational incident ticket within TrackFlow, aligning with the In
 | `title` | `string` | Min: 3 chars, Max: 200 chars | Summary title of the operational issue. |
 | `description` | `string` | Min: 5 chars, Max: 2000 chars | Detailed explanation of the incident context. |
 | `status` | `string` | `open`, `in_progress`, `resolved`, `discarded` | Current lifecycle state. |
-| `category` | `string` | `warehouse`, `delay`, `damage`, `billing`, `stock`, `system`, `reverse_logistics`, `last_mile`, `customer_experience`, `other` | Problem classification category. |
-| `origin` | `string` | `customer`, `branch`, `internal`, `warehouse`, `carrier`, `partner` | Source channel that reported the incident. |
+| `category` | `string` | `warehouse`, `reverse_logistics`, `last_mile`, `customer_experience` | Problem classification category (`shared.incidents.enums.IncidentCategory`). |
+| `origin` | `string` | `customer`, `branch`, `internal` | Source channel that reported the incident (`shared.incidents.enums.IncidentOrigin`). |
 | `branch` | `string` | Known branches: `zaragoza`, `los_angeles`, `valencia`, `central`, `madrid`, `barcelona`, `bilbao`, `sevilla` | Warehouse or operating branch location. |
 | `created_at` | `string` (ISO 8601) | Timestamp | Record creation timestamp. |
 | `updated_at` | `string` (ISO 8601) | Timestamp | Timestamp of last modification or status transition. |

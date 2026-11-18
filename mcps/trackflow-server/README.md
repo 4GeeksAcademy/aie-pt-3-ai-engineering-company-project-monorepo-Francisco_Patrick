@@ -63,3 +63,122 @@ uv run python -m trackflow_server.testing.token_helper --scope "incidents:read i
 cd mcps/trackflow-server
 uv run pytest -v
 ```
+
+---
+
+## Validación en MCP Playground (GitHub Codespaces URL Pública)
+
+> **IMPORTANTE**: MCP Playground se ejecuta en el navegador desde un origen remoto, por lo que `http://localhost:8001` no es alcanzable directamente desde el sitio web de Playground. Debes exponer el puerto `8001` con visibilidad **Public** en GitHub Codespaces y usar la URL pública reenviada (`https://<codespace-name>-8001.app.github.dev`).
+
+### Paso 1: Levantar el Backend (`services/api`) y el Servidor MCP (`mcps/trackflow-server`)
+
+```bash
+# Terminal 1: API de Incidencias e Inventario (puerto 8000)
+cd services/api
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2: MCP Server con transporte SSE (puerto 8001)
+cd mcps/trackflow-server
+uv run python -m trackflow_server.main --transport sse --host 0.0.0.0 --port 8001
+```
+
+### Paso 2: Exponer el Puerto 8001 como Público en GitHub Codespaces
+
+1. En la pestaña **PORTS** de VS Code / GitHub Codespaces, localiza el puerto `8001`.
+2. Haz clic derecho sobre el puerto `8001` → **Port Visibility** → **Public** (o mediante GitHub CLI: `gh codespace ports visibility 8001:public`).
+3. Copia la dirección reenviada pública:
+   ```text
+   https://<tu-codespace-id>-8001.app.github.dev/sse
+   ```
+4. Verifica los metadatos OAuth 2.1 Protected Resource (RFC 9728) públicamente:
+   ```text
+   https://<tu-codespace-id>-8001.app.github.dev/.well-known/oauth-protected-resource
+   ```
+
+### Paso 3: Generar el Access Token OAuth 2.1 y Conectar en MCP Playground
+
+```bash
+cd mcps/trackflow-server
+uv run python -m trackflow_server.testing.token_helper \
+  --scope "incidents:read incidents:write incidents:lifecycle inventory:read" \
+  --client-id "mcp-playground-client"
+```
+
+En **MCP Playground**:
+- **Transport**: `SSE`
+- **Server URL**: `https://<tu-codespace-id>-8001.app.github.dev/sse` (nunca `localhost`)
+- **Authorization Header**: `Bearer <PEGA_AQUI_EL_JWT>`
+
+### Paso 4: Flujos Completos Ejecutados por Cada Tool
+
+1. **`create_incident` (Scope: `incidents:write`)**:
+   - **Input**:
+     ```json
+     {
+       "title": "Avería en cinta clasificadora sector B",
+       "description": "El sensor óptico del ramal principal detuvo la clasificación en Zaragoza.",
+       "category": "warehouse",
+       "origin": "branch",
+       "branch": "zaragoza"
+     }
+     ```
+   - **Output (`200 OK`)**: Crea el ticket en `POST /api/incidents` con estado inicial `"open"` y devuelve su ID (ej. `"inc_..."` o `"INC-..."`).
+
+2. **`query_incidents` (Scope: `incidents:read`)**:
+   - **Input**:
+     ```json
+     {
+       "status": "open",
+       "category": "warehouse",
+       "branch": "zaragoza"
+     }
+     ```
+   - **Output (`200 OK`)**: Devuelve `{"status": "success", "records": [...], "total_matched": 1, "queried_criteria": {...}}`.
+
+3. **`transition_incident_status` (Scope: `incidents:lifecycle`)**:
+   - **Input**:
+     ```json
+     {
+       "ticket_id": "INC-001",
+       "status": "in_progress"
+     }
+     ```
+   - **Output (`200 OK`)**: Invoca estrictamente `PATCH /api/incidents/INC-001/status` y devuelve el ticket actualizado con `"status": "in_progress"`. Si se intenta pasar un ticket de `"open"` directamente a `"resolved"` o modificar un ticket en `"discarded"`, responde con `400` / `-32004` (`LIFECYCLE_TRANSITION_DISALLOWED`).
+
+4. **`query_inventory` — Consulta Válida (Scope: `inventory:read`)**:
+   - **Input**:
+     ```json
+     {
+       "sku": "TF-001"
+     }
+     ```
+   - **Output (`200 OK`)**: Devuelve `stock`, `min_threshold`, `is_low_stock` y `warehouse_id` sin mutar ningún dato.
+
+5. **`query_inventory` — Comportamiento ante Intento de Escritura/Modificación (Rechazo Controlado)**:
+   - **Input con parámetros o comando de mutación**:
+     ```json
+     {
+       "sku": "TF-001",
+       "action": "update",
+       "stock_adjustment": 50
+     }
+     ```
+     *(o bien `{"query": "update stock for SKU TF-001 to 500 units"}`)*
+   - **Comportamiento del Servidor**:
+     - El guardarraíl estructural `enforce_inventory_read_only_guard` intercepta la petición antes de tocar el cliente HTTP upstream.
+     - Devuelve un error explícito y controlado con HTTP `403 Forbidden` y código JSON-RPC `-32003`:
+       ```json
+       {
+         "jsonrpc": "2.0",
+         "id": 5,
+         "status": "error",
+         "error_code": "INVENTORY_MUTATION_REJECTED",
+         "http_status": 403,
+         "rpc_code": -32003,
+         "message": "Inventory access via MCP is strictly read-only. Prohibited mutation parameter(s) detected: ['action', 'stock_adjustment'].",
+         "details": {
+           "prohibited_parameters": ["action", "stock_adjustment"]
+         }
+       }
+       ```
+     - Se emite un registro en el log de auditoría con `"outcome": "REJECTED"` y `"error_code": "INVENTORY_MUTATION_REJECTED"`, garantizando cero alteraciones en `inventory.db`.

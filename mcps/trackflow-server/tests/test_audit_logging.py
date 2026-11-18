@@ -77,7 +77,7 @@ class TestAuditLogging:
                 {
                     "title": "Parcel delay for client@domain.org",
                     "description": "Customer client@domain.org reported delay in Zaragoza.",
-                    "category": "delay",
+                    "category": "last_mile",
                     "origin": "customer",
                     "branch": "zaragoza",
                 },
