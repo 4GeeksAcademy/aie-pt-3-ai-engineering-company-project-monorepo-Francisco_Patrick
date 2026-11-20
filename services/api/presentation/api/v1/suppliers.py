@@ -50,8 +50,8 @@ def update_supplier_rate(
     update_data: SupplierUpdateRateDTO,
     service: SupplierService = Depends(get_supplier_service_dep),
 ) -> Supplier:
-    """Update a supplier's freight rate per kg."""
-    return service.update_supplier_rate(id, update_data.cost_per_kg)
+    """Update a supplier's shipping rate."""
+    return service.update_supplier_rate(id, update_data.effective_rate)
 
 
 @router.patch("/{id}/status", response_model=Supplier)

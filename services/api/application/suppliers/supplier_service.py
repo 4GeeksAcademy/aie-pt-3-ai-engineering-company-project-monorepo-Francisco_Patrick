@@ -23,13 +23,20 @@ class SupplierService:
 
     def create_supplier(self, dto: SupplierCreateDTO) -> Supplier:
         """Create and persist a new supplier, invalidating cache namespace upon write."""
+        rate = dto.rate_per_shipment if dto.rate_per_shipment is not None else dto.cost_per_kg
+        categories = dto.categories or ([dto.category] if dto.category else [])
+        currency = dto.currency or ("USD" if dto.country in ("USA", "United States") else "EUR")
+
         supplier = Supplier(
             name=dto.name,
             country=dto.country,
-            category=dto.category,
-            categories=dto.categories,
-            cost_per_kg=dto.cost_per_kg,
+            categories=categories,
+            rate_per_shipment=rate,
+            currency=currency,
             status=dto.status,
+            service_zone=dto.service_zone,
+            contact_email=dto.contact_email,
+            notes=dto.notes,
         )
         saved = self._repo.create(supplier)
 
@@ -78,13 +85,13 @@ class SupplierService:
 
         return suppliers
 
-    def update_supplier_rate(self, supplier_id: int, cost_per_kg: float) -> Supplier:
-        """Update shipping rate per kg, invalidating cached entries."""
-        if cost_per_kg <= 0:
+    def update_supplier_rate(self, supplier_id: int, rate: float) -> Supplier:
+        """Update shipping rate per shipment, invalidating cached entries."""
+        if rate <= 0:
             from domain.common.exceptions import BusinessRuleViolationError
-            raise BusinessRuleViolationError("Cost per kg must be strictly positive.")
+            raise BusinessRuleViolationError("Rate must be strictly positive (> 0).")
 
-        updated = self._repo.update_rate(supplier_id, cost_per_kg)
+        updated = self._repo.update_rate(supplier_id, rate)
         if not updated:
             raise EntityNotFoundError(entity_name="Supplier", entity_id=supplier_id)
 
