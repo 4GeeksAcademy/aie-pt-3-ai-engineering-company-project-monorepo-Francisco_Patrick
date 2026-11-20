@@ -1,7 +1,8 @@
 """Abstract port interfaces for the TrackFlow Support Agent domain.
 
 Adheres strictly to Hexagonal Architecture and Monorepo Constitution Principle I & II,
-decoupling presentation controllers from workflow internals and trace storage.
+decoupling presentation controllers and LangGraph orchestration from operational
+tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace storage.
 """
 
 from abc import ABC, abstractmethod
@@ -12,7 +13,49 @@ from domain.agent.entities import (
     AgentQueryRequest,
     AgentQueryResult,
     AgentTrace,
+    InventoryToolInput,
+    InventoryToolOutput,
+    TicketToolInput,
+    TicketToolOutput,
 )
+
+
+class SupportTicketToolPort(ABC):
+    """Strictly read-only port interface for querying live incident tickets (FR-016, FR-019, FR-020)."""
+
+    @abstractmethod
+    def query_tickets(self, tool_input: TicketToolInput) -> TicketToolOutput:
+        """Query live support incident records matching `tool_input` within a bounded timeout.
+
+        Must be strictly read-only, return at most 20 most-recent records plus `total_matched`,
+        and enforce the configured numerical timeout (default 4.0 seconds).
+
+        Args:
+            tool_input: Typed TicketToolInput specifying ticket_id or filter criteria.
+
+        Returns:
+            TicketToolOutput with status ('success', 'not_found', 'timeout', 'error'),
+            up to 20 TicketRecordDTO records, total_matched count, and latency_ms.
+        """
+
+
+class InventoryStockToolPort(ABC):
+    """Strictly read-only port interface for querying live warehouse product stock (FR-018, FR-019, FR-020)."""
+
+    @abstractmethod
+    def query_inventory(self, tool_input: InventoryToolInput) -> InventoryToolOutput:
+        """Query live warehouse product stock projections matching `tool_input` within a bounded timeout.
+
+        Must be strictly read-only, return at most 20 product records plus `total_matched`,
+        and enforce the configured numerical timeout (default 4.0 seconds).
+
+        Args:
+            tool_input: Typed InventoryToolInput specifying product_id, sku, or search_query.
+
+        Returns:
+            InventoryToolOutput with status ('success', 'not_found', 'timeout', 'error'),
+            up to 20 InventoryRecordDTO records, total_matched count, and latency_ms.
+        """
 
 
 class TraceRegistryPort(ABC):
@@ -102,6 +145,8 @@ class SupportAgentServicePort(ABC):
 
 
 __all__ = [
+    "InventoryStockToolPort",
     "SupportAgentServicePort",
+    "SupportTicketToolPort",
     "TraceRegistryPort",
 ]

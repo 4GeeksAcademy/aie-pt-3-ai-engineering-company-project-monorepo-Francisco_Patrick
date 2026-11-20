@@ -48,6 +48,25 @@ class StateValidationError(AgentDomainException):
         super().__init__(message)
 
 
+class ToolExecutionTimeoutError(AgentDomainException):
+    """Raised when an operational tool call exceeds its configured numerical timeout."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        timeout_seconds: float,
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize tool execution timeout error."""
+        self.tool_name = tool_name
+        self.timeout_seconds = timeout_seconds
+        resolved_msg = (
+            message
+            or f"Operational tool '{tool_name}' timed out after {timeout_seconds:.1f} seconds."
+        )
+        super().__init__(resolved_msg)
+
+
 class TraceNotFoundError(EntityNotFoundError):
     """Raised when an execution trace cannot be found by trace_id."""
 
@@ -65,6 +84,7 @@ __all__ = [
     "AgentDomainException",
     "GraphCompilationError",
     "StateValidationError",
+    "ToolExecutionTimeoutError",
     "TraceNotFoundError",
     "WorkflowExecutionError",
 ]

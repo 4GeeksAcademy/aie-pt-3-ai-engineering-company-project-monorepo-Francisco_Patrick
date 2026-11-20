@@ -1,18 +1,22 @@
 openapi: 3.1.0
 info:
   title: TrackFlow Support Agent API
-  version: 1.0.0
+  version: 1.1.0
   description: >
-    LangGraph-powered stateful support agent for customer operational inquiries.
-    Provides compiled graph execution, conditional RAG routing, queryable tracing,
-    and state checkpointing.
+    LangGraph-powered stateful support agent for customer and operational inquiries.
+    Provides compiled graph execution, autonomous multi-source routing across static
+    knowledge base retrieval (RAG) and real-time read-only operational tools
+    (Support Ticket Query Tool and Inventory Stock Query Tool), explicit numerical
+    timeouts (4.0s default), honest fallback routes, queryable tracing, and state checkpointing.
 paths:
   /api/v1/agent/query:
     post:
-      summary: Submit operational query to LangGraph support agent
+      summary: Submit policy or real-time operational query to LangGraph support agent
       description: >
-        Executes the compiled LangGraph state graph. Traverses intake, retrieval,
-        and generation or refusal nodes. Emits a queryable trace and checkpoints.
+        Executes the compiled LangGraph state graph. Autonomously routes across
+        `ticket_tool`, `inventory_tool`, and `retrieval` (`rag`) in canonical sequence,
+        transitions to `tool_fallback` on tool timeout/error/not_found, and emits a
+        queryable trace with consulted data sources and checkpoints.
       operationId: query_support_agent
       requestBody:
         required: true
@@ -43,7 +47,9 @@ paths:
   /api/v1/agent/trace/{trace_id}:
     get:
       summary: Query execution trace for an agent run
-      description: Retrieve the structured execution trace including node sequence, latencies, and metadata.
+      description: >
+        Retrieve the structured execution trace including node sequence, consulted
+        data sources (`sources_consulted`), tool call outcomes, latencies, and metadata.
       operationId: get_agent_trace
       parameters:
         - name: trace_id
@@ -69,7 +75,7 @@ paths:
   /api/v1/agent/health:
     get:
       summary: Health check for compiled agent workflow
-      description: Confirms graph compilation state and checkpointer readiness.
+      description: Confirms graph compilation state, registered nodes, and checkpointer readiness.
       operationId: get_agent_health
       responses:
         '200':
@@ -88,16 +94,16 @@ components:
       properties:
         query:
           type: string
-          description: Customer inquiry or policy question
+          description: Customer policy inquiry or real-time ticket/inventory question
           minLength: 1
           maxLength: 1000
-          example: "What is TrackFlow's standard return window?"
+          example: "What is the current status of ticket INC-001?"
         top_k:
           type: integer
           default: 3
           minimum: 1
           maximum: 20
-          description: Maximum number of knowledge chunks to retrieve
+          description: Maximum number of knowledge chunks to retrieve when RAG is consulted
         min_score:
           type: number
           format: float
@@ -109,6 +115,10 @@ components:
           type: string
           nullable: true
           description: Optional thread or session identifier for state checkpointing
+        language:
+          type: string
+          default: "en"
+          description: Optional target response language ISO code
 
     KnowledgeSourceCitationSchema:
       type: object
@@ -119,7 +129,7 @@ components:
       properties:
         source_document:
           type: string
-          example: "trackflow-returns-policy.en.md"
+          example: "returns-policy"
         section:
           type: string
           example: "Standard Return Policy"
@@ -127,6 +137,35 @@ components:
           type: number
           format: float
           example: 0.8842
+
+    ToolCallTraceSchema:
+      type: object
+      required:
+        - tool_name
+        - status
+        - total_matched
+        - returned_count
+        - latency_ms
+      properties:
+        tool_name:
+          type: string
+          enum: ["ticket_tool", "inventory_tool"]
+        status:
+          type: string
+          enum: ["success", "not_found", "timeout", "error"]
+        total_matched:
+          type: integer
+          example: 1
+        returned_count:
+          type: integer
+          example: 1
+        latency_ms:
+          type: number
+          format: float
+          example: 4.2
+        error_message:
+          type: string
+          nullable: true
 
     AgentQueryResponseSchema:
       type: object
@@ -141,17 +180,31 @@ components:
       properties:
         query:
           type: string
-          example: "What is TrackFlow's standard return window?"
+          example: "What is the current status of ticket INC-001?"
         answer:
           type: string
-          example: "TrackFlow offers a 30-day return policy for standard inventory items in original condition. Return shipping fees are the responsibility of the customer unless the return is due to a TrackFlow fulfillment error."
+          example: "Support ticket INC-001 ('Delayed pallet shipment to Zaragoza') currently has status 'open', category 'delay', origin 'warehouse', and branch 'zaragoza'."
         is_refusal:
           type: boolean
+          example: false
+        fallback_triggered:
+          type: boolean
+          default: false
           example: false
         sources:
           type: array
           items:
             $ref: '#/components/schemas/KnowledgeSourceCitationSchema'
+        sources_consulted:
+          type: array
+          items:
+            type: string
+            enum: ["ticket_tool", "inventory_tool", "rag"]
+          example: ["ticket_tool"]
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallTraceSchema'
         trace_id:
           type: string
           format: uuid
@@ -160,11 +213,11 @@ components:
           type: array
           items:
             type: string
-          example: ["intake", "retrieval", "generation"]
+          example: ["intake", "ticket_tool", "generation"]
         execution_time_ms:
           type: number
           format: float
-          example: 124.5
+          example: 18.4
 
     AgentTraceResponseSchema:
       type: object
@@ -186,6 +239,18 @@ components:
           type: array
           items:
             type: string
+        sources_consulted:
+          type: array
+          items:
+            type: string
+            enum: ["ticket_tool", "inventory_tool", "rag"]
+        fallback_triggered:
+          type: boolean
+          default: false
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallTraceSchema'
         step_latencies:
           type: object
           additionalProperties:
@@ -224,7 +289,7 @@ components:
           type: array
           items:
             type: string
-          example: ["intake", "retrieval", "generation", "refusal"]
+          example: ["intake", "ticket_tool", "inventory_tool", "retrieval", "tool_fallback", "generation", "refusal"]
         checkpointer:
           type: string
           example: "MemorySaver"

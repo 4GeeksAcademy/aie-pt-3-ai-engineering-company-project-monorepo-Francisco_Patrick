@@ -1,9 +1,11 @@
-"""Application service coordinating compiled Support Agent execution, tracing, and checkpointing.
+"""Application service coordinating compiled Support Agent execution, tool wiring, tracing, and checkpointing.
 
-Implements `SupportAgentServicePort` (T024):
-- Compiles the LangGraph workflow at initialization time (fail-fast structural validation)
+Implements `SupportAgentServicePort` (T036, T037):
+- Compiles the 7-node LangGraph workflow at initialization time (fail-fast structural validation)
+- Wires `SupportTicketToolPort` and `InventoryStockToolPort` into the compiled state graph
 - Invokes the compiled graph with a thread-scoped `RunnableConfig` for state checkpointing
-- Constructs an immutable `AgentTrace` record with node sequences and step latencies
+- Constructs an immutable `AgentTrace` record with node sequences, `sources_consulted`,
+  `fallback_triggered`, `tool_calls`, and step latencies
 - Persists every execution trace into `TraceRegistryPort` for post-hoc auditability.
 """
 
@@ -28,14 +30,18 @@ from domain.agent.entities import (
     AgentQueryResult,
     AgentState,
     AgentTrace,
+    InventoryToolOutput,
     SourceCitation,
+    TicketToolOutput,
 )
 from domain.agent.exceptions import (
     TraceNotFoundError,
     WorkflowExecutionError,
 )
 from domain.agent.ports import (
+    InventoryStockToolPort,
     SupportAgentServicePort,
+    SupportTicketToolPort,
     TraceRegistryPort,
 )
 from domain.knowledge.entities import KnowledgeRuntimeConfig
@@ -55,6 +61,8 @@ class SupportAgentService(SupportAgentServicePort):
         vector_store: VectorStorePort,
         embedding_service: EmbeddingServicePort,
         llm_generator: LLMGenerationPort,
+        ticket_tool: Optional[SupportTicketToolPort] = None,
+        inventory_tool: Optional[InventoryStockToolPort] = None,
         trace_registry: Optional[TraceRegistryPort] = None,
         guardrail_validator: Optional[BusinessGuardrailValidator] = None,
         checkpointer: Optional[BaseCheckpointSaver] = None,
@@ -67,6 +75,8 @@ class SupportAgentService(SupportAgentServicePort):
             vector_store: VectorStorePort implementation.
             embedding_service: EmbeddingServicePort implementation.
             llm_generator: LLMGenerationPort implementation.
+            ticket_tool: Optional SupportTicketToolPort implementation.
+            inventory_tool: Optional InventoryStockToolPort implementation.
             trace_registry: Optional TraceRegistryPort (defaults to new TraceRegistry).
             guardrail_validator: Optional BusinessGuardrailValidator instance.
             checkpointer: Optional LangGraph checkpointer (defaults to MemorySaver).
@@ -77,6 +87,28 @@ class SupportAgentService(SupportAgentServicePort):
         self._vector_store = vector_store
         self._embedding_service = embedding_service
         self._llm_generator = llm_generator
+        if ticket_tool is None:
+            from infrastructure.adapters.support_ticket_tool_adapter import (
+                IncidentSupportTicketToolAdapter,
+            )
+
+            self._ticket_tool: SupportTicketToolPort = IncidentSupportTicketToolAdapter(
+                config=self.config
+            )
+        else:
+            self._ticket_tool = ticket_tool
+
+        if inventory_tool is None:
+            from infrastructure.adapters.inventory_stock_tool_adapter import (
+                InventoryStockQueryToolAdapter,
+            )
+
+            self._inventory_tool: InventoryStockToolPort = (
+                InventoryStockQueryToolAdapter(config=self.config)
+            )
+        else:
+            self._inventory_tool = inventory_tool
+
         self._trace_registry: TraceRegistryPort = trace_registry or TraceRegistry()
         self._guardrails = guardrail_validator or BusinessGuardrailValidator()
         self._checkpointer: BaseCheckpointSaver = (
@@ -89,6 +121,8 @@ class SupportAgentService(SupportAgentServicePort):
                 vector_store=self._vector_store,
                 embedding_service=self._embedding_service,
                 llm_generator=self._llm_generator,
+                ticket_tool=self._ticket_tool,
+                inventory_tool=self._inventory_tool,
                 guardrail_validator=self._guardrails,
                 checkpointer=self._checkpointer,
                 default_min_score=self.config.similarity_threshold,
@@ -105,6 +139,16 @@ class SupportAgentService(SupportAgentServicePort):
         """Return the active TraceRegistryPort instance."""
         return self._trace_registry
 
+    @property
+    def ticket_tool(self) -> SupportTicketToolPort:
+        """Return the wired SupportTicketToolPort instance."""
+        return self._ticket_tool
+
+    @property
+    def inventory_tool(self) -> InventoryStockToolPort:
+        """Return the wired InventoryStockToolPort instance."""
+        return self._inventory_tool
+
     def query(self, request: AgentQueryRequest) -> AgentQueryResult:
         """Execute a customer inquiry through the compiled LangGraph workflow.
 
@@ -112,7 +156,8 @@ class SupportAgentService(SupportAgentServicePort):
             request: Validated AgentQueryRequest domain object.
 
         Returns:
-            AgentQueryResult with grounded answer, citations, trace_id, and node sequence.
+            AgentQueryResult with grounded answer, citations, trace_id, node sequence,
+            sources_consulted, fallback_triggered, and tool_calls.
 
         Raises:
             KnowledgeBaseUnavailableException: When vector database is unreachable.
@@ -135,7 +180,15 @@ class SupportAgentService(SupportAgentServicePort):
             "language": request.language or "en",
             "top_k": request.top_k,
             "min_score": effective_min_score,
+            "selected_sources": [],
+            "sources_consulted": [],
+            "ticket_tool_input": None,
+            "ticket_tool_output": None,
+            "inventory_tool_input": None,
+            "inventory_tool_output": None,
             "contexts": [],
+            "fallback_triggered": False,
+            "fallback_messages": [],
             "answer": "",
             "is_refusal": False,
             "sources": [],
@@ -163,6 +216,19 @@ class SupportAgentService(SupportAgentServicePort):
             ) from exc
 
         node_sequence: List[str] = list(final_state.get("node_history") or [])
+        sources_consulted: List[str] = [
+            str(s) for s in (final_state.get("sources_consulted") or [])
+        ]
+        fallback_triggered = bool(final_state.get("fallback_triggered", False))
+
+        tool_calls: List[Dict[str, Any]] = []
+        ticket_out = final_state.get("ticket_tool_output")
+        if isinstance(ticket_out, TicketToolOutput):
+            tool_calls.append(ticket_out.to_trace_summary())
+        inv_out = final_state.get("inventory_tool_output")
+        if isinstance(inv_out, InventoryToolOutput):
+            tool_calls.append(inv_out.to_trace_summary())
+
         step_latencies: Dict[str, float] = {
             str(k): float(v)
             for k, v in (final_state.get("step_latencies") or {}).items()
@@ -191,6 +257,9 @@ class SupportAgentService(SupportAgentServicePort):
             is_refusal=is_refusal,
             final_answer=final_answer,
             source_count=len(sources),
+            sources_consulted=sources_consulted,
+            fallback_triggered=fallback_triggered,
+            tool_calls=tool_calls,
             node_outputs=node_outputs,
             created_at=datetime.now(timezone.utc),
             checkpoints=checkpoints,
@@ -205,6 +274,9 @@ class SupportAgentService(SupportAgentServicePort):
             trace_id=trace_id,
             node_sequence=node_sequence,
             execution_time_ms=total_duration_ms,
+            fallback_triggered=fallback_triggered,
+            sources_consulted=sources_consulted,
+            tool_calls=tool_calls,
         )
 
     def get_trace(self, trace_id: str) -> AgentTrace:
@@ -269,6 +341,8 @@ class SupportAgentService(SupportAgentServicePort):
                     state_delta={
                         "query": values.get("query", ""),
                         "node_history": list(node_hist),
+                        "sources_consulted": list(values.get("sources_consulted") or []),
+                        "fallback_triggered": bool(values.get("fallback_triggered", False)),
                         "is_refusal": bool(values.get("is_refusal", False)),
                         "context_count": len(values.get("contexts") or []),
                         "source_count": len(values.get("sources") or []),
