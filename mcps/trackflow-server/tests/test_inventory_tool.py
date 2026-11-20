@@ -129,3 +129,51 @@ class TestInventoryTool:
         parsed = json.loads("\n".join(text_blocks))
         assert parsed["status"] == "success"
         assert parsed["records"][0]["sku"] == "TF-001"
+
+    async def test_query_inventory_upstream_timeout_produces_mcp_error_result(
+        self,
+        mock_upstream_backend: MockUpstreamBackend,
+        token_factory: Any,
+    ) -> None:
+        """Fix verification: Upstream ReadTimeout produces valid ToolError and is_error=True CallToolResult."""
+        from unittest.mock import MagicMock
+        from fastmcp.exceptions import ToolError
+        import mcp.types as mcp_types
+        from trackflow_server.auth.middleware import (
+            set_current_security_context,
+            verify_bearer_token,
+        )
+        from trackflow_server.models.errors import UpstreamUnavailableError
+
+        mock_upstream_backend.simulate_timeout = True
+
+        # Direct invocation raises domain UpstreamUnavailableError
+        with pytest.raises(UpstreamUnavailableError) as exc_direct:
+            await query_inventory_tool(sku="TF-001")
+        assert exc_direct.value.error_code == McpErrorCode.UPSTREAM_UNAVAILABLE
+        assert "timed out" in exc_direct.value.message
+
+        # Protocol invocation via call_tool surfaces ToolError
+        mcp = create_mcp_server()
+        set_current_security_context(
+            verify_bearer_token(token_factory(scopes=["inventory:read"]))
+        )
+        try:
+            with pytest.raises(ToolError) as exc_tool:
+                await mcp.call_tool("query_inventory", {"sku": "TF-001"})
+            assert "[UPSTREAM_UNAVAILABLE]" in str(exc_tool.value)
+            assert "timed out" in str(exc_tool.value)
+
+            # Protocol wire handler (_on_call_tool) returns CallToolResult with is_error=True
+            ctx = MagicMock()
+            ctx.session = MagicMock()
+            params = mcp_types.CallToolRequestParams(
+                name="query_inventory", arguments={"sku": "TF-001"}
+            )
+            wire_result = await mcp._on_call_tool(ctx, params)
+            assert isinstance(wire_result, mcp_types.CallToolResult)
+            assert wire_result.is_error is True
+            assert len(wire_result.content) > 0
+            assert "[UPSTREAM_UNAVAILABLE]" in wire_result.content[0].text
+        finally:
+            set_current_security_context(None)

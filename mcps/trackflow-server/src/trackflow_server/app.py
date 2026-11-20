@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, Literal, Optional
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from pydantic import ValidationError as PydanticValidationError
 from starlette.applications import Starlette
@@ -57,16 +58,14 @@ def set_upstream_client(client: Optional[UpstreamClient]) -> None:
 
 def _extract_domain_error(exc: BaseException) -> TrackFlowMcpError:
     """Unwrap an exception (including FastMCP ToolError) into a categorized TrackFlowMcpError."""
-    if isinstance(exc, TrackFlowMcpError):
-        return exc
-    if exc.__cause__ is not None and isinstance(exc.__cause__, TrackFlowMcpError):
-        return exc.__cause__
-    if exc.__context__ is not None and isinstance(exc.__context__, TrackFlowMcpError):
-        return exc.__context__
-    if isinstance(exc, PydanticValidationError) or (
-        exc.__cause__ is not None and isinstance(exc.__cause__, PydanticValidationError)
-    ):
-        return ToolValidationError(f"Tool parameter validation failed: {exc}")
+    curr: Optional[BaseException] = exc
+    while curr is not None:
+        if isinstance(curr, TrackFlowMcpError):
+            return curr
+        if isinstance(curr, PydanticValidationError):
+            return ToolValidationError(f"Tool parameter validation failed: {curr}")
+        curr = curr.__cause__ or curr.__context__
+
     msg = str(exc)
     if "Invalid arguments" in msg or "validation error" in msg.lower():
         return ToolValidationError(msg)
@@ -135,7 +134,7 @@ class TrackFlowAuditAndScopeMiddleware(Middleware):
                 latency_ms=elapsed_ms,
                 client_id=client_id,
             )
-            raise domain_err from exc
+            raise ToolError(f"[{err_code}] {domain_err.message}") from domain_err
 
 
 async def health_endpoint(_request: Request) -> JSONResponse:

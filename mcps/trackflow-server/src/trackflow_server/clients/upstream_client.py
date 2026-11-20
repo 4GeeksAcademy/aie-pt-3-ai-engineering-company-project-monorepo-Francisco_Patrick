@@ -30,7 +30,7 @@ class UpstreamClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        timeout_seconds: float = DEFAULT_UPSTREAM_TIMEOUT_SECONDS,
+        timeout_seconds: Optional[float] = None,
         api_token: Optional[str] = None,
         http_client: Optional[httpx.AsyncClient] = None,
         transport: Optional[httpx.AsyncBaseTransport] = None,
@@ -41,8 +41,21 @@ class UpstreamClient:
             or "http://127.0.0.1:8000"
         )
         self._base_url = resolved_url.strip().rstrip("/")
-        if timeout_seconds <= 0.0 or timeout_seconds > 4.0:
-            timeout_seconds = min(max(timeout_seconds, 0.1), 4.0)
+        if timeout_seconds is None:
+            env_timeout = (
+                os.environ.get("TRACKFLOW_UPSTREAM_TIMEOUT_SECONDS")
+                or os.environ.get("TRACKFLOW_HTTP_TIMEOUT")
+            )
+            if env_timeout:
+                try:
+                    timeout_seconds = float(env_timeout)
+                except ValueError:
+                    timeout_seconds = DEFAULT_UPSTREAM_TIMEOUT_SECONDS
+            else:
+                timeout_seconds = DEFAULT_UPSTREAM_TIMEOUT_SECONDS
+
+        if timeout_seconds <= 0.0:
+            timeout_seconds = DEFAULT_UPSTREAM_TIMEOUT_SECONDS
         self._timeout_seconds = float(timeout_seconds)
         self._api_token = (
             api_token
@@ -59,7 +72,7 @@ class UpstreamClient:
 
     @property
     def timeout_seconds(self) -> float:
-        """Return the configured hard timeout in seconds (<= 4.0s)."""
+        """Return the configured timeout in seconds."""
         return self._timeout_seconds
 
     def _build_headers(self) -> Dict[str, str]:
