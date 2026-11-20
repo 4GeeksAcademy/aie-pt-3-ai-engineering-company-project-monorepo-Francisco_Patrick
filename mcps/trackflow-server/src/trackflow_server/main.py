@@ -53,6 +53,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.upstream_url:
         os.environ["TRACKFLOW_API_BASE_URL"] = args.upstream_url
 
+    from trackflow_server.auth.config import validate_auth_config
+    validate_auth_config()
+
     from trackflow_server.app import create_asgi_app, get_mcp_server
 
     if args.transport == "stdio":

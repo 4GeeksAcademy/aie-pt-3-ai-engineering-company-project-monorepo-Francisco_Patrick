@@ -16,9 +16,11 @@ from trackflow_server.testing.token_helper import (
     ALL_SCOPES,
     DEFAULT_AUDIENCE,
     DEFAULT_ISSUER,
-    DEFAULT_JWT_SECRET,
     create_access_token,
 )
+
+# Test autocontenido sin depender de variables de entorno. No expone secretos.
+TEST_SUITE_JWT_SECRET = "test-jwt-super-secret-key"
 
 
 class MockUpstreamBackend:
@@ -232,6 +234,12 @@ def reset_audit_and_upstream(mock_upstream_backend: MockUpstreamBackend) -> Any:
     get_audit_logger().clear()
 
 
+@pytest.fixture(autouse=True)
+def configure_test_jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure MCP_JWT_SECRET is explicitly configured for all tests."""
+    monkeypatch.setenv("MCP_JWT_SECRET", TEST_SUITE_JWT_SECRET)
+
+
 @pytest.fixture
 def mock_upstream_backend() -> MockUpstreamBackend:
     """Provide an isolated MockUpstreamBackend instance per test."""
@@ -258,7 +266,6 @@ __all__ = [
     "ALL_SCOPES",
     "DEFAULT_AUDIENCE",
     "DEFAULT_ISSUER",
-    "DEFAULT_JWT_SECRET",
     "MockUpstreamBackend",
     "create_access_token",
     "mock_upstream_backend",

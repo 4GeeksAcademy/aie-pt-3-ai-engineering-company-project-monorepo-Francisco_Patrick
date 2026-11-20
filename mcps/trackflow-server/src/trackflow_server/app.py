@@ -13,6 +13,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
+from trackflow_server.auth.config import validate_auth_config
 from trackflow_server.auth.metadata import (
     create_mcp_auth_instance,
     create_metadata_routes,
@@ -290,6 +291,7 @@ def create_asgi_app(
     transport: Literal["sse", "http", "streamable-http"] = "sse",
 ) -> Starlette:
     """Assemble the OAuth 2.1 protected Starlette ASGI application wrapping FastMCP HTTP/SSE transport."""
+    validate_auth_config()
     resolved_mcp = mcp or get_mcp_server()
     mcp_auth = create_mcp_auth_instance()
     mcp_http_app = resolved_mcp.http_app(transport=transport)

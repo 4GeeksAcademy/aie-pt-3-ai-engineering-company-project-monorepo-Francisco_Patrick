@@ -27,10 +27,11 @@ from trackflow_server.models.errors import (
     InsufficientScopeError,
 )
 from trackflow_server.models.schemas import OAuthSecurityContext
-from trackflow_server.testing.token_helper import (
+from trackflow_server.auth.config import (
     get_jwt_secret,
     get_oauth_audience,
     get_oauth_issuer,
+    get_oauth_jwks_uri,
 )
 
 _security_context_var: ContextVar[Optional[OAuthSecurityContext]] = ContextVar(
@@ -137,7 +138,7 @@ def verify_bearer_token(token: str) -> OAuthSecurityContext:
     cleaned_token = token.strip()
     expected_issuer = get_oauth_issuer()
     expected_audience = get_oauth_audience()
-    jwks_uri = os.environ.get("MCP_OAUTH_JWKS_URI", "").strip()
+    jwks_uri = get_oauth_jwks_uri()
 
     if jwks_uri:
         try:
@@ -151,6 +152,11 @@ def verify_bearer_token(token: str) -> OAuthSecurityContext:
             ) from exc
     else:
         secret = get_jwt_secret()
+        if not secret:
+            raise AuthenticationRequiredError(
+                "Server authentication configuration error: MCP_JWT_SECRET is not configured.",
+                details={"reason": "server_misconfigured"},
+            )
         try:
             claims = jwt.decode(
                 cleaned_token,

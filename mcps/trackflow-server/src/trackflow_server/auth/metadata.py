@@ -16,10 +16,11 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from trackflow_server.models.schemas import ProtectedResourceMetadata
-from trackflow_server.testing.token_helper import (
+from trackflow_server.auth.config import (
     ALL_SCOPES,
     get_oauth_audience,
     get_oauth_issuer,
+    get_oauth_jwks_uri,
 )
 
 PROTECTED_RESOURCE_METADATA_PATH = "/.well-known/oauth-protected-resource"
@@ -47,7 +48,7 @@ def create_mcp_auth_instance(
 ) -> MCPAuth:
     """Create and configure the `mcpauth.MCPAuth` instance for the authorization server."""
     issuer = get_oauth_issuer().rstrip("/")
-    jwks_uri = os.environ.get("MCP_OAUTH_JWKS_URI", f"{issuer}/.well-known/jwks.json")
+    jwks_uri = get_oauth_jwks_uri() or f"{issuer}/.well-known/jwks.json"
     metadata = AuthorizationServerMetadata(
         issuer=issuer,
         authorization_endpoint=f"{issuer}/oauth/authorize",

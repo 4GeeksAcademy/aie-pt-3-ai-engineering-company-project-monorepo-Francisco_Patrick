@@ -223,3 +223,79 @@ class TestOAuthAndDiscovery:
             expected_props = set(expected["inputSchema"]["properties"].keys())
             actual_props = set(schema.get("properties", {}).keys())
             assert expected_props == actual_props
+
+    def test_server_startup_fails_when_jwt_secret_and_jwks_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fail-fast startup assertion: server refuses to start when neither secret nor JWKS URI is configured."""
+        monkeypatch.setattr("trackflow_server.auth.config.load_dotenv_if_present", lambda: None)
+        monkeypatch.delenv("MCP_JWT_SECRET", raising=False)
+        monkeypatch.delenv("MCP_OAUTH_JWKS_URI", raising=False)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            create_asgi_app(transport="sse")
+        assert "either 'MCP_JWT_SECRET' or 'MCP_OAUTH_JWKS_URI' must be defined" in str(
+            exc_info.value
+        )
+
+    async def test_token_with_different_secret_rejected_with_401(
+        self, token_factory: Callable[..., str]
+    ) -> None:
+        """Security: tokens signed with an alternative or forged key are strictly rejected with 401."""
+        tampered_token = token_factory(secret="different-unauthorized-secret-key-1234567890")
+
+        with pytest.raises(AuthenticationRequiredError) as exc_info:
+            verify_bearer_token(tampered_token)
+        assert exc_info.value.error_code == McpErrorCode.AUTHENTICATION_REQUIRED
+
+        app = create_asgi_app(transport="sse")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            res = await client.get(
+                "/sse", headers={"Authorization": f"Bearer {tampered_token}"}
+            )
+            assert res.status_code == 401
+            assert res.json()["error_code"] == McpErrorCode.AUTHENTICATION_REQUIRED.value
+            assert "invalid_token" in res.headers.get("WWW-Authenticate", "")
+
+            msg_res = await client.post(
+                "/messages/",
+                headers={"Authorization": f"Bearer {tampered_token}"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+            assert msg_res.status_code == 401
+            assert msg_res.json()["error_code"] == McpErrorCode.AUTHENTICATION_REQUIRED.value
+
+    def test_verify_bearer_token_fails_when_secret_unset_in_runtime(
+        self, monkeypatch: pytest.MonkeyPatch, token_factory: Callable[..., str]
+    ) -> None:
+        """Verify that verify_bearer_token refuses verification if server is missing JWT secret."""
+        token = token_factory()
+        monkeypatch.setattr("trackflow_server.auth.config.load_dotenv_if_present", lambda: None)
+        monkeypatch.delenv("MCP_JWT_SECRET", raising=False)
+        monkeypatch.delenv("MCP_OAUTH_JWKS_URI", raising=False)
+
+        with pytest.raises(AuthenticationRequiredError) as exc_info:
+            verify_bearer_token(token)
+        assert exc_info.value.error_code == McpErrorCode.AUTHENTICATION_REQUIRED
+        assert exc_info.value.details.get("reason") == "server_misconfigured"
+
+    def test_token_helper_loads_secret_from_env_and_has_no_hardcoded_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test token_helper imports secret from .env/environment and never hardcodes a default secret."""
+        import trackflow_server.testing.token_helper as th
+
+        # Assert no hardcoded secret attribute exists
+        assert not hasattr(th, "DEFAULT_JWT_SECRET")
+
+        # When configured, get_jwt_secret returns that value
+        monkeypatch.setenv("MCP_JWT_SECRET", "custom-env-secret-key-xyz")
+        assert th.get_jwt_secret() == "custom-env-secret-key-xyz"
+
+        # When secret is completely unset, get_jwt_secret raises ValueError
+        monkeypatch.setattr("trackflow_server.auth.config.load_dotenv_if_present", lambda: None)
+        monkeypatch.delenv("MCP_JWT_SECRET", raising=False)
+        with pytest.raises(ValueError) as exc_info:
+            th.get_jwt_secret()
+        assert "JWT secret key is not configured" in str(exc_info.value)

@@ -39,8 +39,12 @@ uv sync
 
 ### 2. Run the MCP Server (HTTP/SSE Transport)
 
+> **Seguridad Fail-Fast**: El servidor requiere que `MCP_JWT_SECRET` o `MCP_OAUTH_JWKS_URI` esté definido en el entorno o en el archivo `.env`. Si no se define ninguno, el servidor abortará el arranque inmediatamente.
+
 ```powershell
 cd mcps/trackflow-server
+# Configurar secret requerido (si no está en .env)
+$env:MCP_JWT_SECRET="[ENCRYPTION_KEY]"
 uv run python -m trackflow_server.main --transport sse --port 8001
 ```
 
@@ -68,7 +72,7 @@ uv run pytest -v
 
 ## Validación en MCP Playground (GitHub Codespaces URL Pública)
 
-> **IMPORTANTE**: MCP Playground se ejecuta en el navegador desde un origen remoto, por lo que `http://localhost:8001` no es alcanzable directamente desde el sitio web de Playground. Debes exponer el puerto `8001` con visibilidad **Public** en GitHub Codespaces y usar la URL pública reenviada (`https://<codespace-name>-8001.app.github.dev`).
+> **IMPORTANTE**: MCP Playground se ejecuta en el navegador desde un origen remoto, por lo que `http://localhost:8001` no es alcanzable directamente desde el sitio web de Playground. Debes exponer el puerto `8001` con visibilidad **Public** en GitHub Codespaces y usar la URL pública reenviada (`https://crispy-space-umbrella-abc123-8001.app.github.dev`).
 
 ### Paso 1: Levantar el Backend (`services/api`) y el Servidor MCP (`mcps/trackflow-server`)
 
@@ -79,7 +83,16 @@ uv run uvicorn main:app --host 0.0.0.0 --port 8000
 
 # Terminal 2: MCP Server con transporte SSE (puerto 8001)
 cd mcps/trackflow-server
+export MCP_JWT_SECRET="[ENCRYPTION_KEY]"
 uv run python -m trackflow_server.main --transport sse --host 0.0.0.0 --port 8001
+```
+
+Log de arranque verificado:
+```text
+INFO:     Started server process [14820]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
 ```
 
 ### Paso 2: Exponer el Puerto 8001 como Público en GitHub Codespaces
@@ -88,11 +101,11 @@ uv run python -m trackflow_server.main --transport sse --host 0.0.0.0 --port 800
 2. Haz clic derecho sobre el puerto `8001` → **Port Visibility** → **Public** (o mediante GitHub CLI: `gh codespace ports visibility 8001:public`).
 3. Copia la dirección reenviada pública:
    ```text
-   https://<tu-codespace-id>-8001.app.github.dev/sse
+   https://crispy-space-umbrella-abc123-8001.app.github.dev/sse
    ```
 4. Verifica los metadatos OAuth 2.1 Protected Resource (RFC 9728) públicamente:
    ```text
-   https://<tu-codespace-id>-8001.app.github.dev/.well-known/oauth-protected-resource
+   https://crispy-space-umbrella-abc123-8001.app.github.dev/.well-known/oauth-protected-resource
    ```
 
 ### Paso 3: Generar el Access Token OAuth 2.1 y Conectar en MCP Playground
@@ -106,10 +119,90 @@ uv run python -m trackflow_server.testing.token_helper \
 
 En **MCP Playground**:
 - **Transport**: `SSE`
-- **Server URL**: `https://<tu-codespace-id>-8001.app.github.dev/sse` (nunca `localhost`)
-- **Authorization Header**: `Bearer <PEGA_AQUI_EL_JWT>`
+- **Server URL**: `https://crispy-space-umbrella-abc123-8001.app.github.dev/sse` (nunca `localhost`)
+- **Authorization Header**: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
 
-### Paso 4: Flujos Completos Ejecutados por Cada Tool
+### Paso 4: Sesión Verificada de Descubrimiento (`tools/list`) en MCP Playground
+
+Log de petición y respuesta JSON-RPC:
+```json
+--> POST /messages/
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {}
+}
+
+<-- 200 OK
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "create_incident",
+        "description": "Create a new incident ticket in 'open' status for warehouse, last-mile, or customer experience issues.",
+        "required_scope": "incidents:write",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string", "description": "Short descriptive incident summary (max 255 chars)."},
+            "description": {"type": "string", "description": "Detailed explanation of the issue or root cause."},
+            "category": {"type": "string", "description": "Incident classification domain."},
+            "origin": {"type": "string", "description": "Source reporting the issue."},
+            "branch": {"type": "string", "description": "Branch code or facility name affected."}
+          },
+          "required": ["title", "description", "category", "origin"]
+        }
+      },
+      {
+        "name": "query_incidents",
+        "description": "Query incident tickets matching criteria or look up a specific ticket by ID.",
+        "required_scope": "incidents:read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ticket_id": {"type": "string", "description": "Optional specific ticket ID (e.g. INC-001)."},
+            "status": {"type": "string", "description": "Filter by lifecycle state."},
+            "category": {"type": "string", "description": "Filter by incident category."},
+            "origin": {"type": "string", "description": "Filter by origin."},
+            "branch": {"type": "string", "description": "Filter by facility branch."}
+          }
+        }
+      },
+      {
+        "name": "transition_incident_status",
+        "description": "Update the lifecycle status of an existing incident ticket per TrackFlow transition rules.",
+        "required_scope": "incidents:lifecycle",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "ticket_id": {"type": "string", "description": "Ticket ID to transition."},
+            "status": {"type": "string", "description": "Target status ('in_progress', 'resolved', 'discarded')."}
+          },
+          "required": ["ticket_id", "status"]
+        }
+      },
+      {
+        "name": "query_inventory",
+        "description": "Strictly read-only warehouse product inventory stock and warehouse location lookup.",
+        "required_scope": "inventory:read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "sku": {"type": "string", "description": "Product SKU code (e.g. TF-001)."},
+            "product_id": {"type": "integer", "description": "Numeric product primary key."},
+            "query": {"type": "string", "description": "Freeform read-only search string."}
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### Paso 5: Flujos Completos Ejecutados por Cada Tool en MCP Playground
 
 1. **`create_incident` (Scope: `incidents:write`)**:
    - **Input**:

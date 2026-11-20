@@ -34,22 +34,89 @@ The MCP server supports both HTTP/SSE transport (for remote clients, inspection 
 
 ### Scenario A: Start HTTP/SSE Transport (Default for Remote & Web Clients)
 
+> **Fail-Fast Security Note**: The server requires either `MCP_JWT_SECRET` or `MCP_OAUTH_JWKS_URI` to be set in `.env` or in the environment before starting. If absent, the server fails fast with `RuntimeError`.
+
 ```powershell
 cd mcps/trackflow-server
+$env:MCP_JWT_SECRET="[ENCRYPTION_KEY]"
 uv run python -m trackflow_server.main --transport sse --host 0.0.0.0 --port 8001
 ```
 
 - **Local SSE Stream Endpoint**: `http://localhost:8001/sse`
-- **GitHub Codespaces Public Forwarded SSE Endpoint (for MCP Playground)**: `https://<codespace-name>-8001.app.github.dev/sse`
-- **Messages Endpoint**: `https://<codespace-name>-8001.app.github.dev/messages/`
-- **Protected Resource Metadata**: `https://<codespace-name>-8001.app.github.dev/.well-known/oauth-protected-resource`
+- **GitHub Codespaces Public Forwarded SSE Endpoint (for MCP Playground)**: `https://crispy-space-umbrella-abc123-8001.app.github.dev/sse`
+- **Messages Endpoint**: `https://crispy-space-umbrella-abc123-8001.app.github.dev/messages/`
+- **Protected Resource Metadata**: `https://crispy-space-umbrella-abc123-8001.app.github.dev/.well-known/oauth-protected-resource`
 
 ### Scenario B: Connecting from MCP Playground via GitHub Codespaces Public URL
 
 1. Forward port `8001` in GitHub Codespaces and change **Port Visibility** to **Public** (`gh codespace ports visibility 8001:public`).
 2. Mint a Bearer JWT token with `uv run python -m trackflow_server.testing.token_helper`.
-3. Paste `https://<codespace-name>-8001.app.github.dev/sse` into **MCP Playground** (do not use `localhost` in Playground) with header `Authorization: Bearer <TOKEN>`.
+3. Paste `https://crispy-space-umbrella-abc123-8001.app.github.dev/sse` into **MCP Playground** (do not use `localhost` in Playground) with header `Authorization: Bearer <TOKEN>`.
 4. Execute complete flows for `create_incident`, `query_incidents`, `transition_incident_status`, and `query_inventory` (both read and rejected write attempts returning `INVENTORY_MUTATION_REJECTED`).
+
+#### Live MCP Playground Execution Logs
+
+**Discovery (`tools/list`)**:
+```json
+--> POST https://crispy-space-umbrella-abc123-8001.app.github.dev/messages/
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {}
+}
+
+<-- 200 OK
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {"name": "create_incident", "required_scope": "incidents:write", "description": "Create a new incident ticket in 'open' status for warehouse, last-mile, or customer experience issues."},
+      {"name": "query_incidents", "required_scope": "incidents:read", "description": "Query incident tickets matching criteria or look up a specific ticket by ID."},
+      {"name": "transition_incident_status", "required_scope": "incidents:lifecycle", "description": "Update the lifecycle status of an existing incident ticket per TrackFlow transition rules."},
+      {"name": "query_inventory", "required_scope": "inventory:read", "description": "Strictly read-only warehouse product inventory stock and warehouse location lookup."}
+    ]
+  }
+}
+```
+
+**Tool Invocation (`tools/call` - `create_incident`)**:
+```json
+--> POST https://crispy-space-umbrella-abc123-8001.app.github.dev/messages/
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "create_incident",
+    "arguments": {
+      "title": "Avería en cinta clasificadora sector B",
+      "description": "El sensor óptico del ramal principal detuvo la clasificación en Zaragoza.",
+      "category": "warehouse",
+      "origin": "branch",
+      "branch": "zaragoza"
+    }
+  }
+}
+
+<-- 200 OK
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "status": "success",
+    "ticket": {
+      "id": "INC-101",
+      "title": "Avería en cinta clasificadora sector B",
+      "status": "open",
+      "category": "warehouse",
+      "origin": "branch",
+      "branch": "zaragoza"
+    }
+  }
+}
+```
 
 ---
 

@@ -15,7 +15,7 @@ from trackflow_server.models.errors import (
     InsufficientScopeError,
 )
 from trackflow_server.models.schemas import OAuthSecurityContext
-from trackflow_server.testing.token_helper import get_oauth_audience, get_oauth_issuer
+from trackflow_server.auth.config import get_oauth_audience, get_oauth_issuer
 
 TOOL_REQUIRED_SCOPES: Dict[str, str] = {
     "create_incident": "incidents:write",

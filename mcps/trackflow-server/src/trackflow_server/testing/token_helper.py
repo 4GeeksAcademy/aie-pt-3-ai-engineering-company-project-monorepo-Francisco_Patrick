@@ -8,20 +8,29 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 import jwt
 
-DEFAULT_JWT_SECRET = "trackflow-mcp-oauth-secret-key-2026-hs256-secure"
-DEFAULT_ISSUER = "https://auth.trackflow.local"
-DEFAULT_AUDIENCE = "https://api.trackflow.local/mcp/"
-ALL_SCOPES: Sequence[str] = (
-    "incidents:read",
-    "incidents:write",
-    "incidents:lifecycle",
-    "inventory:read",
+from trackflow_server.auth.config import (
+    ALL_SCOPES,
+    DEFAULT_AUDIENCE,
+    DEFAULT_ISSUER,
+    get_jwt_secret as get_env_jwt_secret,
+    get_oauth_audience,
+    get_oauth_issuer,
+    load_dotenv_if_present,
 )
 
 
 def get_jwt_secret() -> str:
-    """Return the configured JWT signing secret."""
-    return os.environ.get("MCP_JWT_SECRET", DEFAULT_JWT_SECRET)
+    """Return the configured JWT signing secret imported from the .env file or environment.
+
+    Raises:
+        ValueError: If 'MCP_JWT_SECRET' is not defined in the .env file or environment.
+    """
+    secret = get_env_jwt_secret()
+    if not secret:
+        raise ValueError(
+            "JWT secret key is not configured. Define 'MCP_JWT_SECRET' in your .env file or environment."
+        )
+    return secret
 
 
 def get_oauth_issuer() -> str:
