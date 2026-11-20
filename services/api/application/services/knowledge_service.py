@@ -10,7 +10,7 @@ Implements KnowledgeService for User Stories 1, 2, and 3:
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from application.services.guardrails import BusinessGuardrailValidator
 from domain.knowledge.entities import (
@@ -128,11 +128,89 @@ class KnowledgeService:
             else self.config.similarity_threshold
         )
 
-    def query(self, request: QueryRequest) -> GroundedAnswer:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 3,
+        min_score: Optional[float] = None,
+    ) -> List[RetrievedContext]:
+        """Embed a query and retrieve qualifying context chunks above the similarity threshold.
+
+        Args:
+            query: Sanitized or raw user inquiry string.
+            top_k: Maximum number of candidate chunks to retrieve.
+            min_score: Optional minimum cosine similarity score threshold override.
+
+        Returns:
+            List of RetrievedContext instances meeting `min_score`.
+        """
+        effective_threshold = (
+            min_score if min_score is not None else self._default_min_score
+        )
+        query_vector = self._embedding_service.embed_query(query)
+        raw_candidates = self._vector_store.search(
+            query_vector=query_vector,
+            top_k=top_k,
+            language=None,
+        )
+        return [
+            ctx
+            for ctx in raw_candidates
+            if ctx.similarity_score >= effective_threshold
+        ]
+
+    def generate_answer(
+        self,
+        question: str,
+        context: List[RetrievedContext],
+        language: str = "en",
+    ) -> Tuple[str, List[SourceCitation]]:
+        """Generate a grounded answer and source citations strictly from pre-retrieved context.
+
+        Separated from `retrieve()` so workflow graphs and callers can invoke generation
+        over already retrieved chunks without re-triggering vector search.
+
+        Args:
+            question: User question string.
+            context: Pre-retrieved list of qualifying RetrievedContext objects.
+            language: Target language code (defaults to 'en').
+
+        Returns:
+            Tuple of (enforced_answer_text, list_of_source_citations).
+        """
+        raw_answer = self._llm_generator.generate_grounded_answer(
+            query=question,
+            contexts=context,
+            language=language,
+        )
+        enforced_answer = self._guardrails.enforce(
+            query=question,
+            answer=raw_answer,
+            contexts=context,
+        )
+        citations: List[SourceCitation] = [
+            SourceCitation(
+                source_document=ctx.chunk.source_document,
+                section=ctx.chunk.section,
+                similarity_score=round(max(0.0, min(1.0, ctx.similarity_score)), 4),
+            )
+            for ctx in context
+        ]
+        return enforced_answer, citations
+
+    def query(
+        self,
+        request: QueryRequest,
+        contexts: Optional[List[RetrievedContext]] = None,
+    ) -> GroundedAnswer:
         """Process a natural-language policy query and return a grounded answer or refusal.
+
+        If `contexts` are already provided, skips internal `retrieve()` to avoid
+        duplicate vector lookups.
 
         Args:
             request: Validated QueryRequest domain object.
+            contexts: Optional pre-retrieved context chunks. When provided, `retrieve()` is skipped.
 
         Returns:
             GroundedAnswer containing synthesized answer, refusal flag, citations, and latency.
@@ -144,19 +222,18 @@ class KnowledgeService:
             else self._default_min_score
         )
 
-        query_vector = self._embedding_service.embed_query(request.query)
-        raw_candidates = self._vector_store.search(
-            query_vector=query_vector,
-            top_k=request.top_k,
-            language=None,
-        )
-
-        # Filter candidates strictly against calibrated minimum similarity score threshold
-        qualified_contexts: List[RetrievedContext] = [
-            ctx
-            for ctx in raw_candidates
-            if ctx.similarity_score >= effective_threshold
-        ]
+        if contexts is not None:
+            qualified_contexts: List[RetrievedContext] = [
+                ctx
+                for ctx in contexts
+                if ctx.similarity_score >= effective_threshold
+            ]
+        else:
+            qualified_contexts = self.retrieve(
+                query=request.query,
+                top_k=request.top_k,
+                min_score=effective_threshold,
+            )
 
         if not qualified_contexts:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -168,25 +245,11 @@ class KnowledgeService:
                 execution_time_ms=round(elapsed_ms, 2),
             )
 
-        raw_answer = self._llm_generator.generate_grounded_answer(
-            query=request.query,
-            contexts=qualified_contexts,
+        enforced_answer, citations = self.generate_answer(
+            question=request.query,
+            context=qualified_contexts,
             language=request.language,
         )
-        enforced_answer = self._guardrails.enforce(
-            query=request.query,
-            answer=raw_answer,
-            contexts=qualified_contexts,
-        )
-
-        citations: List[SourceCitation] = [
-            SourceCitation(
-                source_document=ctx.chunk.source_document,
-                section=ctx.chunk.section,
-                similarity_score=round(max(0.0, min(1.0, ctx.similarity_score)), 4),
-            )
-            for ctx in qualified_contexts
-        ]
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         return GroundedAnswer(

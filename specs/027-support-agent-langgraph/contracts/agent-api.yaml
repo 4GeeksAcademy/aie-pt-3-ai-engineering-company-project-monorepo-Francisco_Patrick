@@ -1,0 +1,255 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Support Agent API
+  version: 1.0.0
+  description: >
+    LangGraph-powered stateful support agent for customer operational inquiries.
+    Provides compiled graph execution, conditional RAG routing, queryable tracing,
+    and state checkpointing.
+paths:
+  /api/v1/agent/query:
+    post:
+      summary: Submit operational query to LangGraph support agent
+      description: >
+        Executes the compiled LangGraph state graph. Traverses intake, retrieval,
+        and generation or refusal nodes. Emits a queryable trace and checkpoints.
+      operationId: query_support_agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentQueryRequestSchema'
+      responses:
+        '200':
+          description: Successful execution of agent graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentQueryResponseSchema'
+        '422':
+          description: Validation Error (e.g. malformed JSON or invalid parameter types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal Server Error (Sanitized, zero raw stack traces leaked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/trace/{trace_id}:
+    get:
+      summary: Query execution trace for an agent run
+      description: Retrieve the structured execution trace including node sequence, latencies, and metadata.
+      operationId: get_agent_trace
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique execution trace UUID
+      responses:
+        '200':
+          description: Trace found and returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTraceResponseSchema'
+        '404':
+          description: Trace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/health:
+    get:
+      summary: Health check for compiled agent workflow
+      description: Confirms graph compilation state and checkpointer readiness.
+      operationId: get_agent_health
+      responses:
+        '200':
+          description: Agent workflow is healthy and compiled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentHealthResponseSchema'
+
+components:
+  schemas:
+    AgentQueryRequestSchema:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Customer inquiry or policy question
+          minLength: 1
+          maxLength: 1000
+          example: "What is TrackFlow's standard return window?"
+        top_k:
+          type: integer
+          default: 3
+          minimum: 1
+          maximum: 20
+          description: Maximum number of knowledge chunks to retrieve
+        min_score:
+          type: number
+          format: float
+          default: 0.62
+          minimum: 0.0
+          maximum: 1.0
+          description: Calibrated minimum cosine similarity score threshold
+        thread_id:
+          type: string
+          nullable: true
+          description: Optional thread or session identifier for state checkpointing
+
+    KnowledgeSourceCitationSchema:
+      type: object
+      required:
+        - source_document
+        - section
+        - similarity_score
+      properties:
+        source_document:
+          type: string
+          example: "trackflow-returns-policy.en.md"
+        section:
+          type: string
+          example: "Standard Return Policy"
+        similarity_score:
+          type: number
+          format: float
+          example: 0.8842
+
+    AgentQueryResponseSchema:
+      type: object
+      required:
+        - query
+        - answer
+        - is_refusal
+        - sources
+        - trace_id
+        - node_sequence
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+          example: "What is TrackFlow's standard return window?"
+        answer:
+          type: string
+          example: "TrackFlow offers a 30-day return policy for standard inventory items in original condition. Return shipping fees are the responsibility of the customer unless the return is due to a TrackFlow fulfillment error."
+        is_refusal:
+          type: boolean
+          example: false
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeSourceCitationSchema'
+        trace_id:
+          type: string
+          format: uuid
+          example: "d3b07384-d113-4c9f-8567-9c98b688d0b2"
+        node_sequence:
+          type: array
+          items:
+            type: string
+          example: ["intake", "retrieval", "generation"]
+        execution_time_ms:
+          type: number
+          format: float
+          example: 124.5
+
+    AgentTraceResponseSchema:
+      type: object
+      required:
+        - trace_id
+        - query
+        - node_sequence
+        - step_latencies
+        - total_duration_ms
+        - is_refusal
+        - final_answer
+        - source_count
+      properties:
+        trace_id:
+          type: string
+        query:
+          type: string
+        node_sequence:
+          type: array
+          items:
+            type: string
+        step_latencies:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        total_duration_ms:
+          type: number
+          format: float
+        is_refusal:
+          type: boolean
+        final_answer:
+          type: string
+        source_count:
+          type: integer
+        node_outputs:
+          type: object
+          description: Structured output produced by each visited node
+          additionalProperties:
+            type: object
+
+    AgentHealthResponseSchema:
+      type: object
+      required:
+        - status
+        - compiled
+        - nodes
+        - checkpointer
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        compiled:
+          type: boolean
+          example: true
+        nodes:
+          type: array
+          items:
+            type: string
+          example: ["intake", "retrieval", "generation", "refusal"]
+        checkpointer:
+          type: string
+          example: "MemorySaver"
+
+    SanitizedErrorResponse:
+      type: object
+      required:
+        - detail
+        - error_code
+        - trace_id
+      properties:
+        detail:
+          type: string
+          example: "An internal error occurred while processing the agent workflow."
+        error_code:
+          type: string
+          example: "INTERNAL_WORKFLOW_ERROR"
+        trace_id:
+          type: string
+          nullable: true
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object

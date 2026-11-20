@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentState",
+  "description": "Minimal state contract passed between nodes in the LangGraph support agent workflow.",
+  "type": "object",
+  "required": [
+    "query",
+    "trace_id",
+    "node_history"
+  ],
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Sanitized user inquiry.",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "top_k": {
+      "type": "integer",
+      "description": "Maximum number of chunks to retrieve.",
+      "default": 3,
+      "minimum": 1,
+      "maximum": 20
+    },
+    "min_score": {
+      "type": "number",
+      "description": "Calibrated similarity score threshold.",
+      "default": 0.62,
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "contexts": {
+      "type": "array",
+      "description": "List of retrieved knowledge chunks qualifying under min_score.",
+      "items": {
+        "type": "object",
+        "required": ["chunk", "similarity_score"],
+        "properties": {
+          "chunk": {
+            "type": "object",
+            "required": ["text", "source_document", "section"],
+            "properties": {
+              "text": { "type": "string" },
+              "source_document": { "type": "string" },
+              "section": { "type": "string" },
+              "language": { "type": "string" },
+              "chunk_index": { "type": "integer" }
+            }
+          },
+          "similarity_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        }
+      }
+    },
+    "answer": {
+      "type": "string",
+      "description": "Final synthesized answer or standardized refusal."
+    },
+    "is_refusal": {
+      "type": "boolean",
+      "description": "Indicates whether the answer is an honest refusal due to out-of-scope or below-threshold retrieval.",
+      "default": false
+    },
+    "sources": {
+      "type": "array",
+      "description": "List of cited sources for the response.",
+      "items": {
+        "type": "object",
+        "required": ["source_document", "section", "similarity_score"],
+        "properties": {
+          "source_document": { "type": "string" },
+          "section": { "type": "string" },
+          "similarity_score": { "type": "number" }
+        }
+      }
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique run identifier."
+    },
+    "node_history": {
+      "type": "array",
+      "description": "Chronological sequence of visited nodes.",
+      "items": { "type": "string" }
+    },
+    "step_latencies": {
+      "type": "object",
+      "description": "Latency in milliseconds for each visited node.",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "node_outputs": {
+      "type": "object",
+      "description": "Structured output payload produced by each visited node.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Sanitized error message if a failure occurred during node execution."
+    }
+  }
+}
