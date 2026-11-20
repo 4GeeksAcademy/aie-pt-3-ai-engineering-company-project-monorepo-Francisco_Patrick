@@ -31,6 +31,14 @@ from application.telemetry.cache import TelemetryReportCache
 from application.telemetry.report_service import TelemetryReportService
 from application.incidents.csv_report_service import IncidentCsvReportService
 from application.services.knowledge_service import KnowledgeService
+from application.services.support_agent_service import SupportAgentService
+from application.services.trace_registry import TraceRegistry
+from domain.agent.ports import (
+    InventoryStockToolPort,
+    SupportAgentServicePort,
+    SupportTicketToolPort,
+    TraceRegistryPort,
+)
 from domain.telemetry.ports import TelemetryRepositoryPort
 from domain.knowledge.entities import KnowledgeRuntimeConfig
 from domain.knowledge.ports import (
@@ -300,6 +308,79 @@ def get_knowledge_service_dep(
     )
 
 
+# --- Support Agent with LangGraph Dependencies ---
+_agent_trace_registry_singleton: Optional[TraceRegistryPort] = None
+_support_ticket_tool_singleton: Optional[SupportTicketToolPort] = None
+_inventory_stock_tool_singleton: Optional[InventoryStockToolPort] = None
+_support_agent_service_singleton: Optional[SupportAgentServicePort] = None
+
+
+def get_trace_registry() -> TraceRegistryPort:
+    """Dependency provider for the shared thread-safe in-memory TraceRegistry."""
+    global _agent_trace_registry_singleton
+    if _agent_trace_registry_singleton is None:
+        _agent_trace_registry_singleton = TraceRegistry()
+    return _agent_trace_registry_singleton
+
+
+get_trace_registry_dep = get_trace_registry
+
+
+def get_support_ticket_tool_dep(
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
+) -> SupportTicketToolPort:
+    """Dependency provider for SupportTicketToolPort (IncidentSupportTicketToolAdapter)."""
+    global _support_ticket_tool_singleton
+    if _support_ticket_tool_singleton is None:
+        from infrastructure.adapters.support_ticket_tool_adapter import (
+            IncidentSupportTicketToolAdapter,
+        )
+
+        _support_ticket_tool_singleton = IncidentSupportTicketToolAdapter(config=config)
+    return _support_ticket_tool_singleton
+
+
+def get_inventory_stock_tool_dep(
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
+) -> InventoryStockToolPort:
+    """Dependency provider for InventoryStockToolPort (InventoryStockQueryToolAdapter)."""
+    global _inventory_stock_tool_singleton
+    if _inventory_stock_tool_singleton is None:
+        from infrastructure.adapters.inventory_stock_tool_adapter import (
+            InventoryStockQueryToolAdapter,
+        )
+
+        _inventory_stock_tool_singleton = InventoryStockQueryToolAdapter(config=config)
+    return _inventory_stock_tool_singleton
+
+
+def get_support_agent_service(
+    vector_store: VectorStorePort = Depends(get_vector_store_dep),
+    embedding_service: EmbeddingServicePort = Depends(get_embedding_service_dep),
+    llm_generator: LLMGenerationPort = Depends(get_llm_generation_dep),
+    ticket_tool: SupportTicketToolPort = Depends(get_support_ticket_tool_dep),
+    inventory_tool: InventoryStockToolPort = Depends(get_inventory_stock_tool_dep),
+    trace_registry: TraceRegistryPort = Depends(get_trace_registry),
+    config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
+) -> SupportAgentServicePort:
+    """Dependency provider for SupportAgentService with compiled LangGraph state machine."""
+    global _support_agent_service_singleton
+    if _support_agent_service_singleton is None:
+        _support_agent_service_singleton = SupportAgentService(
+            vector_store=vector_store,
+            embedding_service=embedding_service,
+            llm_generator=llm_generator,
+            ticket_tool=ticket_tool,
+            inventory_tool=inventory_tool,
+            trace_registry=trace_registry,
+            config=config,
+        )
+    return _support_agent_service_singleton
+
+
+get_support_agent_service_dep = get_support_agent_service
+
+
 # --- Password Reset Collaborators ---
 def get_password_reset_token_repository_dep(
     db: TinyDB = Depends(get_tinydb_dep),
@@ -396,11 +477,17 @@ __all__ = [
     "get_sqlmodel_session_dep",
     "get_supplier_repository_dep",
     "get_supplier_service_dep",
+    "get_support_agent_service",
+    "get_support_agent_service_dep",
+    "get_support_ticket_tool_dep",
+    "get_inventory_stock_tool_dep",
     "get_telemetry_report_cache_dep",
     "get_telemetry_report_service_dep",
     "get_telemetry_repository_dep",
     "get_telemetry_service_dep",
     "get_tinydb_dep",
+    "get_trace_registry",
+    "get_trace_registry_dep",
     "get_user_repository_dep",
     "get_user_service_dep",
     "get_vector_store_dep",

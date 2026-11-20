@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Support Agent API
+  version: 1.1.0
+  description: >
+    LangGraph-powered stateful support agent for customer and operational inquiries.
+    Provides compiled graph execution, autonomous multi-source routing across static
+    knowledge base retrieval (RAG) and real-time read-only operational tools
+    (Support Ticket Query Tool and Inventory Stock Query Tool), explicit numerical
+    timeouts (4.0s default), honest fallback routes, queryable tracing, and state checkpointing.
+paths:
+  /api/v1/agent/query:
+    post:
+      summary: Submit policy or real-time operational query to LangGraph support agent
+      description: >
+        Executes the compiled LangGraph state graph. Autonomously routes across
+        `ticket_tool`, `inventory_tool`, and `retrieval` (`rag`) in canonical sequence,
+        transitions to `tool_fallback` on tool timeout/error/not_found, and emits a
+        queryable trace with consulted data sources and checkpoints.
+      operationId: query_support_agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentQueryRequestSchema'
+      responses:
+        '200':
+          description: Successful execution of agent graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentQueryResponseSchema'
+        '422':
+          description: Validation Error (e.g. malformed JSON or invalid parameter types)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '500':
+          description: Internal Server Error (Sanitized, zero raw stack traces leaked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/trace/{trace_id}:
+    get:
+      summary: Query execution trace for an agent run
+      description: >
+        Retrieve the structured execution trace including node sequence, consulted
+        data sources (`sources_consulted`), tool call outcomes, latencies, and metadata.
+      operationId: get_agent_trace
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique execution trace UUID
+      responses:
+        '200':
+          description: Trace found and returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTraceResponseSchema'
+        '404':
+          description: Trace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/health:
+    get:
+      summary: Health check for compiled agent workflow
+      description: Confirms graph compilation state, registered nodes, and checkpointer readiness.
+      operationId: get_agent_health
+      responses:
+        '200':
+          description: Agent workflow is healthy and compiled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentHealthResponseSchema'
+
+components:
+  schemas:
+    AgentQueryRequestSchema:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Customer policy inquiry or real-time ticket/inventory question
+          minLength: 1
+          maxLength: 1000
+          example: "What is the current status of ticket INC-001?"
+        top_k:
+          type: integer
+          default: 3
+          minimum: 1
+          maximum: 20
+          description: Maximum number of knowledge chunks to retrieve when RAG is consulted
+        min_score:
+          type: number
+          format: float
+          default: 0.62
+          minimum: 0.0
+          maximum: 1.0
+          description: Calibrated minimum cosine similarity score threshold
+        thread_id:
+          type: string
+          nullable: true
+          description: Optional thread or session identifier for state checkpointing
+        language:
+          type: string
+          default: "en"
+          description: Optional target response language ISO code
+
+    KnowledgeSourceCitationSchema:
+      type: object
+      required:
+        - source_document
+        - section
+        - similarity_score
+      properties:
+        source_document:
+          type: string
+          example: "returns-policy"
+        section:
+          type: string
+          example: "Standard Return Policy"
+        similarity_score:
+          type: number
+          format: float
+          example: 0.8842
+
+    ToolCallTraceSchema:
+      type: object
+      required:
+        - tool_name
+        - status
+        - total_matched
+        - returned_count
+        - latency_ms
+      properties:
+        tool_name:
+          type: string
+          enum: ["ticket_tool", "inventory_tool"]
+        status:
+          type: string
+          enum: ["success", "not_found", "timeout", "error"]
+        total_matched:
+          type: integer
+          example: 1
+        returned_count:
+          type: integer
+          example: 1
+        latency_ms:
+          type: number
+          format: float
+          example: 4.2
+        error_message:
+          type: string
+          nullable: true
+
+    AgentQueryResponseSchema:
+      type: object
+      required:
+        - query
+        - answer
+        - is_refusal
+        - sources
+        - trace_id
+        - node_sequence
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+          example: "What is the current status of ticket INC-001?"
+        answer:
+          type: string
+          example: "Support ticket INC-001 ('Delayed pallet shipment to Zaragoza') currently has status 'open', category 'delay', origin 'warehouse', and branch 'zaragoza'."
+        is_refusal:
+          type: boolean
+          example: false
+        fallback_triggered:
+          type: boolean
+          default: false
+          example: false
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeSourceCitationSchema'
+        sources_consulted:
+          type: array
+          items:
+            type: string
+            enum: ["ticket_tool", "inventory_tool", "rag"]
+          example: ["ticket_tool"]
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallTraceSchema'
+        trace_id:
+          type: string
+          format: uuid
+          example: "d3b07384-d113-4c9f-8567-9c98b688d0b2"
+        node_sequence:
+          type: array
+          items:
+            type: string
+          example: ["intake", "ticket_tool", "generation"]
+        execution_time_ms:
+          type: number
+          format: float
+          example: 18.4
+
+    AgentTraceResponseSchema:
+      type: object
+      required:
+        - trace_id
+        - query
+        - node_sequence
+        - step_latencies
+        - total_duration_ms
+        - is_refusal
+        - final_answer
+        - source_count
+      properties:
+        trace_id:
+          type: string
+        query:
+          type: string
+        node_sequence:
+          type: array
+          items:
+            type: string
+        sources_consulted:
+          type: array
+          items:
+            type: string
+            enum: ["ticket_tool", "inventory_tool", "rag"]
+        fallback_triggered:
+          type: boolean
+          default: false
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallTraceSchema'
+        step_latencies:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+        total_duration_ms:
+          type: number
+          format: float
+        is_refusal:
+          type: boolean
+        final_answer:
+          type: string
+        source_count:
+          type: integer
+        node_outputs:
+          type: object
+          description: Structured output produced by each visited node
+          additionalProperties:
+            type: object
+
+    AgentHealthResponseSchema:
+      type: object
+      required:
+        - status
+        - compiled
+        - nodes
+        - checkpointer
+      properties:
+        status:
+          type: string
+          example: "healthy"
+        compiled:
+          type: boolean
+          example: true
+        nodes:
+          type: array
+          items:
+            type: string
+          example: ["intake", "ticket_tool", "inventory_tool", "retrieval", "tool_fallback", "generation", "refusal"]
+        checkpointer:
+          type: string
+          example: "MemorySaver"
+
+    SanitizedErrorResponse:
+      type: object
+      required:
+        - detail
+        - error_code
+        - trace_id
+      properties:
+        detail:
+          type: string
+          example: "An internal error occurred while processing the agent workflow."
+        error_code:
+          type: string
+          example: "INTERNAL_WORKFLOW_ERROR"
+        trace_id:
+          type: string
+          nullable: true
+
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
