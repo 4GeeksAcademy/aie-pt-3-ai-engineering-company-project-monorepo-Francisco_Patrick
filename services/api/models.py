@@ -1,8 +1,14 @@
-"""Backward-compatible re-export of relational ORM models.
+"""Backward-compatible re-export of models (relational ORM + Supplier domain models).
 
-Maintained for legacy route and schema compatibility until Phase 5 consolidation.
+Maintained for route, schema, and legacy compatibility.
 """
 
+from domain.suppliers.models import (
+    Supplier,
+    SupplierStatus,
+    VALID_CATEGORIES,
+    VALID_STATUSES,
+)
 from infrastructure.persistence.sqlmodel.models import (
     SKU,
     StockEntry,
@@ -10,4 +16,13 @@ from infrastructure.persistence.sqlmodel.models import (
     TelemetryEventRecord,
 )
 
-__all__ = ["SKU", "StockEntry", "StockExit", "TelemetryEventRecord"]
+__all__ = [
+    "SKU",
+    "StockEntry",
+    "StockExit",
+    "Supplier",
+    "SupplierStatus",
+    "TelemetryEventRecord",
+    "VALID_CATEGORIES",
+    "VALID_STATUSES",
+]

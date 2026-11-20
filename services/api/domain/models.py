@@ -4,25 +4,16 @@ from datetime import datetime
 from domain.incident_model import Incident
 
 
-class SupplierBase(BaseModel):
-    name: str = Field(..., min_length=1)
-    country: str = Field(..., min_length=1)
-    categories: List[str] = Field(..., min_length=1)
-    cost_per_kg: float = Field(..., gt=0, description="Cost per kg must be strictly positive")
-    status: Literal["active", "suspended"] = Field(...)
+from domain.suppliers.models import (
+    Supplier,
+    SupplierStatus,
+    VALID_CATEGORIES,
+    VALID_STATUSES,
+)
 
-class SupplierCreate(SupplierBase):
-    pass
+SupplierBase = Supplier
+SupplierCreate = Supplier
 
-class SupplierUpdateRate(BaseModel):
-    cost_per_kg: float = Field(..., gt=0)
-
-class SupplierUpdateStatus(BaseModel):
-    status: Literal["active", "suspended"] = Field(...)
-
-class Supplier(SupplierBase):
-    id: int
-    updated_at: str
 
 class ProfileBase(BaseModel):
     name: Optional[str] = None

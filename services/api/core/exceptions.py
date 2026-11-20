@@ -54,6 +54,7 @@ async def validation_exception_handler(
         if "/telemetry" in request.url.path
         or "/reporting" in request.url.path
         or "/knowledge" in request.url.path
+        or "/suppliers" in request.url.path
         else status.HTTP_400_BAD_REQUEST
     )
     return JSONResponse(

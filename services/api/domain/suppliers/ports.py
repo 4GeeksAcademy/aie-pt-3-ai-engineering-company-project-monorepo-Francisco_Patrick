@@ -54,12 +54,12 @@ class SupplierRepositoryPort(ABC):
         ...
 
     @abstractmethod
-    def update_rate(self, supplier_id: int, cost_per_kg: float) -> Optional[Supplier]:
-        """Update shipping cost per kg for a supplier.
+    def update_rate(self, supplier_id: int, rate: float) -> Optional[Supplier]:
+        """Update shipping cost/rate for a supplier.
 
         Args:
             supplier_id: Numeric primary key ID.
-            cost_per_kg: New positive rate per kg.
+            rate: New positive rate.
 
         Returns:
             Updated Supplier entity if found, None otherwise.
