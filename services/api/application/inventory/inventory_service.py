@@ -38,17 +38,21 @@ class InventoryService:
                 entity_name="Product SKU", field="sku", value=dto.sku
             )
 
+        wh = dto.warehouse or dto.warehouse_id or "LA"
         sku = SKU(
             sku=dto.sku,
             name=dto.name,
-            warehouse_id=dto.warehouse_id,
+            client_name=dto.client_name or "PureStep Footwear",
+            category=dto.category or "fashion",
+            warehouse=wh,
+            warehouse_id=wh,
             low_stock_threshold=dto.low_stock_threshold,
         )
         saved_sku = self._repo.create_sku(sku)
         if saved_sku.id is None:
             raise RuntimeError("Failed to obtain persistent ID for created SKU")
 
-        stock = self._repo.calculate_stock(saved_sku.id, saved_sku.warehouse_id)
+        stock = self._repo.calculate_stock(saved_sku.id, wh)
 
         if self._cache is not None:
             self._cache.invalidate_prefix("inventory_products:")
@@ -57,6 +61,9 @@ class InventoryService:
             id=saved_sku.id,
             sku=saved_sku.sku,
             name=saved_sku.name,
+            client_name=saved_sku.client_name,
+            category=saved_sku.category,
+            warehouse=saved_sku.warehouse,
             warehouse_id=saved_sku.warehouse_id,
             current_stock=stock,
             low_stock_threshold=saved_sku.low_stock_threshold,
@@ -121,10 +128,13 @@ class InventoryService:
         if not sku:
             raise EntityNotFoundError(entity_name="Product", entity_id=dto.sku_id)
 
+        wh = dto.warehouse or dto.warehouse_id or sku.warehouse or "LA"
         entry = StockEntry(
             sku_id=dto.sku_id,
-            warehouse_id=dto.warehouse_id,
+            warehouse=wh,
+            warehouse_id=wh,
             quantity=dto.quantity,
+            reference=dto.reference or "",
             user_uuid=user_uuid,
         )
         saved_entry = self._repo.add_inbound_entry(entry)
@@ -139,6 +149,8 @@ class InventoryService:
             order_type="inbound",
             sku_id=saved_entry.sku_id,
             sku_code=sku.sku,
+            reference=saved_entry.reference,
+            warehouse=saved_entry.warehouse,
             warehouse_id=saved_entry.warehouse_id,
             quantity=saved_entry.quantity,
             user_uuid=saved_entry.user_uuid,
@@ -153,9 +165,11 @@ class InventoryService:
         if not sku:
             raise EntityNotFoundError(entity_name="Product", entity_id=dto.sku_id)
 
-        current_stock = self._repo.calculate_stock(dto.sku_id, dto.warehouse_id)
+        wh = dto.warehouse or dto.warehouse_id or sku.warehouse or "LA"
+        current_stock = self._repo.calculate_stock(dto.sku_id, wh)
         if current_stock < dto.quantity:
             raise InsufficientStockError(
+                message=f"Insufficient stock for SKU '{sku.sku}'. Available: {current_stock}, requested: {dto.quantity}.",
                 sku_id=dto.sku_id,
                 available=current_stock,
                 requested=dto.quantity,
@@ -163,8 +177,11 @@ class InventoryService:
 
         exit_rec = StockExit(
             sku_id=dto.sku_id,
-            warehouse_id=dto.warehouse_id,
+            warehouse=wh,
+            warehouse_id=wh,
             quantity=dto.quantity,
+            exit_type=dto.exit_type or "dispatch",
+            tracking_number=dto.tracking_number,
             user_uuid=user_uuid,
         )
         saved_exit = self._repo.add_outbound_exit(exit_rec)
@@ -179,8 +196,12 @@ class InventoryService:
             order_type="outbound",
             sku_id=saved_exit.sku_id,
             sku_code=sku.sku,
+            reference=None,
+            warehouse=saved_exit.warehouse,
             warehouse_id=saved_exit.warehouse_id,
             quantity=saved_exit.quantity,
+            exit_type=saved_exit.exit_type,
+            tracking_number=saved_exit.tracking_number,
             user_uuid=saved_exit.user_uuid,
             created_at=saved_exit.created_at,
         )

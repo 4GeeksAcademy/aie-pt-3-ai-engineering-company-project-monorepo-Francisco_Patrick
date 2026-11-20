@@ -1,8 +1,8 @@
 """Inventory API router (canonical v1, also mounted at the legacy /inventory prefix)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from application.inventory.dto import (
     InboundOrderCreateDTO,
@@ -48,16 +48,28 @@ def create_product(
 
 @router.get(
     "/products",
-    response_model=AsyncTaskAcceptedResponse,
+    response_model=Union[AsyncTaskAcceptedResponse, List[ProductResponseDTO]],
+    response_model_exclude=_LEGACY_PRODUCT_EXCLUDE,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="List all products asynchronously",
-    description="Enqueues inventory stock aggregation task and returns tracking ID.",
+    summary="List all products asynchronously or synchronously",
+    description="Enqueues inventory stock aggregation task by default, or returns list synchronously when sync=true.",
 )
 def list_products(
     response: Response,
+    request: Request,
+    sync: bool = Query(default=False, description="Return products synchronously"),
     include_archived: bool = Query(default=False, description="Include archived products"),
-) -> AsyncTaskAcceptedResponse:
-    """Enqueues inventory stock aggregation task and returns tracking ID."""
+    service: InventoryService = Depends(get_inventory_service_dep),
+) -> Union[AsyncTaskAcceptedResponse, List[InventoryProduct]]:
+    """Enqueues inventory stock aggregation task and returns tracking ID, or returns list synchronously."""
+    if (
+        sync
+        or request.headers.get("X-Sync") == "true"
+        or request.headers.get("Prefer") == "return=representation"
+    ):
+        response.status_code = status.HTTP_200_OK
+        return service.list_products()
+
     from infrastructure.queue.celery_app import register_enqueued_task
     from infrastructure.queue.tasks import list_products_task
 

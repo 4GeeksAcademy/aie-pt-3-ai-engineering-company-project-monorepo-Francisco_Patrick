@@ -138,6 +138,57 @@ class SQLModelClientManager:
         """Set a custom database engine (e.g. for testing with in-memory SQLite)."""
         self._engine = custom_engine
 
+    def _ensure_columns_exist(self, eng: Engine) -> None:
+        """Add any missing columns to existing tables for seamless backward compatibility."""
+        from sqlalchemy import inspect, text
+
+        try:
+            insp = inspect(eng)
+            table_names = insp.get_table_names()
+
+            alter_statements = []
+            if "sku" in table_names:
+                existing_cols = {c["name"] for c in insp.get_columns("sku")}
+                if "client_name" not in existing_cols:
+                    alter_statements.append("ALTER TABLE sku ADD COLUMN client_name VARCHAR DEFAULT 'PureStep Footwear'")
+                if "category" not in existing_cols:
+                    alter_statements.append("ALTER TABLE sku ADD COLUMN category VARCHAR DEFAULT 'fashion'")
+                if "warehouse" not in existing_cols:
+                    alter_statements.append("ALTER TABLE sku ADD COLUMN warehouse VARCHAR DEFAULT 'LA'")
+                if "warehouse_id" not in existing_cols:
+                    alter_statements.append("ALTER TABLE sku ADD COLUMN warehouse_id VARCHAR DEFAULT 'LA'")
+
+            if "stock_entry" in table_names:
+                existing_cols = {c["name"] for c in insp.get_columns("stock_entry")}
+                if "warehouse" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_entry ADD COLUMN warehouse VARCHAR DEFAULT 'LA'")
+                if "warehouse_id" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_entry ADD COLUMN warehouse_id VARCHAR DEFAULT 'LA'")
+                if "reference" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_entry ADD COLUMN reference VARCHAR DEFAULT ''")
+
+            if "stock_exit" in table_names:
+                existing_cols = {c["name"] for c in insp.get_columns("stock_exit")}
+                if "warehouse" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_exit ADD COLUMN warehouse VARCHAR DEFAULT 'LA'")
+                if "warehouse_id" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_exit ADD COLUMN warehouse_id VARCHAR DEFAULT 'LA'")
+                if "exit_type" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_exit ADD COLUMN exit_type VARCHAR DEFAULT 'dispatch'")
+                if "tracking_number" not in existing_cols:
+                    alter_statements.append("ALTER TABLE stock_exit ADD COLUMN tracking_number VARCHAR DEFAULT NULL")
+
+            if alter_statements:
+                with eng.connect() as conn:
+                    for stmt in alter_statements:
+                        try:
+                            conn.execute(text(stmt))
+                            conn.commit()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
     def init_db(self, target_engine: Optional[Engine] = None) -> None:
         """Initialize SQLModel table schemas with resilient fallback."""
         from infrastructure.persistence.sqlmodel.models import (  # noqa: F401
@@ -153,6 +204,7 @@ class SQLModelClientManager:
 
         try:
             SQLModel.metadata.create_all(eng)
+            self._ensure_columns_exist(eng)
         except Exception as e:
             if not str(eng.url).startswith("sqlite"):
                 host = eng.url.host or os.getenv("host") or os.getenv("DB_HOST") or "unknown"
@@ -169,6 +221,7 @@ class SQLModelClientManager:
                 )
                 self.set_engine(fallback_eng)
                 SQLModel.metadata.create_all(fallback_eng)
+                self._ensure_columns_exist(fallback_eng)
             else:
                 raise e
 

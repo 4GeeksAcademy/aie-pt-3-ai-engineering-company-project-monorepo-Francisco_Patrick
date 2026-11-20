@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from infrastructure.database import get_tinydb, engine, init_db
 from sqlmodel import Session, select
-from models import SKU, StockEntry
+from models import SKU, StockEntry, StockExit
 
 # Exact supplier dataset from trackflow-BRIEFING.es.md (Carlos & Ana combined directory)
 SUPPLIERS_SEED = [
@@ -178,10 +178,135 @@ SUPPLIERS_SEED = [
     },
 ]
 
+BRIEFING_SKUS = [
+    {
+        "name": "Zapatilla blanca clásica - Talla 42",
+        "sku": "CLT-SNK-W-42",
+        "client_name": "PureStep Footwear",
+        "category": "fashion",
+        "warehouse": "LA",
+        "warehouse_id": "LA",
+        "low_stock_threshold": 10,
+    },
+    {
+        "name": "Zapatilla blanca clásica - Talla 42",
+        "sku": "CLT-SNK-W-42-Z",
+        "client_name": "PureStep Footwear",
+        "category": "fashion",
+        "warehouse": "ZGZ",
+        "warehouse_id": "ZGZ",
+        "low_stock_threshold": 10,
+    },
+    {
+        "name": "Auriculares inalámbricos Pro",
+        "sku": "TEC-EAR-001",
+        "client_name": "SoundWave Electronics",
+        "category": "electronics",
+        "warehouse": "LA",
+        "warehouse_id": "LA",
+        "low_stock_threshold": 10,
+    },
+    {
+        "name": "Sérum facial hidratante 30ml",
+        "sku": "CSM-SRM-030",
+        "client_name": "GlowLab Cosmetics",
+        "category": "cosmetics",
+        "warehouse": "ZGZ",
+        "warehouse_id": "ZGZ",
+        "low_stock_threshold": 10,
+    },
+    {
+        "name": "Chino slim fit - marino 32/32",
+        "sku": "CLT-CHN-N-32",
+        "client_name": "UrbanThread",
+        "category": "fashion",
+        "warehouse": "LA",
+        "warehouse_id": "LA",
+        "low_stock_threshold": 10,
+    },
+    {
+        "name": "Cargador rápido USB-C 65W",
+        "sku": "TEC-CHG-065",
+        "client_name": "SoundWave Electronics",
+        "category": "electronics",
+        "warehouse": "ZGZ",
+        "warehouse_id": "ZGZ",
+        "low_stock_threshold": 10,
+    },
+]
+
+BRIEFING_ENTRIES = [
+    {
+        "sku": "CLT-SNK-W-42",
+        "warehouse": "LA",
+        "quantity": 50,
+        "reference": "PO-2024-0098",
+        "user_uuid": "usr-seed-operator-la",
+    },
+    {
+        "sku": "CLT-SNK-W-42",
+        "warehouse": "LA",
+        "quantity": 30,
+        "reference": "GR-LA-0234",
+        "user_uuid": "usr-seed-operator-la",
+    },
+    {
+        "sku": "CLT-SNK-W-42-Z",
+        "warehouse": "ZGZ",
+        "quantity": 40,
+        "reference": "PO-2024-0102",
+        "user_uuid": "usr-seed-operator-zgz",
+    },
+    {
+        "sku": "TEC-EAR-001",
+        "warehouse": "LA",
+        "quantity": 25,
+        "reference": "PO-2024-0115",
+        "user_uuid": "usr-seed-operator-la",
+    },
+    {
+        "sku": "CSM-SRM-030",
+        "warehouse": "ZGZ",
+        "quantity": 60,
+        "reference": "PO-2024-0120",
+        "user_uuid": "usr-seed-operator-zgz",
+    },
+]
+
+BRIEFING_EXITS = [
+    {
+        "sku": "CLT-SNK-W-42",
+        "warehouse": "LA",
+        "quantity": 15,
+        "exit_type": "dispatch",
+        "tracking_number": "1Z999AA10123456784",
+        "user_uuid": "usr-seed-coord-la",
+    },
+    {
+        "sku": "CLT-SNK-W-42",
+        "warehouse": "LA",
+        "quantity": 2,
+        "exit_type": "loss",
+        "tracking_number": None,
+        "user_uuid": "usr-seed-coord-la",
+    },
+    {
+        "sku": "CLT-SNK-W-42-Z",
+        "warehouse": "ZGZ",
+        "quantity": 10,
+        "exit_type": "dispatch",
+        "tracking_number": "1Z888BB20987654321",
+        "user_uuid": "usr-seed-coord-zgz",
+    },
+]
+
 INITIAL_PRODUCTS = [
     {
         "sku": "SKU-LA-1001",
         "name": "Heavy Duty Shipping Pallet",
+        "client_name": "PureStep Footwear",
+        "category": "fashion",
+        "warehouse": "LA",
         "warehouse_id": "wh-la",
         "low_stock_threshold": 15,
         "initial_stock": 100,
@@ -189,6 +314,9 @@ INITIAL_PRODUCTS = [
     {
         "sku": "SKU-ZGZ-2002",
         "name": "Express Cargo Box",
+        "client_name": "PureStep Footwear",
+        "category": "fashion",
+        "warehouse": "ZGZ",
         "warehouse_id": "wh-zgz",
         "low_stock_threshold": 10,
         "initial_stock": 50,
@@ -226,19 +354,43 @@ def run_seed() -> int:
                 table.insert(doc)
                 inserted_suppliers += 1
 
-        # 2. Seed SQLModel Inventory Products & Initial Stock Entries (if available)
+        # 2. Seed SQLModel Inventory Products, StockEntries and StockExits
         inserted_products = 0
+        inserted_entries = 0
+        inserted_exits = 0
         try:
             init_db(engine)
             with Session(engine) as session:
+                # Seed Briefing SKUs
+                for p_data in BRIEFING_SKUS:
+                    existing_sku = session.exec(select(SKU).where(SKU.sku == p_data["sku"])).first()
+                    if not existing_sku:
+                        sku_obj = SKU(
+                            sku=p_data["sku"],
+                            name=p_data["name"],
+                            client_name=p_data.get("client_name", "PureStep Footwear"),
+                            category=p_data.get("category", "fashion"),
+                            warehouse=p_data.get("warehouse", "LA"),
+                            warehouse_id=p_data.get("warehouse_id", "LA"),
+                            low_stock_threshold=p_data.get("low_stock_threshold", 10),
+                        )
+                        session.add(sku_obj)
+                        session.commit()
+                        session.refresh(sku_obj)
+                        inserted_products += 1
+
+                # Seed Initial legacy products
                 for p_data in INITIAL_PRODUCTS:
                     existing_sku = session.exec(select(SKU).where(SKU.sku == p_data["sku"])).first()
                     if not existing_sku:
                         sku_obj = SKU(
                             sku=p_data["sku"],
                             name=p_data["name"],
-                            warehouse_id=p_data["warehouse_id"],
-                            low_stock_threshold=p_data["low_stock_threshold"],
+                            client_name=p_data.get("client_name", "PureStep Footwear"),
+                            category=p_data.get("category", "fashion"),
+                            warehouse=p_data.get("warehouse", "LA"),
+                            warehouse_id=p_data.get("warehouse_id", "wh-la"),
+                            low_stock_threshold=p_data.get("low_stock_threshold", 10),
                         )
                         session.add(sku_obj)
                         session.commit()
@@ -246,18 +398,70 @@ def run_seed() -> int:
 
                         stock_entry = StockEntry(
                             sku_id=sku_obj.id,
+                            warehouse=sku_obj.warehouse,
                             warehouse_id=sku_obj.warehouse_id,
                             quantity=p_data["initial_stock"],
+                            reference="INIT-SEED",
                             user_uuid="usr-seed-system",
                         )
                         session.add(stock_entry)
                         session.commit()
                         inserted_products += 1
+
+                # Seed Briefing StockEntries
+                for entry_data in BRIEFING_ENTRIES:
+                    sku_obj = session.exec(select(SKU).where(SKU.sku == entry_data["sku"])).first()
+                    if sku_obj:
+                        existing_entry = session.exec(
+                            select(StockEntry).where(
+                                (StockEntry.sku_id == sku_obj.id)
+                                & (StockEntry.reference == entry_data["reference"])
+                            )
+                        ).first()
+                        if not existing_entry:
+                            stock_entry = StockEntry(
+                                sku_id=sku_obj.id,
+                                warehouse=entry_data["warehouse"],
+                                warehouse_id=entry_data["warehouse"],
+                                quantity=entry_data["quantity"],
+                                reference=entry_data["reference"],
+                                user_uuid=entry_data["user_uuid"],
+                            )
+                            session.add(stock_entry)
+                            session.commit()
+                            inserted_entries += 1
+
+                # Seed Briefing StockExits
+                for exit_data in BRIEFING_EXITS:
+                    sku_obj = session.exec(select(SKU).where(SKU.sku == exit_data["sku"])).first()
+                    if sku_obj:
+                        existing_exit = session.exec(
+                            select(StockExit).where(
+                                (StockExit.sku_id == sku_obj.id)
+                                & (StockExit.exit_type == exit_data["exit_type"])
+                                & (StockExit.quantity == exit_data["quantity"])
+                            )
+                        ).first()
+                        if not existing_exit:
+                            stock_exit = StockExit(
+                                sku_id=sku_obj.id,
+                                warehouse=exit_data["warehouse"],
+                                warehouse_id=exit_data["warehouse"],
+                                quantity=exit_data["quantity"],
+                                exit_type=exit_data["exit_type"],
+                                tracking_number=exit_data["tracking_number"],
+                                user_uuid=exit_data["user_uuid"],
+                            )
+                            session.add(stock_exit)
+                            session.commit()
+                            inserted_exits += 1
+
         except Exception as sql_err:
             print(f"[WARN] Relational inventory seeding skipped: {sql_err}")
 
         print(
-            f"Seeder executed successfully. Inserted {inserted_suppliers} suppliers and {inserted_products} inventory products."
+            f"Seeder executed successfully. Inserted {inserted_suppliers} suppliers, "
+            f"{inserted_products} products, {inserted_entries} entries, and {inserted_exits} exits."
         )
         return inserted_suppliers
     except KeyboardInterrupt:

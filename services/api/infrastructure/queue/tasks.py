@@ -92,6 +92,10 @@ def list_products_task(
             "id": getattr(p, "id", None),
             "sku": getattr(p, "sku", ""),
             "name": getattr(p, "name", ""),
+            "client_name": getattr(p, "client_name", "PureStep Footwear"),
+            "category": getattr(p, "category", "fashion"),
+            "warehouse": getattr(p, "warehouse", "LA"),
+            "warehouse_id": getattr(p, "warehouse_id", "LA"),
             "current_stock": getattr(p, "current_stock", 0),
             "reorder_threshold": getattr(p, "reorder_threshold", getattr(p, "low_stock_threshold", 0)),
         }
