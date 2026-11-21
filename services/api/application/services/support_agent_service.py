@@ -88,11 +88,11 @@ class SupportAgentService(SupportAgentServicePort):
         self._embedding_service = embedding_service
         self._llm_generator = llm_generator
         if ticket_tool is None:
-            from infrastructure.adapters.support_ticket_tool_adapter import (
-                IncidentSupportTicketToolAdapter,
+            from infrastructure.adapters.mcp_ticket_tool_adapter import (
+                McpTicketToolAdapter,
             )
 
-            self._ticket_tool: SupportTicketToolPort = IncidentSupportTicketToolAdapter(
+            self._ticket_tool: SupportTicketToolPort = McpTicketToolAdapter(
                 config=self.config
             )
         else:

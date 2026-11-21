@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OAuth 2.0 Protected Resource Metadata (RFC 9728)",
+  "description": "Metadata published at /.well-known/oauth-protected-resource by mcps/trackflow-server",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string",
+      "format": "uri",
+      "description": "Identifier of the protected resource (e.g., https://api.trackflow.local/mcp/)"
+    },
+    "authorization_servers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
+      "description": "List of authorization server issuer URLs capable of issuing valid tokens for this resource"
+    },
+    "scopes_supported": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "enum": [
+        "incidents:read",
+        "incidents:write",
+        "incidents:lifecycle",
+        "inventory:read"
+      ],
+      "description": "OAuth 2.1 scopes accepted by the resource server"
+    },
+    "bearer_methods_supported": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["header"],
+      "description": "Supported mechanisms for sending bearer tokens (HTTP Authorization header)"
+    },
+    "resource_documentation": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL to documentation for the MCP tools"
+    }
+  },
+  "required": ["resource", "authorization_servers", "scopes_supported", "bearer_methods_supported"]
+}

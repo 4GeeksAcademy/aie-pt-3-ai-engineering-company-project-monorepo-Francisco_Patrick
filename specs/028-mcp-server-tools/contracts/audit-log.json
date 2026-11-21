@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MCP Tool Invocation Audit Log Schema",
+  "description": "Structured log entry emitted per tool execution",
+  "type": "object",
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp in ISO 8601 format"
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique request trace identifier"
+    },
+    "client_id": {
+      "type": "string",
+      "description": "Client identifier extracted from authenticated token or 'unauthenticated'"
+    },
+    "tool_name": {
+      "type": "string",
+      "enum": [
+        "create_incident",
+        "query_incidents",
+        "transition_incident_status",
+        "query_inventory"
+      ],
+      "description": "Name of the invoked MCP tool"
+    },
+    "arguments": {
+      "type": "object",
+      "description": "Sanitized tool execution arguments (with PII and credentials masked)"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["SUCCESS", "REJECTED", "ERROR"],
+      "description": "Execution status outcome"
+    },
+    "error_code": {
+      "type": "string",
+      "enum": [
+        "AUTHENTICATION_REQUIRED",
+        "INSUFFICIENT_SCOPE",
+        "INVENTORY_MUTATION_REJECTED",
+        "VALIDATION_ERROR",
+        "LIFECYCLE_TRANSITION_DISALLOWED",
+        "RESOURCE_NOT_FOUND",
+        "UPSTREAM_UNAVAILABLE"
+      ],
+      "description": "Standardized failure error code if outcome is REJECTED or ERROR"
+    },
+    "latency_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Execution latency in milliseconds"
+    }
+  },
+  "required": [
+    "timestamp",
+    "trace_id",
+    "client_id",
+    "tool_name",
+    "arguments",
+    "outcome",
+    "latency_ms"
+  ],
+  "additionalProperties": false
+}
