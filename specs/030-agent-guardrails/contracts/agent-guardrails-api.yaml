@@ -1,0 +1,305 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Support Agent — Guardrails & Observability API
+  version: 1.2.0
+  description: >
+    REST API contract for Milestone 8 (Part 2 of 2): Agent Harnessing & Guardrails.
+    Extends `POST /api/v1/agent/query` with optional session-scoped authorization context
+    (`session_context`) and guardrail intervention metadata (`guardrail_interventions`),
+    and adds `GET /api/v1/agent/guardrails/summary` for inspecting aggregated guardrail
+    trigger counts by failure type (`structural`, `content`, `security`) and layer.
+paths:
+  /api/v1/agent/query:
+    post:
+      summary: Submit inquiry to hardened LangGraph support agent
+      operationId: querySupportAgent
+      tags:
+        - Support Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentQueryRequestSchema"
+      responses:
+        "200":
+          description: Grounded answer, mandatory casual redirection, or guardrail refusal with trace and intervention metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentQueryResponseSchema"
+        "500":
+          description: Sanitized internal workflow error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanitizedErrorResponse"
+
+  /api/v1/agent/guardrails/summary:
+    get:
+      summary: Retrieve aggregated guardrail trigger counts and recent sanitized audit events (FR-012)
+      operationId: getGuardrailSummary
+      tags:
+        - Support Agent Guardrails
+      parameters:
+        - name: session_id
+          in: query
+          required: false
+          description: Optional session/thread ID filter to scope trigger counts to a specific test session
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of recent sanitized guardrail audit events to include (1..100)
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Aggregated guardrail observability report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailSummaryResponseSchema"
+
+components:
+  schemas:
+    AuthenticatedSessionContextSchema:
+      type: object
+      required:
+        - session_id
+        - customer_id
+      properties:
+        session_id:
+          type: string
+          description: Unique session or thread identifier
+          examples: ["sess_us_b2c_01"]
+        customer_id:
+          type: string
+          description: Authenticated customer or brand account identifier
+          examples: ["cust_1001"]
+        customer_segment:
+          type: string
+          enum: ["B2B", "B2C"]
+          default: "B2C"
+          description: Customer segment (B2B brand or B2C parcel recipient)
+        primary_operating_country:
+          type: string
+          enum: ["US", "ES"]
+          default: "US"
+          description: Default operating jurisdiction for the session
+        authorized_order_ids:
+          type: array
+          items:
+            type: string
+          default: []
+          description: List of order or tracking identifiers owned by the authenticated user session
+          examples: [["10492", "ORD-99201"]]
+        order_country_map:
+          type: object
+          additionalProperties:
+            type: string
+            enum: ["US", "ES"]
+          default: {}
+          description: Optional per-order operational country mapping (order_id -> US | ES)
+          examples: [{"10492": "US", "ORD-99201": "ES"}]
+
+    GuardrailInterventionSchema:
+      type: object
+      required:
+        - event_id
+        - timestamp
+        - session_id
+        - failure_type
+        - layer
+        - input_category
+        - reason_code
+        - disposition
+        - redacted_preview
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+        trace_id:
+          type: ["string", "null"]
+        failure_type:
+          type: string
+          enum: ["structural", "content", "security"]
+        layer:
+          type: string
+          enum: ["input_guard", "authorization_guard", "context_sanitizer", "output_guard"]
+        input_category:
+          type: string
+          enum:
+            - "in_domain"
+            - "casual_trivia"
+            - "personal_task"
+            - "jailbreak_attempt"
+            - "unauthorized_order"
+            - "policy_mismatch"
+            - "restricted_data_leak"
+            - "external_injection"
+            - "malformed_output"
+        reason_code:
+          type: string
+        disposition:
+          type: string
+          enum: ["blocked", "redirected"]
+        redacted_preview:
+          type: string
+          description: Sanitized snippet with PII, restricted domain data, and system prompt fragments masked
+
+    GuardrailSummaryResponseSchema:
+      type: object
+      required:
+        - total_evaluations
+        - total_interventions
+        - by_failure_type
+        - by_layer
+        - by_input_category
+        - by_disposition
+        - recent_events
+      properties:
+        total_evaluations:
+          type: integer
+          minimum: 0
+        total_interventions:
+          type: integer
+          minimum: 0
+        by_failure_type:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Breakdown of triggers by 'structural', 'content', and 'security'
+        by_layer:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Breakdown of triggers by 'input_guard', 'authorization_guard', 'context_sanitizer', and 'output_guard'
+        by_input_category:
+          type: object
+          additionalProperties:
+            type: integer
+        by_disposition:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Breakdown by 'blocked' and 'redirected'
+        window_start:
+          type: ["string", "null"]
+          format: date-time
+        window_end:
+          type: ["string", "null"]
+          format: date-time
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuardrailInterventionSchema"
+
+    AgentQueryRequestSchema:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        top_k:
+          type: integer
+          default: 3
+          minimum: 1
+          maximum: 20
+        min_score:
+          type: ["number", "null"]
+          default: 0.62
+          minimum: 0.0
+          maximum: 1.0
+        thread_id:
+          type: ["string", "null"]
+        language:
+          type: ["string", "null"]
+          default: "en"
+        session_context:
+          anyOf:
+            - $ref: "#/components/schemas/AuthenticatedSessionContextSchema"
+            - type: "null"
+          default: null
+          description: Optional authenticated session context for order ownership and country jurisdiction checks
+
+    AgentQueryResponseSchema:
+      type: object
+      required:
+        - query
+        - answer
+        - is_refusal
+        - trace_id
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+        answer:
+          type: string
+        is_refusal:
+          type: boolean
+        fallback_triggered:
+          type: boolean
+          default: false
+        sources:
+          type: array
+          items:
+            type: object
+        sources_consulted:
+          type: array
+          items:
+            type: string
+        tool_calls:
+          type: array
+          items:
+            type: object
+        memory_proposal:
+          type: ["object", "null"]
+        recalled_memories:
+          type: array
+          items:
+            type: string
+        guardrail_interventions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuardrailInterventionSchema"
+          default: []
+          description: Guardrail blocks or mandatory redirections triggered during this turn
+        resolved_country:
+          type: ["string", "null"]
+          enum: ["US", "ES", null]
+          default: null
+          description: Authoritative operating country resolved for the inquiry
+        trace_id:
+          type: string
+        node_sequence:
+          type: array
+          items:
+            type: string
+        execution_time_ms:
+          type: number
+
+    SanitizedErrorResponse:
+      type: object
+      required:
+        - detail
+        - error_code
+      properties:
+        detail:
+          type: string
+        error_code:
+          type: string
+        trace_id:
+          type: ["string", "null"]
