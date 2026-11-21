@@ -275,11 +275,61 @@ _CASUAL_TRIVIA_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
-_IN_DOMAIN_TRACKFLOW_CUE = re.compile(
-    r"\b(?:trackflow|zaragoza|los\s+[aá]ngeles|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|"
-    r"sku|inc[-_]|ticket|pedido|order|return\s+window|return\s+policy|sla)\b",
+_ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:pedido|order|tracking|env[ií]o|shipment|paquete|package)\s*(?:n[uú]mero|number|id|#)?\s*[:=#]?\s*#?([A-Za-z]{2,5}-\d{3,10}|\d{4,10})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"#(\d{4,10})\b"),
+    re.compile(r"\b((?:ORD|TRK)-\d{3,10})\b", re.IGNORECASE),
+)
+
+_IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
+    r"(?:"
+    # Brand and personas
+    r"\b(?:trackflow|valentina\s+cruz|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|cx\s+team|customer\s+experience)\b"
+    # Facilities and locations
+    r"|\b(?:zaragoza|los\s+[aá]ngeles|madrid|california|united\s+states|estados\s+unidos|españa|espana)\b"
+    # Couriers and carriers
+    r"|\b(?:ups|fedex|dhl|mrw|seur|usps|carrier|carriers|transportista|transportistas|mensajer[ií]a|mensajero)\b"
+    # Identifiers
+    r"|\b(?:(?:ord|trk|inc|tf)[-_]\d+|sku[-_]?[a-z0-9]+|#\d{4,10})\b"
+    # Orders and tracking
+    r"|\b(?:order|orders|pedido|pedidos|purchase|purchases|compra|compras|tracking|track|rastreo|rastrear|seguimiento|localizador|localizar)\b"
+    # Shipments and delivery
+    r"|\b(?:shipment|shipments|shipping|ship|shipped|dispatch|dispatched|expedici[oó]n|expediciones|despacho|despachos|transit|in\s+transit|tr[aá]nsito|en\s+tr[aá]nsito)\b"
+    r"|\b(?:delivery|deliveries|deliver|delivered|entrega|entregas|entregar|entregado|entregada|entregados|entregadas)\b"
+    # Packaging and physical goods
+    r"|\b(?:package|packages|paquete|paquetes|parcel|parcels|bulto|bultos|box|boxes|caja|cajas|pallet|pallets|crate|crates)\b"
+    # Returns, refunds, policies, SLAs
+    r"|\b(?:return|returns|returning|returned|return\s+window|return\s+policy|return\s+label|return\s+shipping|rma)\b"
+    r"|\b(?:devoluci[oó]n|devoluciones|devolver|devuelto|devuelta|devueltos|devueltas|plazo\s+de\s+devoluci[oó]n|ventana\s+de\s+devoluci[oó]n|etiqueta\s+de\s+devoluci[oó]n)\b"
+    r"|\b(?:refund|refunds|refunded|reimburse|reimbursement|money\s+back|reembolso|reembolsos|reembolsar|devolver\s+el\s+dinero|abono|abonar)\b"
+    r"|\b(?:restock|restocking|reposici[oó]n|reabastecimiento|exchange|exchanges|cambio|cambios|sustituci[oó]n|reemplazo|reemplazar)\b"
+    r"|\b(?:sla|slas|service\s+level\s+agreement|acuerdo\s+de\s+nivel\s+de\s+servicio|warranty|garant[ií]a|garant[ií]as|pol[ií]tica|politica|pol[ií]ticas|politicas)\b"
+    # Incidents, claims, damage
+    r"|\b(?:incident|incidents|claim|claims|complaint|complaints|ticket|tickets|incidencia|incidencias|reclamo|reclamos|reclamaci[oó]n|reclamaciones|queja|quejas|dispute|disputa)\b"
+    r"|\b(?:lost|perdido|perdida|perdidos|perdidas|extraviado|extraviada|robado|robada|stolen|missing)\b"
+    r"|\b(?:damaged|da[ñn]ado|da[ñn]ada|da[ñn]ados|da[ñn]adas|broken|roto|rota|rotos|rotas|defective|defectuoso|defectuosa|crushed|aplastado|aplastada)\b"
+    r"|\b(?:failed\s+delivery|entrega\s+fallida|fallo\s+(?:en\s+la|de)\s+entrega|wrong\s+address|direcci[oó]n\s+(?:incorrecta|err[oó]nea)|wrong\s+(?:item|product)|producto\s+(?:incorrecto|equivocado|err[oó]neo))\b"
+    # Inventory, warehousing, cold-chain
+    r"|\b(?:inventory|inventario|stock|existencias|warehouse|warehousing|almac[eé]n|almacenes|almacenamiento|fulfillment|centro\s+log[ií]stico|centro\s+de\s+distribuci[oó]n)\b"
+    r"|\b(?:sku|skus|storage|refrigeration|cold[- ]chain|temperature[- ]controlled|pharmaceutical|farmac[eé]utico)\b"
+    # Colloquial customer queries
+    r"|\bwhere\s+is\s+my\b"
+    r"|\bd[oó]nde\s+est[aá]\s+mi\b"
+    r"|\b(?:money\s+back|recuperar\s+mi\s+dinero|devolver\s+el\s+dinero)\b"
+    # Business & contracts
+    r"|\b(?:b2b|b2c|contract|contrato|rates|tarifas|commercial|comercial|client|cliente|3pl)\b"
+    # Operational turn confirmations and rule feedback (e.g. Memory confirmations)
+    r"|^\s*(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto|confirm|confirmed|approve|approved|no|nope|reject|rejected|discard|cancel)\b"
+    r"|\b(?:remember|recuerda|save\s+(?:that|this|it)|guarda\s+(?:eso|esto|la\s+regla)|rule\s+for|regla\s+para)\b"
+    r"|\b(?:i\s+need\s+to\s+think|let\s+me\s+think|d[eé]jame\s+pensar|tengo\s+que\s+pensar)\b"
+    r")",
     re.IGNORECASE,
 )
+
+_IN_DOMAIN_TRACKFLOW_CUE: re.Pattern[str] = _IN_DOMAIN_LOGISTICS_CUES
 
 
 def build_casual_trivia_response(query: str, language: str = "en") -> str:
@@ -333,6 +383,15 @@ class InputGuardrailValidator(InputGuardrailPort):
     ) -> GuardrailEvaluationResult:
         """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
         cleaned = (query or "").strip()
+        if not cleaned:
+            return GuardrailEvaluationResult(
+                layer="input_guard",
+                action="allow",
+                failure_category="none",
+                input_category="in_domain",
+                reason_code="IN_DOMAIN_ALLOWED",
+                message=None,
+            )
         use_es = _is_spanish(cleaned, language)
 
         # 1. Strict Security Precedence: Anti-Jailbreak & Instruction Override
@@ -374,27 +433,33 @@ class InputGuardrailValidator(InputGuardrailPort):
                         message=build_casual_trivia_response(cleaned, language=language),
                     )
 
-        # 4. In-Domain query
+        # 4. In-Domain Logistics Validation (FR-005)
+        is_in_domain = bool(
+            _IN_DOMAIN_TRACKFLOW_CUE.search(cleaned)
+            or any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
+        )
+        if is_in_domain:
+            return GuardrailEvaluationResult(
+                layer="input_guard",
+                action="allow",
+                failure_category="none",
+                input_category="in_domain",
+                reason_code="IN_DOMAIN_ALLOWED",
+                message=None,
+            )
+
+        # 5. Out-of-Domain Content Block (FR-005)
         return GuardrailEvaluationResult(
             layer="input_guard",
-            action="allow",
-            failure_category="none",
-            input_category="in_domain",
-            reason_code="IN_DOMAIN_ALLOWED",
-            message=None,
+            action="block",
+            failure_category="content",
+            input_category="personal_task",
+            reason_code="OUT_OF_DOMAIN_TASK",
+            message=PERSONAL_TASK_REFUSAL_ES if use_es else PERSONAL_TASK_REFUSAL_EN,
         )
 
 
 # --- Layer 2: Session-Scoped Order Authorization & Country-Policy Integrity ---
-_ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
-    re.compile(
-        r"\b(?:pedido|order|tracking|env[ií]o|shipment|paquete|package)\s*(?:n[uú]mero|number|id|#)?\s*[:=#]?\s*#?([A-Za-z]{2,5}-\d{3,10}|\d{4,10})\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"#(\d{4,10})\b"),
-    re.compile(r"\b((?:ORD|TRK)-\d{3,10})\b", re.IGNORECASE),
-)
-
 _US_FULFILLMENT_LOCATION_PATTERN = re.compile(
     r"\b(?:en\s+los\s+[aá]ngeles|in\s+los\s+angeles|los\s+[aá]ngeles|california|united\s+states|ee\.\s*uu\.?|usa\b|u\.s\.a\.?)\b",
     re.IGNORECASE,
