@@ -128,6 +128,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/SanitizedErrorResponse'
 
+  /api/v1/memory/carriers/{carrier}/{country_code}:
+    get:
+      summary: Retrieve consolidated carrier operational profile by carrier and country path parameters
+      tags:
+        - Agent Memory
+      parameters:
+        - name: carrier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Carrier identifier (e.g. SEUR, FedEx, GLS)
+        - name: country_code
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [ES, US]
+          description: Country ISO code
+      responses:
+        '200':
+          description: Consolidated carrier profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidatedCarrierProfileResponseSchema'
+        '404':
+          description: No active memories found for carrier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
   /api/v1/agent/memory/audit-logs:
     get:
       summary: Query memory lifecycle audit log entries
@@ -322,6 +355,10 @@ components:
         country_code:
           type: string
         active_rules:
+          type: array
+          items:
+            type: string
+        memory_ids:
           type: array
           items:
             type: string

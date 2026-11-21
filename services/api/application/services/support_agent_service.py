@@ -31,6 +31,7 @@ from domain.agent.entities import (
     AgentState,
     AgentTrace,
     InventoryToolOutput,
+    MemoryProposal,
     SourceCitation,
     TicketToolOutput,
 )
@@ -68,6 +69,7 @@ class SupportAgentService(SupportAgentServicePort):
         checkpointer: Optional[BaseCheckpointSaver] = None,
         config: Optional[KnowledgeRuntimeConfig] = None,
         compiled_graph: Optional[CompiledStateGraph] = None,
+        memory_service: Optional[Any] = None,
     ) -> None:
         """Initialize SupportAgentService and compile the workflow graph at startup.
 
@@ -82,6 +84,7 @@ class SupportAgentService(SupportAgentServicePort):
             checkpointer: Optional LangGraph checkpointer (defaults to MemorySaver).
             config: Optional KnowledgeRuntimeConfig loaded from .env.
             compiled_graph: Optional pre-compiled graph override.
+            memory_service: Optional AgentMemoryService orchestrating persistent operational memory.
         """
         self.config = config or KnowledgeRuntimeConfig.from_env()
         self._vector_store = vector_store
@@ -109,6 +112,28 @@ class SupportAgentService(SupportAgentServicePort):
         else:
             self._inventory_tool = inventory_tool
 
+        if memory_service is None:
+            from application.services.memory_guardrails import MemoryGuardrailValidator
+            from application.services.memory_service import (
+                AgentMemoryService,
+                UserIntentClassifier,
+            )
+            from infrastructure.persistence.tinydb.agent_memory_repository import (
+                TinyDBAgentMemoryRepository,
+            )
+            from infrastructure.persistence.tinydb.memory_audit_log_repository import (
+                TinyDBMemoryAuditLogRepository,
+            )
+
+            self._memory_service: Any = AgentMemoryService(
+                memory_repository=TinyDBAgentMemoryRepository(),
+                audit_repository=TinyDBMemoryAuditLogRepository(),
+                guardrail_validator=MemoryGuardrailValidator(),
+                intent_classifier=UserIntentClassifier(),
+            )
+        else:
+            self._memory_service = memory_service
+
         self._trace_registry: TraceRegistryPort = trace_registry or TraceRegistry()
         self._guardrails = guardrail_validator or BusinessGuardrailValidator()
         self._checkpointer: BaseCheckpointSaver = (
@@ -126,8 +151,14 @@ class SupportAgentService(SupportAgentServicePort):
                 guardrail_validator=self._guardrails,
                 checkpointer=self._checkpointer,
                 default_min_score=self.config.similarity_threshold,
+                memory_service=self._memory_service,
             )
         )
+
+    @property
+    def memory_service(self) -> Any:
+        """Return the active AgentMemoryService instance."""
+        return self._memory_service
 
     @property
     def compiled_graph(self) -> CompiledStateGraph:
@@ -177,6 +208,7 @@ class SupportAgentService(SupportAgentServicePort):
 
         initial_state: AgentState = {
             "query": request.query,
+            "thread_id": trace_id,
             "language": request.language or "en",
             "top_k": request.top_k,
             "min_score": effective_min_score,
@@ -197,6 +229,10 @@ class SupportAgentService(SupportAgentServicePort):
             "step_latencies": {},
             "node_outputs": {},
             "error": None,
+            "pending_proposal": None,
+            "memory_proposal": None,
+            "recalled_memories": [],
+            "proposal_resolution": None,
         }
         run_config: Dict[str, Any] = {"configurable": {"thread_id": trace_id}}
 
@@ -266,6 +302,16 @@ class SupportAgentService(SupportAgentServicePort):
         )
         self._trace_registry.record_trace(trace)
 
+        memory_proposal_raw = final_state.get("memory_proposal")
+        memory_proposal: Optional[MemoryProposal] = (
+            memory_proposal_raw
+            if isinstance(memory_proposal_raw, MemoryProposal)
+            else None
+        )
+        recalled_memories: List[str] = [
+            str(m) for m in (final_state.get("recalled_memories") or [])
+        ]
+
         return AgentQueryResult(
             query=sanitized_query,
             answer=final_answer,
@@ -277,6 +323,8 @@ class SupportAgentService(SupportAgentServicePort):
             fallback_triggered=fallback_triggered,
             sources_consulted=sources_consulted,
             tool_calls=tool_calls,
+            memory_proposal=memory_proposal,
+            recalled_memories=recalled_memories,
         )
 
     def get_trace(self, trace_id: str) -> AgentTrace:

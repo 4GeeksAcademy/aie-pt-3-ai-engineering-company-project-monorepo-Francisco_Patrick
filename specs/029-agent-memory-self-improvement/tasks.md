@@ -18,8 +18,8 @@
 
 **Purpose**: Project initialization, dependency verification, and repository structure preparation.
 
-- [ ] T001 Verify backend dependency setup and install required packages (`tinydb>=4.9.0`, `pydantic>=2.13.5`) via `uv` in `services/api/pyproject.toml`
-- [ ] T002 [P] Create initial directory structure for agent memory persistence in `services/api/infrastructure/persistence/tinydb/`
+- [X] T001 Verify backend dependency setup and install required packages (`tinydb>=4.9.0`, `pydantic>=2.13.5`) via `uv` in `services/api/pyproject.toml`
+- [X] T002 [P] Create initial directory structure for agent memory persistence in `services/api/infrastructure/persistence/tinydb/`
 
 ---
 
@@ -29,13 +29,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Define memory domain entities and value objects (`MemoryCategory`, `ProposalStatus`, `MemoryProposal`, `PersistentMemoryRecord`, `ConsolidatedCarrierProfile`, `MemoryAuditLogEntry`) in `services/api/domain/agent/entities.py`
-- [ ] T004 [P] Define memory domain exceptions (`MemoryNotFoundError`, `MemoryGuardrailViolationError`, `MemoryStorageError`) in `services/api/domain/agent/exceptions.py`
-- [ ] T005 [P] Define domain ports (`AgentMemoryRepositoryPort`, `MemoryAuditLogRepositoryPort`, `MemoryGuardrailPort`, `UserIntentClassifierPort`) in `services/api/domain/agent/ports.py`
-- [ ] T006 Implement dedicated TinyDB memory repository adapter (`TinyDBAgentMemoryRepository`) adhering to `AgentMemoryRepositoryPort` in `services/api/infrastructure/persistence/tinydb/agent_memory_repository.py`
-- [ ] T007 [P] Implement dedicated TinyDB audit log repository adapter (`TinyDBMemoryAuditLogRepository`) adhering to `MemoryAuditLogRepositoryPort` in `services/api/infrastructure/persistence/tinydb/memory_audit_log_repository.py`
-- [ ] T008 [P] Define presentation schemas and DTOs for proposals, carrier profiles, audit entries, and feedback in `services/api/presentation/schemas/agent.py`
-- [ ] T009 Register memory repository and port providers in FastAPI dependency injection container in `services/api/presentation/dependencies.py`
+- [X] T003 Define memory domain entities and value objects (`MemoryCategory`, `ProposalStatus`, `MemoryProposal`, `PersistentMemoryRecord`, `ConsolidatedCarrierProfile`, `MemoryAuditLogEntry`) in `services/api/domain/agent/entities.py`
+- [X] T004 [P] Define memory domain exceptions (`MemoryNotFoundError`, `MemoryGuardrailViolationError`, `MemoryStorageError`) in `services/api/domain/agent/exceptions.py`
+- [X] T005 [P] Define domain ports (`AgentMemoryRepositoryPort`, `MemoryAuditLogRepositoryPort`, `MemoryGuardrailPort`, `UserIntentClassifierPort`) in `services/api/domain/agent/ports.py`
+- [X] T006 Implement dedicated TinyDB memory repository adapter (`TinyDBAgentMemoryRepository`) adhering to `AgentMemoryRepositoryPort` in `services/api/infrastructure/persistence/tinydb/agent_memory_repository.py`
+- [X] T007 [P] Implement dedicated TinyDB audit log repository adapter (`TinyDBMemoryAuditLogRepository`) adhering to `MemoryAuditLogRepositoryPort` in `services/api/infrastructure/persistence/tinydb/memory_audit_log_repository.py`
+- [X] T008 [P] Define presentation schemas and DTOs for proposals, carrier profiles, audit entries, and feedback in `services/api/presentation/schemas/agent.py`
+- [X] T009 Register memory repository and port providers in FastAPI dependency injection container in `services/api/presentation/dependencies.py`
 
 **Checkpoint**: Foundation ready — domain models, ports, persistence adapters, and schemas are verified and ready for user story implementation.
 
@@ -51,15 +51,15 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [P] [US1] Unit test candidate detection, extraction heuristics, and structured single-call generation schemas in `services/api/tests/unit/test_memory_proposal_extractor.py`
-- [ ] T011 [P] [US1] Integration test for single-call candidate proposal generation and non-memorable query dismissal in `services/api/tests/integration/test_agent_memory_lifecycle.py`
+- [X] T010 [P] [US1] Unit test candidate detection, extraction heuristics, and structured single-call generation schemas in `services/api/tests/unit/test_memory_proposal_extractor.py`
+- [X] T011 [P] [US1] Integration test for single-call candidate proposal generation and non-memorable query dismissal in `services/api/tests/integration/test_agent_memory_lifecycle.py`
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Implement candidate extraction and proposal generation logic in `services/api/application/services/memory_service.py`
-- [ ] T013 [US1] Integrate single-call generation and candidate proposal attachment into `generation_node` within `services/api/application/services/agent_workflow.py`
-- [ ] T014 [US1] Update `SupportAgentService` to coordinate proposal lifecycle without persisting unconfirmed proposals in `services/api/application/services/support_agent_service.py`
-- [ ] T015 [US1] Update query response endpoint to include `memory_proposal` payload in `services/api/presentation/api/v1/agent.py`
+- [X] T012 [US1] Implement candidate extraction and proposal generation logic in `services/api/application/services/memory_service.py`
+- [X] T013 [US1] Integrate single-call generation and candidate proposal attachment into `generation_node` within `services/api/application/services/agent_workflow.py`
+- [X] T014 [US1] Update `SupportAgentService` to coordinate proposal lifecycle without persisting unconfirmed proposals in `services/api/application/services/support_agent_service.py`
+- [X] T015 [US1] Update query response endpoint to include `memory_proposal` payload in `services/api/presentation/api/v1/agent.py`
 
 **Checkpoint**: At this point, User Story 1 is fully functional and independently testable as an MVP increment.
 
@@ -75,18 +75,18 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T016 [P] [US2] Unit test explicit intent classification (`approve`, `reject`, `edit`, `unrelated_or_ambiguous`) and safe default discard in `services/api/tests/unit/test_intent_classification.py`
-- [ ] T017 [P] [US2] Contract and unit test immutable audit logging transitions in `services/api/tests/contract/test_memory_audit_log.py`
-- [ ] T018 [P] [US2] Integration test proposal confirmation, rejection, edit, and same-turn multi-intent query continuation in `services/api/tests/integration/test_agent_memory_lifecycle.py`
+- [X] T016 [P] [US2] Unit test explicit intent classification (`approve`, `reject`, `edit`, `unrelated_or_ambiguous`) and safe default discard in `services/api/tests/unit/test_intent_classification.py`
+- [X] T017 [P] [US2] Contract and unit test immutable audit logging transitions in `services/api/tests/contract/test_memory_audit_log.py`
+- [X] T018 [P] [US2] Integration test proposal confirmation, rejection, edit, and same-turn multi-intent query continuation in `services/api/tests/integration/test_agent_memory_lifecycle.py`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Implement `UserIntentClassifier` in `services/api/application/services/memory_service.py`
-- [ ] T020 [US2] Implement single active proposal queue enforcement (FR-012) in `services/api/application/services/memory_service.py`
-- [ ] T021 [US2] Integrate intent evaluation and proposal resolution (`approve`, `reject`, `edit`, `discard`) into `intake_node` within `services/api/application/services/agent_workflow.py`
-- [ ] T022 [US2] Implement multi-intent turn continuation (FR-015: resolve proposal and process residual operational query in same turn) in `services/api/application/services/agent_workflow.py`
-- [ ] T023 [US2] Wire immutable lifecycle audit logging (`proposed`, `approved`, `rejected`, `edited`, `discarded`) via `MemoryAuditLogRepositoryPort` in `services/api/application/services/support_agent_service.py`
-- [ ] T024 [US2] Implement proposal feedback/action REST endpoint (`POST /agent/proposals/{proposal_id}/feedback`) in `services/api/presentation/api/v1/agent.py`
+- [X] T019 [US2] Implement `UserIntentClassifier` in `services/api/application/services/memory_service.py`
+- [X] T020 [US2] Implement single active proposal queue enforcement (FR-012) in `services/api/application/services/memory_service.py`
+- [X] T021 [US2] Integrate intent evaluation and proposal resolution (`approve`, `reject`, `edit`, `discard`) into `intake_node` within `services/api/application/services/agent_workflow.py`
+- [X] T022 [US2] Implement multi-intent turn continuation (FR-015: resolve proposal and process residual operational query in same turn) in `services/api/application/services/agent_workflow.py`
+- [X] T023 [US2] Wire immutable lifecycle audit logging (`proposed`, `approved`, `rejected`, `edited`, `discarded`) via `MemoryAuditLogRepositoryPort` in `services/api/application/services/support_agent_service.py`
+- [X] T024 [US2] Implement proposal feedback/action REST endpoint (`POST /agent/proposals/{proposal_id}/feedback`) in `services/api/presentation/api/v1/agent.py`
 
 **Checkpoint**: At this point, User Stories 1 AND 2 are complete, robust against false approvals, and fully auditable.
 
@@ -102,15 +102,15 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T025 [P] [US3] Integration test verifying strict storage isolation (zero writes to Qdrant vector collections during memory lifecycle) in `services/api/tests/integration/test_memory_storage_isolation.py`
-- [ ] T026 [P] [US3] Integration test verifying cross-session memory recall and prompt integration in `services/api/tests/integration/test_agent_memory_lifecycle.py`
+- [X] T025 [P] [US3] Integration test verifying strict storage isolation (zero writes to Qdrant vector collections during memory lifecycle) in `services/api/tests/integration/test_memory_storage_isolation.py`
+- [X] T026 [P] [US3] Integration test verifying cross-session memory recall and prompt integration in `services/api/tests/integration/test_agent_memory_lifecycle.py`
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement memory search and recall extraction methods in `services/api/application/services/memory_service.py`
-- [ ] T028 [US3] Add memory recall retrieval step to agent workflow state and system prompt generation in `services/api/application/services/agent_workflow.py`
-- [ ] T029 [US3] Ensure memory recall citations and contextual sources are exposed in response DTO in `services/api/presentation/api/v1/agent.py`
-- [ ] T030 [US3] Validate and enforce strict read-only guarantees on static Qdrant knowledge access within `services/api/application/services/support_agent_service.py`
+- [X] T027 [US3] Implement memory search and recall extraction methods in `services/api/application/services/memory_service.py`
+- [X] T028 [US3] Add memory recall retrieval step to agent workflow state and system prompt generation in `services/api/application/services/agent_workflow.py`
+- [X] T029 [US3] Ensure memory recall citations and contextual sources are exposed in response DTO in `services/api/presentation/api/v1/agent.py`
+- [X] T030 [US3] Validate and enforce strict read-only guarantees on static Qdrant knowledge access within `services/api/application/services/support_agent_service.py`
 
 **Checkpoint**: At this point, User Stories 1, 2, and 3 provide a complete cross-session operational memory loop with zero vector store pollution.
 
@@ -126,16 +126,16 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T031 [P] [US4] Unit test anti-poisoning guardrails and sensitive data rejection (B2C addresses, warehouse paths, unverified contracts) in `services/api/tests/unit/test_memory_guardrails.py`
-- [ ] T032 [P] [US4] Unit test carrier-country memory consolidation, deduplication, and TTL expiration logic in `services/api/tests/unit/test_memory_consolidation.py`
+- [X] T031 [P] [US4] Unit test anti-poisoning guardrails and sensitive data rejection (B2C addresses, warehouse paths, unverified contracts) in `services/api/tests/unit/test_memory_guardrails.py`
+- [X] T032 [P] [US4] Unit test carrier-country memory consolidation, deduplication, and TTL expiration logic in `services/api/tests/unit/test_memory_consolidation.py`
 
 ### Implementation for User Story 4
 
-- [ ] T033 [US4] Implement sensitive data filtering and anti-poisoning guardrails (`MemoryGuardrailValidator`) in `services/api/application/services/memory_guardrails.py`
-- [ ] T034 [US4] Integrate guardrail validation into candidate evaluation pipeline in `services/api/application/services/memory_service.py`
-- [ ] T035 [US4] Implement carrier-country profile consolidation logic (grouping by carrier + country, max 20 constraints) in `services/api/application/services/memory_service.py`
-- [ ] T036 [US4] Implement TTL eviction routine (14-day default for incident contexts) in `services/api/application/services/memory_service.py`
-- [ ] T037 [US4] Implement carrier profile and audit log inspection REST endpoints (`GET /memory/carriers/{carrier}/{country_code}`, `GET /memory/audit-logs`) in `services/api/presentation/api/v1/memory.py`
+- [X] T033 [US4] Implement sensitive data filtering and anti-poisoning guardrails (`MemoryGuardrailValidator`) in `services/api/application/services/memory_guardrails.py`
+- [X] T034 [US4] Integrate guardrail validation into candidate evaluation pipeline in `services/api/application/services/memory_service.py`
+- [X] T035 [US4] Implement carrier-country profile consolidation logic (grouping by carrier + country, max 20 constraints) in `services/api/application/services/memory_service.py`
+- [X] T036 [US4] Implement TTL eviction routine (14-day default for incident contexts) in `services/api/application/services/memory_service.py`
+- [X] T037 [US4] Implement carrier profile and audit log inspection REST endpoints (`GET /memory/carriers/{carrier}/{country_code}`, `GET /memory/audit-logs`) in `services/api/presentation/api/v1/memory.py`
 
 **Checkpoint**: All user stories are complete, consolidated, protected against poisoning, and bounded against memory growth.
 
@@ -145,9 +145,9 @@
 
 **Purpose**: Verification against quickstart scenarios, code cleanup, and documentation alignment.
 
-- [ ] T038 [P] Execute and validate all scenarios from `specs/029-agent-memory-self-improvement/quickstart.md`
-- [ ] T039 [P] Update OpenAPI specifications and route documentation in `specs/029-agent-memory-self-improvement/contracts/agent-memory-api.yaml`
-- [ ] T040 Verify monorepo quality gates, static type compliance, and zero test regressions across `services/api/tests/`
+- [X] T038 [P] Execute and validate all scenarios from `specs/029-agent-memory-self-improvement/quickstart.md`
+- [X] T039 [P] Update OpenAPI specifications and route documentation in `specs/029-agent-memory-self-improvement/contracts/agent-memory-api.yaml`
+- [X] T040 Verify monorepo quality gates, static type compliance, and zero test regressions across `services/api/tests/`
 
 ---
 

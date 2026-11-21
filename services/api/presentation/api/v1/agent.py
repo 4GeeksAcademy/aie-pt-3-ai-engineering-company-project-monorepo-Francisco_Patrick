@@ -12,17 +12,30 @@ from fastapi import APIRouter, Depends, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
+from typing import Any
 from domain.agent.entities import AgentQueryRequest
-from domain.agent.exceptions import TraceNotFoundError, WorkflowExecutionError
+from domain.agent.exceptions import (
+    MemoryGuardrailViolationError,
+    MemoryNotFoundError,
+    TraceNotFoundError,
+    WorkflowExecutionError,
+)
 from domain.agent.ports import SupportAgentServicePort
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
-from presentation.dependencies import get_support_agent_service
+from presentation.dependencies import (
+    get_agent_memory_service_dep,
+    get_support_agent_service,
+)
 from presentation.schemas.agent import (
     AgentHealthResponseSchema,
     AgentQueryRequestSchema,
     AgentQueryResponseSchema,
     AgentTraceResponseSchema,
     KnowledgeSourceCitationSchema,
+    MemoryProposalFeedbackRequestSchema,
+    MemoryProposalFeedbackResponseSchema,
+    MemoryProposalResponseSchema,
+    MemoryProposalSchema,
     SanitizedErrorResponse,
     ToolCallTraceSchema,
 )
@@ -97,6 +110,22 @@ async def query_support_agent(
         if isinstance(tc, dict)
     ]
 
+    proposal_obj = getattr(result, "memory_proposal", None)
+    proposal_schema = (
+        MemoryProposalSchema(
+            proposal_id=proposal_obj.proposal_id,
+            category=proposal_obj.category,
+            target_entity=proposal_obj.target_entity,
+            country_code=proposal_obj.country_code,
+            summary=proposal_obj.summary,
+            status=proposal_obj.status,
+            confidence=proposal_obj.confidence,
+            created_at=proposal_obj.created_at.isoformat(),
+        )
+        if proposal_obj is not None
+        else None
+    )
+
     return AgentQueryResponseSchema(
         query=result.query,
         answer=result.answer,
@@ -112,9 +141,90 @@ async def query_support_agent(
         ],
         sources_consulted=list(getattr(result, "sources_consulted", [])),
         tool_calls=tool_call_schemas,
+        memory_proposal=proposal_schema,
+        recalled_memories=list(getattr(result, "recalled_memories", [])),
         trace_id=result.trace_id,
         node_sequence=result.node_sequence,
         execution_time_ms=result.execution_time_ms,
+    )
+
+
+@router.get(
+    "/proposals/pending",
+    response_model=MemoryProposalResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve active pending memory proposal for a session/thread",
+)
+async def get_pending_proposal(
+    thread_id: str,
+    memory_service: Any = Depends(get_agent_memory_service_dep),
+) -> MemoryProposalResponseSchema:
+    """Return the active pending memory proposal for `thread_id`, or null if none is active."""
+    proposal = await run_in_threadpool(memory_service.get_pending_proposal, thread_id)
+    if proposal is None:
+        return MemoryProposalResponseSchema(proposal=None)
+    return MemoryProposalResponseSchema(
+        proposal=MemoryProposalSchema(
+            proposal_id=proposal.proposal_id,
+            category=proposal.category,
+            target_entity=proposal.target_entity,
+            country_code=proposal.country_code,
+            summary=proposal.summary,
+            status=proposal.status,
+            confidence=proposal.confidence,
+            created_at=proposal.created_at.isoformat(),
+        )
+    )
+
+
+@router.post(
+    "/proposals/{proposal_id}/feedback",
+    response_model=MemoryProposalFeedbackResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Submit explicit feedback on an active memory proposal (T024)",
+    responses={
+        400: {"model": SanitizedErrorResponse, "description": "Guardrail violation"},
+        404: {"model": SanitizedErrorResponse, "description": "Proposal not found"},
+    },
+)
+async def submit_proposal_feedback(
+    proposal_id: str,
+    payload: MemoryProposalFeedbackRequestSchema,
+    memory_service: Any = Depends(get_agent_memory_service_dep),
+) -> MemoryProposalFeedbackResponseSchema | JSONResponse:
+    """Apply explicit out-of-band operator feedback (approve, reject, edit) to a memory proposal."""
+    try:
+        outcome = await run_in_threadpool(
+            memory_service.apply_explicit_feedback,
+            proposal_id,
+            payload.action,
+            payload.refined_content,
+            payload.operator_id,
+        )
+    except MemoryNotFoundError:
+        err = SanitizedErrorResponse(
+            detail=f"Active memory proposal '{proposal_id}' was not found.",
+            error_code="PROPOSAL_NOT_FOUND",
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=err.model_dump(),
+        )
+    except MemoryGuardrailViolationError as exc:
+        err = SanitizedErrorResponse(
+            detail=exc.reason,
+            error_code=exc.violation_code,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=err.model_dump(),
+        )
+
+    return MemoryProposalFeedbackResponseSchema(
+        proposal_id=str(outcome["proposal_id"]),
+        status=outcome["status"],
+        resulting_action=str(outcome["resulting_action"]),
+        committed_memory_id=outcome.get("committed_memory_id"),
     )
 
 

@@ -45,6 +45,7 @@ from domain.agent.entities import (
     InventoryRecordDTO,
     InventoryToolInput,
     InventoryToolOutput,
+    MemoryProposal,
     RetrievedContext,
     SourceCitation,
     TicketRecordDTO,
@@ -360,15 +361,19 @@ def classify_and_plan_query(
     return (selected_sources, ticket_input, inventory_input)
 
 
-def intake_node(state: AgentState) -> AgentState:
-    """Single-responsibility intake node for input validation, sanitization, autonomous routing, and trace initialization.
+def intake_node(
+    state: AgentState,
+    memory_service: Optional[Any] = None,
+) -> AgentState:
+    """Single-responsibility intake node for input validation, sanitization, memory intent resolution, recall, autonomous routing, and trace initialization.
 
     Args:
         state: Incoming AgentState dictionary.
+        memory_service: Optional AgentMemoryService for pending proposal resolution and cross-session memory recall.
 
     Returns:
         Updated AgentState with sanitized query, canonical `selected_sources`, extracted tool inputs,
-        initialized `trace_id`, `node_history`, and `step_latencies`.
+        `recalled_memories`, `proposal_resolution`, initialized `trace_id`, `node_history`, and `step_latencies`.
     """
     start_ns = time.perf_counter()
 
@@ -376,6 +381,7 @@ def intake_node(state: AgentState) -> AgentState:
     sanitized_query = sanitize_agent_query(raw_query)
 
     trace_id = state.get("trace_id") or str(uuid.uuid4())
+    thread_id = state.get("thread_id") or trace_id
     raw_top_k = state.get("top_k", 3)
     top_k = max(1, min(20, int(raw_top_k if raw_top_k is not None else 3)))
 
@@ -396,28 +402,66 @@ def intake_node(state: AgentState) -> AgentState:
     node_history = list(state.get("node_history") or [])
     node_history.append("intake")
 
-    is_invalid = len(sanitized_query) < MIN_QUERY_LENGTH
-    is_mutation = False if is_invalid else detect_mutation_attempt(sanitized_query)
+    # 1. Evaluate pending memory proposal if active on this thread (T021, T022, FR-011, FR-013, FR-015)
+    proposal_resolution: Optional[Dict[str, Any]] = state.get("proposal_resolution")
+    effective_query = sanitized_query
+    if memory_service is not None and len(sanitized_query) >= 2:
+        pending = memory_service.get_pending_proposal(thread_id)
+        if pending is not None:
+            proposal_resolution = memory_service.resolve_pending_proposal(
+                thread_id=thread_id,
+                user_message=sanitized_query,
+            )
+            if proposal_resolution is not None:
+                residual = proposal_resolution.get("residual_query")
+                if residual:
+                    effective_query = sanitize_agent_query(str(residual))
+
+    is_invalid = len(sanitized_query) < MIN_QUERY_LENGTH and proposal_resolution is None
+    is_mutation = (
+        False
+        if is_invalid or proposal_resolution is not None
+        else detect_mutation_attempt(effective_query)
+    )
     is_refusal = bool(is_invalid or is_mutation)
+
+    sources_consulted = list(state.get("sources_consulted") or [])
+    recalled_memories: List[str] = list(state.get("recalled_memories") or [])
 
     if is_refusal:
         selected_sources: List[str] = []
         ticket_input: Optional[TicketToolInput] = None
         inventory_input: Optional[InventoryToolInput] = None
     else:
-        selected_sources, ticket_input, inventory_input = classify_and_plan_query(
-            sanitized_query
-        )
-        # Preserve caller-supplied tool inputs when explicitly pre-populated in unit tests
-        if state.get("ticket_tool_input") is not None:
-            ticket_input = state.get("ticket_tool_input")
-        if state.get("inventory_tool_input") is not None:
-            inventory_input = state.get("inventory_tool_input")
-        if state.get("selected_sources"):
-            raw_selected = list(state.get("selected_sources") or [])
-            selected_sources = [
-                src for src in CANONICAL_SOURCE_ORDER if src in raw_selected
-            ] or selected_sources
+        # 2. Cross-session memory recall (T028, FR-006, FR-007)
+        if memory_service is not None and not recalled_memories:
+            recalled_memories = memory_service.recall_relevant_memories(effective_query)
+            if recalled_memories and "agent_memory" not in sources_consulted:
+                sources_consulted.append("agent_memory")
+
+        # If this turn purely resolved a pending proposal with no residual operational question,
+        # skip tool/RAG lookups and route straight to generation (or retrieval->generation).
+        if (
+            proposal_resolution is not None
+            and not proposal_resolution.get("residual_query")
+        ):
+            selected_sources = []
+            ticket_input = None
+            inventory_input = None
+        else:
+            selected_sources, ticket_input, inventory_input = classify_and_plan_query(
+                effective_query
+            )
+            # Preserve caller-supplied tool inputs when explicitly pre-populated in unit tests
+            if state.get("ticket_tool_input") is not None:
+                ticket_input = state.get("ticket_tool_input")
+            if state.get("inventory_tool_input") is not None:
+                inventory_input = state.get("inventory_tool_input")
+            if state.get("selected_sources"):
+                raw_selected = list(state.get("selected_sources") or [])
+                selected_sources = [
+                    src for src in CANONICAL_SOURCE_ORDER if src in raw_selected
+                ] or selected_sources
 
     elapsed_ms = max(0.01, round((time.perf_counter() - start_ns) * 1000.0, 3))
     step_latencies = dict(state.get("step_latencies") or {})
@@ -426,6 +470,7 @@ def intake_node(state: AgentState) -> AgentState:
     node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
     node_outputs["intake"] = {
         "query": sanitized_query,
+        "effective_query": effective_query,
         "language": language,
         "top_k": top_k,
         "min_score": min_score,
@@ -434,15 +479,26 @@ def intake_node(state: AgentState) -> AgentState:
         "selected_sources": list(selected_sources),
         "ticket_tool_input": ticket_input.to_dict() if ticket_input else None,
         "inventory_tool_input": inventory_input.to_dict() if inventory_input else None,
+        "recalled_memories_count": len(recalled_memories),
+        "proposal_resolution": (
+            {
+                "status": proposal_resolution.get("status"),
+                "classified_intent": proposal_resolution.get("classified_intent"),
+                "resulting_action": proposal_resolution.get("resulting_action"),
+            }
+            if proposal_resolution
+            else None
+        ),
     }
 
     return {
         "query": sanitized_query,
+        "thread_id": thread_id,
         "language": language,
         "top_k": top_k,
         "min_score": min_score,
         "selected_sources": selected_sources,
-        "sources_consulted": list(state.get("sources_consulted") or []),
+        "sources_consulted": sources_consulted,
         "ticket_tool_input": ticket_input,
         "ticket_tool_output": state.get("ticket_tool_output"),
         "inventory_tool_input": inventory_input,
@@ -458,6 +514,10 @@ def intake_node(state: AgentState) -> AgentState:
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
         "error": state.get("error"),
+        "pending_proposal": state.get("pending_proposal"),
+        "memory_proposal": state.get("memory_proposal"),
+        "recalled_memories": recalled_memories,
+        "proposal_resolution": proposal_resolution,
     }
 
 
@@ -898,78 +958,117 @@ def generation_node(
     state: AgentState,
     llm_generator: LLMGenerationPort,
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
+    memory_service: Optional[Any] = None,
 ) -> AgentState:
-    """Single-responsibility generation node synthesizing grounded answers from pre-retrieved contexts and/or live operational tool outputs.
+    """Single-responsibility generation node synthesizing grounded answers from pre-retrieved contexts, live operational tool outputs, and recalled operational memories.
 
-    Strictly separated from retrieval and operational services (FR-004): consumes only
-    `state['contexts']`, `state['ticket_tool_output']`, `state['inventory_tool_output']`,
-    and `state['fallback_messages']` without invoking external adapters.
+    Also performs single-call memory candidate evaluation (< 100ms, zero secondary LLMs) (T013, FR-008, FR-010).
 
     Args:
         state: Current AgentState.
         llm_generator: LLMGenerationPort implementation.
         guardrail_validator: Optional BusinessGuardrailValidator instance.
+        memory_service: Optional AgentMemoryService for single-call proposal attachment.
 
     Returns:
-        Updated AgentState with `answer`, `is_refusal=False`, `sources`, `node_history`, `step_latencies`, and `node_outputs`.
+        Updated AgentState with `answer`, `is_refusal=False`, `sources`, `memory_proposal`, `node_history`, `step_latencies`, and `node_outputs`.
     """
     start_ns = time.perf_counter()
     validator = guardrail_validator or BusinessGuardrailValidator()
 
     query = state.get("query") or ""
     language = state.get("language") or "en"
+    thread_id = state.get("thread_id") or state.get("trace_id")
     contexts: List[RetrievedContext] = list(state.get("contexts") or [])
     ticket_out = state.get("ticket_tool_output")
     inv_out = state.get("inventory_tool_output")
     fallback_messages: List[str] = list(state.get("fallback_messages") or [])
+    recalled_memories: List[str] = list(state.get("recalled_memories") or [])
+    proposal_resolution: Optional[Dict[str, Any]] = state.get("proposal_resolution")
 
     segments: List[str] = []
     citations: List[SourceCitation] = []
+    memory_proposal: Optional[MemoryProposal] = state.get("memory_proposal")
 
-    if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
-        segments.append(_format_ticket_records_summary(ticket_out))
+    # 1. Include proposal disposition acknowledgment if a pending proposal was resolved in this turn
+    pure_proposal_turn = False
+    if proposal_resolution is not None:
+        ack_text = proposal_resolution.get("acknowledgment_text")
+        intent = proposal_resolution.get("classified_intent")
+        if ack_text and intent in ("approve", "reject", "edit"):
+            segments.append(str(ack_text))
+        if proposal_resolution.get("status") == "edited":
+            memory_proposal = proposal_resolution.get("updated_proposal")
+        if not proposal_resolution.get("residual_query"):
+            pure_proposal_turn = True
 
-    if inv_out is not None and inv_out.status == "success" and inv_out.records:
-        segments.append(_format_inventory_records_summary(inv_out))
-
-    if fallback_messages:
-        segments.append(" ".join(fallback_messages))
-
-    if contexts:
-        try:
-            enforced_rag_answer, rag_citations = rag_generate_answer(
-                question=query,
-                context=contexts,
-                llm_generator=llm_generator,
-                guardrail_validator=validator,
-                language=language,
+    # 2. Include recalled cross-session operational memories (T028, US3)
+    if recalled_memories and not pure_proposal_turn:
+        recalled_text = (
+            "Operational Memory Context (Confirmed Cross-Session Rules):\n"
+            + "\n".join(
+                f"- {mem} ( recommend using local carrier alternatives accordingly )"
+                for mem in recalled_memories
             )
-            segments.append(enforced_rag_answer)
-            citations = list(rag_citations)
-        except Exception as exc:
-            raise WorkflowExecutionError(
-                message="Answer generation failed during support agent execution.",
-                trace_id=state.get("trace_id"),
-            ) from exc
-    elif not segments:
-        # Defensive fallback if generation_node is invoked directly with empty state
-        try:
-            enforced_rag_answer, rag_citations = rag_generate_answer(
-                question=query,
-                context=contexts,
-                llm_generator=llm_generator,
-                guardrail_validator=validator,
-                language=language,
-            )
-            segments.append(enforced_rag_answer)
-            citations = list(rag_citations)
-        except Exception as exc:
-            raise WorkflowExecutionError(
-                message="Answer generation failed during support agent execution.",
-                trace_id=state.get("trace_id"),
-            ) from exc
+        )
+        segments.append(recalled_text)
+
+    if not pure_proposal_turn:
+        if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
+            segments.append(_format_ticket_records_summary(ticket_out))
+
+        if inv_out is not None and inv_out.status == "success" and inv_out.records:
+            segments.append(_format_inventory_records_summary(inv_out))
+
+        if fallback_messages:
+            segments.append(" ".join(fallback_messages))
+
+        if contexts:
+            try:
+                enforced_rag_answer, rag_citations = rag_generate_answer(
+                    question=query,
+                    context=contexts,
+                    llm_generator=llm_generator,
+                    guardrail_validator=validator,
+                    language=language,
+                )
+                segments.append(enforced_rag_answer)
+                citations = list(rag_citations)
+            except Exception as exc:
+                raise WorkflowExecutionError(
+                    message="Answer generation failed during support agent execution.",
+                    trace_id=state.get("trace_id"),
+                ) from exc
+        elif not segments:
+            # Defensive fallback if generation_node is invoked directly with empty state
+            try:
+                enforced_rag_answer, rag_citations = rag_generate_answer(
+                    question=query,
+                    context=contexts,
+                    llm_generator=llm_generator,
+                    guardrail_validator=validator,
+                    language=language,
+                )
+                segments.append(enforced_rag_answer)
+                citations = list(rag_citations)
+            except Exception as exc:
+                raise WorkflowExecutionError(
+                    message="Answer generation failed during support agent execution.",
+                    trace_id=state.get("trace_id"),
+                ) from exc
 
     final_answer = "\n\n".join(seg for seg in segments if seg).strip()
+
+    # 3. Single-call memory candidate evaluation and proposal prompt attachment (T013, FR-008, FR-010, FR-012)
+    if memory_service is not None and proposal_resolution is None:
+        candidate_proposal, final_answer = memory_service.evaluate_turn_for_proposal(
+            user_message=query,
+            base_answer=final_answer,
+            thread_id=thread_id,
+            language=language,
+        )
+        if candidate_proposal is not None:
+            memory_proposal = candidate_proposal
 
     node_history = list(state.get("node_history") or [])
     node_history.append("generation")
@@ -991,12 +1090,16 @@ def generation_node(
             }
             for c in citations
         ],
+        "memory_proposal": memory_proposal.to_dict() if memory_proposal else None,
+        "recalled_memories": list(recalled_memories),
     }
 
     return {
         "answer": final_answer,
         "is_refusal": False,
         "sources": citations,
+        "memory_proposal": memory_proposal,
+        "recalled_memories": recalled_memories,
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
@@ -1183,8 +1286,11 @@ def route_after_retrieval(
     has_succeeded_tool = (
         ticket_out is not None and ticket_out.status == "success"
     ) or (inv_out is not None and inv_out.status == "success")
+    has_memory_context = bool(
+        state.get("proposal_resolution") or state.get("recalled_memories")
+    )
 
-    if not qualified and not has_succeeded_tool:
+    if not qualified and not has_succeeded_tool and not has_memory_context:
         return "refusal"
     return "generation"
 
@@ -1259,9 +1365,21 @@ def create_retrieval_node(
     return _bound_retrieval
 
 
+def create_intake_node(
+    memory_service: Optional[Any] = None,
+) -> Callable[[AgentState], AgentState]:
+    """Create a bound single-argument intake node function for LangGraph registration."""
+
+    def _bound_intake(state: AgentState) -> AgentState:
+        return intake_node(state=state, memory_service=memory_service)
+
+    return _bound_intake
+
+
 def create_generation_node(
     llm_generator: LLMGenerationPort,
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
+    memory_service: Optional[Any] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument generation node function for LangGraph registration."""
 
@@ -1270,6 +1388,7 @@ def create_generation_node(
             state=state,
             llm_generator=llm_generator,
             guardrail_validator=guardrail_validator,
+            memory_service=memory_service,
         )
 
     return _bound_generation
@@ -1376,6 +1495,7 @@ def build_support_agent_graph(
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
     checkpointer: Optional[BaseCheckpointSaver] = None,
     default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
+    memory_service: Optional[Any] = None,
 ) -> CompiledStateGraph:
     """Assemble, validate, and compile the 7-node TrackFlow Support Agent LangGraph state machine.
 
@@ -1423,7 +1543,12 @@ def build_support_agent_graph(
 
     workflow = StateGraph(AgentState)
 
-    workflow.add_node("intake", intake_node)
+    workflow.add_node(
+        "intake",
+        create_intake_node(memory_service=memory_service)
+        if memory_service is not None
+        else intake_node,
+    )
     workflow.add_node(
         "ticket_tool",
         create_ticket_tool_node(ticket_tool=resolved_ticket_tool),
@@ -1446,6 +1571,7 @@ def build_support_agent_graph(
         create_generation_node(
             llm_generator=llm_generator,
             guardrail_validator=guardrail_validator,
+            memory_service=memory_service,
         ),
     )
     workflow.add_node("refusal", refusal_node)
