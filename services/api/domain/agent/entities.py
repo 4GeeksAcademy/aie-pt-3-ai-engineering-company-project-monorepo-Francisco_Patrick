@@ -8,7 +8,7 @@ strictly read-only operational tool input/output contracts (`TicketToolInput`,
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
 
 from domain.knowledge.entities import (
     KnowledgeChunk,
@@ -23,6 +23,29 @@ IntentOutcome = Literal["approve", "reject", "edit", "unrelated_or_ambiguous"]
 AuditEventType = Literal[
     "proposed", "approved", "rejected", "edited", "discarded", "evicted"
 ]
+GuardrailLayer = Literal[
+    "input_guard",
+    "authorization_guard",
+    "context_sanitizer",
+    "output_guard",
+]
+GuardrailAction = Literal["allow", "redirect", "block"]
+GuardrailFailureCategory = Literal["none", "structural", "content", "security"]
+GuardrailFailureType = Literal["structural", "content", "security"]
+GuardrailDisposition = Literal["blocked", "redirected"]
+GuardrailInputCategory = Literal[
+    "in_domain",
+    "casual_trivia",
+    "personal_task",
+    "jailbreak_attempt",
+    "unauthorized_order",
+    "policy_mismatch",
+    "restricted_data_leak",
+    "external_injection",
+    "malformed_output",
+]
+CustomerSegment = Literal["B2B", "B2C"]
+OperatingCountry = Literal["US", "ES"]
 
 
 def _parse_iso_datetime(val: Any) -> datetime:
@@ -387,6 +410,167 @@ class InventoryToolOutput:
         }
 
 
+@dataclass(frozen=True)
+class AuthenticatedSessionContext:
+    """Represents the caller's verified identity, operational jurisdiction, and authorized order scope (FR-007, FR-008)."""
+
+    session_id: str
+    customer_id: str
+    customer_segment: CustomerSegment = "B2C"
+    primary_operating_country: OperatingCountry = "US"
+    authorized_order_ids: Tuple[str, ...] = ()
+    order_country_map: Dict[str, OperatingCountry] = field(default_factory=dict)
+
+    @staticmethod
+    def normalize_order_id(raw_order_id: str) -> str:
+        """Normalize an order or tracking ID (strip whitespace, leading '#', and uppercase)."""
+        cleaned = (raw_order_id or "").strip().lstrip("#").strip().upper()
+        return cleaned
+
+    def is_order_authorized(self, order_id: str) -> bool:
+        """Return True if the given order/tracking identifier belongs to this authenticated session."""
+        target = self.normalize_order_id(order_id)
+        if not target:
+            return False
+        normalized_authorized = {
+            self.normalize_order_id(item) for item in self.authorized_order_ids if item
+        }
+        if target in normalized_authorized:
+            return True
+        # Also allow matching bare numeric ID against 'ORD-<digits>' or 'TRK-<digits>' if normalized
+        for auth_id in normalized_authorized:
+            if auth_id.endswith(f"-{target}") or target.endswith(f"-{auth_id}"):
+                return True
+        return False
+
+    def resolve_order_country(
+        self,
+        order_id: Optional[str] = None,
+        explicit_location_country: Optional[OperatingCountry] = None,
+    ) -> OperatingCountry:
+        """Resolve authoritative country ('US' or 'ES') for an inquiry (FR-008).
+
+        Precedence:
+        1. Referenced order's entry in `order_country_map`.
+        2. Explicit fulfillment location in the request (`explicit_location_country`).
+        3. Fallback to `primary_operating_country`.
+        """
+        if order_id:
+            target = self.normalize_order_id(order_id)
+            for key, country in (self.order_country_map or {}).items():
+                norm_key = self.normalize_order_id(key)
+                if norm_key == target or norm_key.endswith(f"-{target}") or target.endswith(f"-{norm_key}"):
+                    if country in ("US", "ES"):
+                        return country
+        if explicit_location_country in ("US", "ES"):
+            return explicit_location_country
+        if self.primary_operating_country in ("US", "ES"):
+            return self.primary_operating_country
+        return "US"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize session context to a JSON-compatible dictionary."""
+        return {
+            "session_id": self.session_id,
+            "customer_id": self.customer_id,
+            "customer_segment": self.customer_segment,
+            "primary_operating_country": self.primary_operating_country,
+            "authorized_order_ids": list(self.authorized_order_ids),
+            "order_country_map": dict(self.order_country_map),
+        }
+
+
+@dataclass(frozen=True)
+class GuardrailEvaluationResult:
+    """Deterministic decision produced by an input, authorization, context-sanitization, or output guardrail layer (FR-003)."""
+
+    layer: GuardrailLayer
+    action: GuardrailAction
+    failure_category: GuardrailFailureCategory
+    input_category: GuardrailInputCategory
+    reason_code: str
+    message: Optional[str] = None
+    sanitized_text: Optional[str] = None
+    resolved_country: Optional[OperatingCountry] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize evaluation result to a dictionary."""
+        return {
+            "layer": self.layer,
+            "action": self.action,
+            "failure_category": self.failure_category,
+            "input_category": self.input_category,
+            "reason_code": self.reason_code,
+            "message": self.message,
+            "sanitized_text": self.sanitized_text,
+            "resolved_country": self.resolved_country,
+            "metadata": dict(self.metadata or {}),
+        }
+
+
+@dataclass(frozen=True)
+class GuardrailAuditEvent:
+    """Immutable structured observability record logged whenever a guardrail blocks or redirects (FR-011)."""
+
+    event_id: str
+    timestamp: datetime
+    session_id: str
+    failure_type: GuardrailFailureType
+    layer: GuardrailLayer
+    input_category: GuardrailInputCategory
+    reason_code: str
+    disposition: GuardrailDisposition
+    redacted_preview: str
+    trace_id: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize audit event to a JSON-compatible dictionary."""
+        return {
+            "event_id": self.event_id,
+            "timestamp": self.timestamp.isoformat(),
+            "session_id": self.session_id,
+            "trace_id": self.trace_id,
+            "failure_type": self.failure_type,
+            "layer": self.layer,
+            "input_category": self.input_category,
+            "reason_code": self.reason_code,
+            "disposition": self.disposition,
+            "redacted_preview": self.redacted_preview,
+            "metadata": dict(self.metadata or {}),
+        }
+
+
+@dataclass(frozen=True)
+class GuardrailSummaryReport:
+    """Aggregated observability metric view returned by REST and CLI summary interfaces (FR-012)."""
+
+    total_evaluations: int
+    total_interventions: int
+    by_failure_type: Dict[str, int]
+    by_layer: Dict[str, int]
+    by_input_category: Dict[str, int]
+    by_disposition: Dict[str, int]
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+    recent_events: List[GuardrailAuditEvent] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize summary report to a JSON-compatible dictionary."""
+        return {
+            "total_evaluations": self.total_evaluations,
+            "total_interventions": self.total_interventions,
+            "by_failure_type": dict(self.by_failure_type),
+            "by_layer": dict(self.by_layer),
+            "by_input_category": dict(self.by_input_category),
+            "by_disposition": dict(self.by_disposition),
+            "window_start": self.window_start.isoformat() if self.window_start else None,
+            "window_end": self.window_end.isoformat() if self.window_end else None,
+            "recent_events": [ev.to_dict() for ev in self.recent_events],
+        }
+
+
 class AgentState(TypedDict, total=False):
     """Minimal state dictionary transferred between LangGraph nodes during a single run.
 
@@ -420,6 +604,14 @@ class AgentState(TypedDict, total=False):
     memory_proposal: Optional[MemoryProposal]
     recalled_memories: List[str]
     proposal_resolution: Optional[Dict[str, Any]]
+    session_context: Optional[AuthenticatedSessionContext]
+    resolved_country: Optional[OperatingCountry]
+    guardrail_action: Optional[GuardrailAction]
+    guardrail_failure_category: Optional[GuardrailFailureCategory]
+    guardrail_reason_code: Optional[str]
+    guardrail_message: Optional[str]
+    casual_redirect_required: bool
+    guardrail_events: List[GuardrailAuditEvent]
 
 
 @dataclass(frozen=True)
@@ -431,6 +623,7 @@ class AgentQueryRequest:
     min_score: float = 0.62
     thread_id: Optional[str] = None
     language: str = "en"
+    session_context: Optional[AuthenticatedSessionContext] = None
 
 
 @dataclass(frozen=True)
@@ -449,6 +642,8 @@ class AgentQueryResult:
     tool_calls: List[Dict[str, Any]] = field(default_factory=list)
     memory_proposal: Optional[MemoryProposal] = None
     recalled_memories: List[str] = field(default_factory=list)
+    guardrail_interventions: List[GuardrailAuditEvent] = field(default_factory=list)
+    resolved_country: Optional[OperatingCountry] = None
 
 
 @dataclass(frozen=True)
@@ -490,7 +685,18 @@ __all__ = [
     "AgentState",
     "AgentTrace",
     "AuditEventType",
+    "AuthenticatedSessionContext",
     "ConsolidatedCarrierProfile",
+    "CustomerSegment",
+    "GuardrailAction",
+    "GuardrailAuditEvent",
+    "GuardrailDisposition",
+    "GuardrailEvaluationResult",
+    "GuardrailFailureCategory",
+    "GuardrailFailureType",
+    "GuardrailInputCategory",
+    "GuardrailLayer",
+    "GuardrailSummaryReport",
     "IntentOutcome",
     "InventoryRecordDTO",
     "InventoryToolInput",
@@ -500,6 +706,7 @@ __all__ = [
     "MemoryCategory",
     "MemoryGuardrailVerdict",
     "MemoryProposal",
+    "OperatingCountry",
     "PersistentMemoryRecord",
     "ProposalStatus",
     "RetrievedContext",

@@ -7,20 +7,25 @@ tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace stor
 
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from domain.agent.entities import (
     AgentCheckpoint,
     AgentQueryRequest,
     AgentQueryResult,
     AgentTrace,
+    AuthenticatedSessionContext,
     ConsolidatedCarrierProfile,
+    GuardrailAuditEvent,
+    GuardrailEvaluationResult,
+    GuardrailSummaryReport,
     InventoryToolInput,
     InventoryToolOutput,
     MemoryAuditLogEntry,
     MemoryCategory,
     MemoryGuardrailVerdict,
     PersistentMemoryRecord,
+    RetrievedContext,
     TicketToolInput,
     TicketToolOutput,
     UserIntentClassification,
@@ -297,11 +302,124 @@ class UserIntentClassifierPort(ABC):
         """
 
 
+class InputGuardrailPort(ABC):
+    """Pre-execution input guardrail port enforcing system authority and domain scope (FR-003..FR-006)."""
+
+    @abstractmethod
+    def evaluate_input(
+        self,
+        query: str,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
+
+
+class AuthorizationGuardrailPort(ABC):
+    """Guardrail port enforcing session-scoped order authorization and US/Spain policy separation (FR-007, FR-008)."""
+
+    @abstractmethod
+    def evaluate_authorization_and_policy(
+        self,
+        query: str,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Verify order ownership against `session_context` and prevent cross-country policy mixing."""
+
+
+class ContextSanitizerPort(ABC):
+    """Two-tier external content sanitizer isolating RAG chunks and tool payloads from system authority (FR-009)."""
+
+    @abstractmethod
+    def sanitize_text_chunk(
+        self,
+        text: str,
+        source_label: str,
+    ) -> GuardrailEvaluationResult:
+        """Apply two-tier defense to an external text snippet."""
+
+    @abstractmethod
+    def sanitize_rag_contexts(
+        self,
+        contexts: List[RetrievedContext],
+    ) -> Tuple[List[RetrievedContext], List[GuardrailEvaluationResult]]:
+        """Sanitize a list of RetrievedContext chunks, dropping quarantined Tier-2 chunks."""
+
+    @abstractmethod
+    def sanitize_ticket_output(
+        self,
+        output: TicketToolOutput,
+    ) -> Tuple[TicketToolOutput, List[GuardrailEvaluationResult]]:
+        """Sanitize descriptions/titles inside TicketToolOutput records."""
+
+    @abstractmethod
+    def sanitize_inventory_output(
+        self,
+        output: InventoryToolOutput,
+    ) -> Tuple[InventoryToolOutput, List[GuardrailEvaluationResult]]:
+        """Sanitize descriptions/names inside InventoryToolOutput records."""
+
+
+class OutputGuardrailPort(ABC):
+    """Post-generation output guardrail port validating structure, security, and restricted domain content (FR-010)."""
+
+    @abstractmethod
+    def validate_output(
+        self,
+        query: str,
+        candidate_answer: str,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+        casual_redirect_required: bool = False,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Inspect and enforce guardrails on a candidate response before delivery."""
+
+
+class GuardrailObservabilityPort(ABC):
+    """Port interface for logging guardrail interventions and querying aggregated trigger summaries (FR-011, FR-012)."""
+
+    @abstractmethod
+    def record_evaluation(
+        self,
+        result: GuardrailEvaluationResult,
+        session_id: str,
+        raw_preview: str,
+        trace_id: Optional[str] = None,
+    ) -> Optional[GuardrailAuditEvent]:
+        """Record a guardrail evaluation outcome and create a redacted audit event on intervention."""
+
+    @abstractmethod
+    def get_summary(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> GuardrailSummaryReport:
+        """Aggregate trigger counts by failure type ('structural', 'content', 'security') and layer."""
+
+    @abstractmethod
+    def list_events(
+        self,
+        session_id: Optional[str] = None,
+        failure_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[GuardrailAuditEvent]:
+        """List recorded GuardrailAuditEvent entries ordered newest first."""
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Reset counters and stored events (used for deterministic test isolation)."""
+
+
 __all__ = [
     "AgentMemoryRepositoryPort",
+    "AuthorizationGuardrailPort",
+    "ContextSanitizerPort",
+    "GuardrailObservabilityPort",
+    "InputGuardrailPort",
     "InventoryStockToolPort",
     "MemoryAuditLogRepositoryPort",
     "MemoryGuardrailPort",
+    "OutputGuardrailPort",
     "SupportAgentServicePort",
     "SupportTicketToolPort",
     "TraceRegistryPort",

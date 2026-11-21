@@ -35,9 +35,14 @@ from application.services.support_agent_service import SupportAgentService
 from application.services.trace_registry import TraceRegistry
 from domain.agent.ports import (
     AgentMemoryRepositoryPort,
+    AuthorizationGuardrailPort,
+    ContextSanitizerPort,
+    GuardrailObservabilityPort,
+    InputGuardrailPort,
     InventoryStockToolPort,
     MemoryAuditLogRepositoryPort,
     MemoryGuardrailPort,
+    OutputGuardrailPort,
     SupportAgentServicePort,
     SupportTicketToolPort,
     TraceRegistryPort,
@@ -321,7 +326,66 @@ _memory_audit_log_repo_singleton: Optional[MemoryAuditLogRepositoryPort] = None
 _memory_guardrail_singleton: Optional[MemoryGuardrailPort] = None
 _user_intent_classifier_singleton: Optional[UserIntentClassifierPort] = None
 _agent_memory_service_singleton: Optional[Any] = None
+_input_guardrail_singleton: Optional[InputGuardrailPort] = None
+_authorization_guardrail_singleton: Optional[AuthorizationGuardrailPort] = None
+_context_sanitizer_singleton: Optional[ContextSanitizerPort] = None
+_output_guardrail_singleton: Optional[OutputGuardrailPort] = None
+_guardrail_observability_singleton: Optional[GuardrailObservabilityPort] = None
 _support_agent_service_singleton: Optional[SupportAgentServicePort] = None
+
+
+def get_guardrail_observability_dep() -> GuardrailObservabilityPort:
+    """Dependency provider for the shared thread-safe GuardrailObservabilityService (FR-011, FR-012)."""
+    global _guardrail_observability_singleton
+    if _guardrail_observability_singleton is None:
+        from application.services.guardrail_observability import (
+            GuardrailObservabilityService,
+        )
+
+        _guardrail_observability_singleton = GuardrailObservabilityService()
+    return _guardrail_observability_singleton
+
+
+def get_input_guardrail_dep() -> InputGuardrailPort:
+    """Dependency provider for InputGuardrailPort (InputGuardrailValidator)."""
+    global _input_guardrail_singleton
+    if _input_guardrail_singleton is None:
+        from application.services.agent_guardrails import InputGuardrailValidator
+
+        _input_guardrail_singleton = InputGuardrailValidator()
+    return _input_guardrail_singleton
+
+
+def get_authorization_guardrail_dep() -> AuthorizationGuardrailPort:
+    """Dependency provider for AuthorizationGuardrailPort (AuthorizationGuardrailValidator)."""
+    global _authorization_guardrail_singleton
+    if _authorization_guardrail_singleton is None:
+        from application.services.agent_guardrails import (
+            AuthorizationGuardrailValidator,
+        )
+
+        _authorization_guardrail_singleton = AuthorizationGuardrailValidator()
+    return _authorization_guardrail_singleton
+
+
+def get_context_sanitizer_dep() -> ContextSanitizerPort:
+    """Dependency provider for ContextSanitizerPort (TwoTierContextSanitizer)."""
+    global _context_sanitizer_singleton
+    if _context_sanitizer_singleton is None:
+        from application.services.agent_guardrails import TwoTierContextSanitizer
+
+        _context_sanitizer_singleton = TwoTierContextSanitizer()
+    return _context_sanitizer_singleton
+
+
+def get_output_guardrail_dep() -> OutputGuardrailPort:
+    """Dependency provider for OutputGuardrailPort (OutputGuardrailValidator)."""
+    global _output_guardrail_singleton
+    if _output_guardrail_singleton is None:
+        from application.services.agent_guardrails import OutputGuardrailValidator
+
+        _output_guardrail_singleton = OutputGuardrailValidator()
+    return _output_guardrail_singleton
 
 
 def get_trace_registry() -> TraceRegistryPort:
@@ -439,6 +503,15 @@ def get_support_agent_service(
     inventory_tool: InventoryStockToolPort = Depends(get_inventory_stock_tool_dep),
     trace_registry: TraceRegistryPort = Depends(get_trace_registry),
     memory_service: Any = Depends(get_agent_memory_service_dep),
+    input_guard: InputGuardrailPort = Depends(get_input_guardrail_dep),
+    authorization_guard: AuthorizationGuardrailPort = Depends(
+        get_authorization_guardrail_dep
+    ),
+    context_sanitizer: ContextSanitizerPort = Depends(get_context_sanitizer_dep),
+    output_guard: OutputGuardrailPort = Depends(get_output_guardrail_dep),
+    guardrail_observability: GuardrailObservabilityPort = Depends(
+        get_guardrail_observability_dep
+    ),
     config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> SupportAgentServicePort:
     """Dependency provider for SupportAgentService with compiled LangGraph state machine."""
@@ -452,6 +525,11 @@ def get_support_agent_service(
             inventory_tool=inventory_tool,
             trace_registry=trace_registry,
             memory_service=memory_service,
+            input_guard=input_guard,
+            authorization_guard=authorization_guard,
+            context_sanitizer=context_sanitizer,
+            output_guard=output_guard,
+            guardrail_observability=guardrail_observability,
             config=config,
         )
     return _support_agent_service_singleton
@@ -537,14 +615,18 @@ __all__ = [
     "get_agent_memory_service_dep",
     "get_audit_log_repository_dep",
     "get_auth_service_dep",
+    "get_authorization_guardrail_dep",
     "get_cache_dep",
+    "get_context_sanitizer_dep",
     "get_current_admin_user",
     "get_current_user",
     "get_email_service_dep",
     "get_embedding_service_dep",
+    "get_guardrail_observability_dep",
     "get_incident_csv_report_service_dep",
     "get_incident_repository_dep",
     "get_incident_service_dep",
+    "get_input_guardrail_dep",
     "get_inventory_repository_dep",
     "get_inventory_service_dep",
     "get_knowledge_config_dep",
@@ -552,6 +634,7 @@ __all__ = [
     "get_llm_generation_dep",
     "get_memory_audit_log_repository_dep",
     "get_memory_guardrail_dep",
+    "get_output_guardrail_dep",
     "get_password_reset_token_repository_dep",
     "get_profile_repository_dep",
     "get_profile_service_dep",

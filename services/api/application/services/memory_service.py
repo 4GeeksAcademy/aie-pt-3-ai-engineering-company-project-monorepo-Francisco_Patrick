@@ -581,6 +581,60 @@ class AgentMemoryService:
                 return proposal
             return None
 
+    def discard_pending_proposal(
+        self,
+        thread_id: Optional[str],
+        reason: str = "guardrail_block",
+    ) -> Optional[MemoryProposal]:
+        """Discard any active pending memory proposal on `thread_id` when a turn triggers a guardrail block (FR-001).
+
+        Args:
+            thread_id: Active thread or session identifier.
+            reason: Machine-readable discard reason (default 'guardrail_block').
+
+        Returns:
+            The discarded MemoryProposal if one was active, otherwise None.
+        """
+        if not thread_id:
+            return None
+        with self._lock:
+            self._expire_pending_if_needed(thread_id)
+            pending = self._pending_by_thread.get(thread_id)
+            if pending is None or pending.status != "pending":
+                return None
+
+            now = datetime.now(timezone.utc)
+            discarded = MemoryProposal(
+                proposal_id=pending.proposal_id,
+                category=pending.category,
+                target_entity=pending.target_entity,
+                country_code=pending.country_code,
+                summary=pending.summary,
+                status="discarded",
+                source_message=pending.source_message,
+                confidence=pending.confidence,
+                created_at=pending.created_at,
+                expires_at=pending.expires_at,
+                thread_id=pending.thread_id,
+            )
+            self._proposals_by_id[pending.proposal_id] = discarded
+            self._pending_by_thread.pop(thread_id, None)
+            self._audit_repo.record_entry(
+                MemoryAuditLogEntry(
+                    log_id=str(uuid.uuid4()),
+                    proposal_id=pending.proposal_id,
+                    memory_id=None,
+                    event_type="discarded",
+                    classified_intent=None,
+                    user_message=f"[GUARDRAIL_BLOCK:{reason}]",
+                    resulting_action="proposal_discarded",
+                    session_id=thread_id,
+                    timestamp=now,
+                    details={"reason": reason},
+                )
+            )
+            return discarded
+
     def get_proposal_by_id(self, proposal_id: str) -> Optional[MemoryProposal]:
         """Retrieve an in-flight or resolved proposal by its `proposal_id`."""
         with self._lock:

@@ -8,22 +8,29 @@ Adheres strictly to Monorepo Constitution Principles II & IV:
 """
 
 import logging
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from typing import Any
-from domain.agent.entities import AgentQueryRequest
+from typing import Any, Optional
+from domain.agent.entities import (
+    AgentQueryRequest,
+    AuthenticatedSessionContext,
+)
 from domain.agent.exceptions import (
     MemoryGuardrailViolationError,
     MemoryNotFoundError,
     TraceNotFoundError,
     WorkflowExecutionError,
 )
-from domain.agent.ports import SupportAgentServicePort
+from domain.agent.ports import (
+    GuardrailObservabilityPort,
+    SupportAgentServicePort,
+)
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
 from presentation.dependencies import (
     get_agent_memory_service_dep,
+    get_guardrail_observability_dep,
     get_support_agent_service,
 )
 from presentation.schemas.agent import (
@@ -31,6 +38,8 @@ from presentation.schemas.agent import (
     AgentQueryRequestSchema,
     AgentQueryResponseSchema,
     AgentTraceResponseSchema,
+    GuardrailInterventionSchema,
+    GuardrailSummaryResponseSchema,
     KnowledgeSourceCitationSchema,
     MemoryProposalFeedbackRequestSchema,
     MemoryProposalFeedbackResponseSchema,
@@ -59,12 +68,24 @@ async def query_support_agent(
     agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
 ) -> AgentQueryResponseSchema | JSONResponse:
     """Execute the compiled LangGraph support agent workflow and return a grounded answer with trace metadata."""
+    session_ctx: Optional[AuthenticatedSessionContext] = None
+    if payload.session_context is not None:
+        session_ctx = AuthenticatedSessionContext(
+            session_id=payload.session_context.session_id,
+            customer_id=payload.session_context.customer_id,
+            customer_segment=payload.session_context.customer_segment,
+            primary_operating_country=payload.session_context.primary_operating_country,
+            authorized_order_ids=tuple(payload.session_context.authorized_order_ids),
+            order_country_map=dict(payload.session_context.order_country_map),
+        )
+
     domain_request = AgentQueryRequest(
         query=payload.query,
         top_k=payload.top_k,
         min_score=payload.min_score if payload.min_score is not None else 0.62,
         thread_id=payload.thread_id,
         language=payload.language or "en",
+        session_context=session_ctx,
     )
 
     try:
@@ -126,6 +147,22 @@ async def query_support_agent(
         else None
     )
 
+    guardrail_schemas = [
+        GuardrailInterventionSchema(
+            event_id=ev.event_id,
+            timestamp=ev.timestamp.isoformat(),
+            session_id=ev.session_id,
+            trace_id=ev.trace_id,
+            failure_type=ev.failure_type,
+            layer=ev.layer,
+            input_category=ev.input_category,
+            reason_code=ev.reason_code,
+            disposition=ev.disposition,
+            redacted_preview=ev.redacted_preview,
+        )
+        for ev in getattr(result, "guardrail_interventions", [])
+    ]
+
     return AgentQueryResponseSchema(
         query=result.query,
         answer=result.answer,
@@ -143,9 +180,59 @@ async def query_support_agent(
         tool_calls=tool_call_schemas,
         memory_proposal=proposal_schema,
         recalled_memories=list(getattr(result, "recalled_memories", [])),
+        guardrail_interventions=guardrail_schemas,
+        resolved_country=getattr(result, "resolved_country", None),
         trace_id=result.trace_id,
         node_sequence=result.node_sequence,
         execution_time_ms=result.execution_time_ms,
+    )
+
+
+@router.get(
+    "/guardrails/summary",
+    response_model=GuardrailSummaryResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve aggregated guardrail trigger counts and recent sanitized audit events (FR-012)",
+)
+async def get_guardrail_summary(
+    session_id: Optional[str] = Query(
+        default=None,
+        description="Optional session/thread ID filter to scope trigger counts to a specific test session",
+    ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+        description="Maximum number of recent sanitized guardrail audit events to include",
+    ),
+    observability: GuardrailObservabilityPort = Depends(get_guardrail_observability_dep),
+) -> GuardrailSummaryResponseSchema:
+    """Return aggregated guardrail trigger counts by failure type ('structural', 'content', 'security') and layer."""
+    report = await run_in_threadpool(observability.get_summary, session_id, limit)
+    return GuardrailSummaryResponseSchema(
+        total_evaluations=report.total_evaluations,
+        total_interventions=report.total_interventions,
+        by_failure_type=dict(report.by_failure_type),
+        by_layer=dict(report.by_layer),
+        by_input_category=dict(report.by_input_category),
+        by_disposition=dict(report.by_disposition),
+        window_start=report.window_start.isoformat() if report.window_start else None,
+        window_end=report.window_end.isoformat() if report.window_end else None,
+        recent_events=[
+            GuardrailInterventionSchema(
+                event_id=ev.event_id,
+                timestamp=ev.timestamp.isoformat(),
+                session_id=ev.session_id,
+                trace_id=ev.trace_id,
+                failure_type=ev.failure_type,
+                layer=ev.layer,
+                input_category=ev.input_category,
+                reason_code=ev.reason_code,
+                disposition=ev.disposition,
+                redacted_preview=ev.redacted_preview,
+            )
+            for ev in report.recent_events
+        ],
     )
 
 

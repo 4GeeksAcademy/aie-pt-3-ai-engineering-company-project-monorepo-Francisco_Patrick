@@ -121,14 +121,61 @@ class MemoryStorageError(AgentDomainException):
         super().__init__(message)
 
 
+class GuardrailBlockedError(AgentDomainException):
+    """Raised when an input, context, or output guardrail deterministically blocks an operation (FR-003)."""
+
+    def __init__(
+        self,
+        layer: str,
+        failure_category: str,
+        reason_code: str,
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize guardrail blocked error."""
+        self.layer = layer
+        self.failure_category = failure_category
+        self.reason_code = reason_code
+        resolved_msg = (
+            message
+            or f"Guardrail intervention on layer '{layer}' [{failure_category}:{reason_code}]."
+        )
+        super().__init__(resolved_msg)
+
+
+class UnauthorizedOrderAccessError(GuardrailBlockedError):
+    """Raised when a session attempts to query an order or tracking ID outside its authorized scope (FR-007)."""
+
+    def __init__(
+        self,
+        order_id: str,
+        session_id: Optional[str] = None,
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize unauthorized order access error."""
+        self.order_id = order_id
+        self.session_id = session_id
+        resolved_msg = (
+            message
+            or f"Session is not authorized to access tracking or details for order '{order_id}'."
+        )
+        super().__init__(
+            layer="authorization_guard",
+            failure_category="security",
+            reason_code="UNAUTHORIZED_ORDER_ACCESS",
+            message=resolved_msg,
+        )
+
+
 __all__ = [
     "AgentDomainException",
     "GraphCompilationError",
+    "GuardrailBlockedError",
     "MemoryGuardrailViolationError",
     "MemoryNotFoundError",
     "MemoryStorageError",
     "StateValidationError",
     "ToolExecutionTimeoutError",
     "TraceNotFoundError",
+    "UnauthorizedOrderAccessError",
     "WorkflowExecutionError",
 ]
