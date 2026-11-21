@@ -13,10 +13,11 @@ Implements:
 """
 
 from datetime import datetime, timedelta, timezone
+import json
 import re
 import threading
 import uuid
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 from application.services.memory_guardrails import (
     MemoryGuardrailValidator,
@@ -264,6 +265,49 @@ class UserIntentClassifier(UserIntentClassifierPort):
         re.IGNORECASE,
     )
 
+    _NON_QUESTION_HESITATION_PATTERN = re.compile(
+        r"^\s*(?:"
+        r"maybe\s+later|hmm+\s+not\s+sure|not\s+sure|i\s+guess|not\s+right\s+now|no\s+thanks|not\s+now"
+        r"|(?:let\s+me|i\s+need\s+to|i'll|i\s+will)\s+(?:think|check\s+with|ask\s+my\s+supervisor|review|verify|confirm|decide)\b.*"
+        r"|(?:d[eé]jame|tengo\s+que|voy\s+a)\s+(?:pensar|consultar|preguntar)\b.*"
+        r")[\s.!]*$",
+        re.IGNORECASE,
+    )
+
+    _OPERATIONAL_QUERY_START_PATTERN = re.compile(
+        r"^\s*(?:what|where|when|how|who|which|why|can\s+you|could\s+you|would\s+you|"
+        r"please\s+(?:check|show|list|find|tell|look\s+up|verify)|"
+        r"check|show|list|find|tell\s+me|look\s+up|"
+        r"¿?(?:qu[eé]|d[oó]nde|cu[aá]ndo|c[oó]mo|qui[eé]n|cu[aá]l|cu[aá]nto|puedes|podr[ií]as|por\s+favor))\b",
+        re.IGNORECASE,
+    )
+
+    _OPERATIONAL_DOMAIN_ENTITY_PATTERN = re.compile(
+        r"\b(?:sku|tf-\d+|prd-\d+|prod-\d+|stock|inventory|units?\s+in\s+stock|"
+        r"tickets?|incidents?|inc[-_][a-z0-9_-]+|"
+        r"return\s+window|return\s+policy|returns?\s+policy|return\s+shipping|"
+        r"sla\b|delivery\s+tiers?|storage\s+rates?|storage\s+pricing|pallet\s+rate|"
+        r"cubic\s+meter|discount|miguel\s+torres|carlos\s+vega|sof[ií]a\s+ramos|"
+        r"warehouse|carrier|shipments?)\b",
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _is_operational_query(cls, text: str) -> bool:
+        """Return True only when an unrelated_or_ambiguous message is an actual operational question or request."""
+        if not text or len(text.strip()) < 10:
+            return False
+        cleaned = text.strip()
+        if cls._NON_QUESTION_HESITATION_PATTERN.match(cleaned):
+            return False
+        if "?" in cleaned:
+            return True
+        if cls._OPERATIONAL_QUERY_START_PATTERN.search(cleaned):
+            return True
+        if cls._OPERATIONAL_DOMAIN_ENTITY_PATTERN.search(cleaned):
+            return True
+        return False
+
     def classify(
         self,
         user_message: str,
@@ -338,14 +382,10 @@ class UserIntentClassifier(UserIntentClassifierPort):
                 residual_query=residual_query,
             )
 
-        # 4. Safe Default: Any ambiguous reply ("ok", "maybe later", "Yes, but what about Seville?")
-        # or topic shift ("Can you check current stock for SKU-401?") defaults to unrelated_or_ambiguous
-        is_operational_question = len(cleaned) >= 12 and cleaned.lower() not in (
-            "maybe later",
-            "hmm not sure",
-            "not sure",
-            "i guess",
-        )
+        # 4. Safe Default: Any ambiguous reply ("ok", "maybe later", "let me think about that")
+        # or topic shift ("Can you check current stock for SKU-401?") defaults to unrelated_or_ambiguous.
+        # Only populate residual_query when the message is an actual operational query/request.
+        is_operational_question = self._is_operational_query(cleaned)
         return UserIntentClassification(
             intent="unrelated_or_ambiguous",
             confidence=0.90,
@@ -405,11 +445,137 @@ class AgentMemoryService:
         """Return the underlying MemoryAuditLogRepositoryPort."""
         return self._audit_repo
 
+    def _expire_pending_if_needed(
+        self,
+        thread_id: str,
+        now: Optional[datetime] = None,
+    ) -> bool:
+        """Check if the pending proposal for `thread_id` has expired (`expires_at <= now`).
+
+        If expired, transitions status to `'discarded'`, updates `_proposals_by_id`,
+        removes it from `_pending_by_thread`, records a `'discarded'` audit entry, and returns True.
+        Must be called while holding `self._lock`.
+        """
+        proposal = self._pending_by_thread.get(thread_id)
+        if proposal is None or proposal.status != "pending":
+            return False
+        effective_now = now or datetime.now(timezone.utc)
+        if proposal.expires_at is not None and proposal.expires_at <= effective_now:
+            expired_proposal = MemoryProposal(
+                proposal_id=proposal.proposal_id,
+                category=proposal.category,
+                target_entity=proposal.target_entity,
+                country_code=proposal.country_code,
+                summary=proposal.summary,
+                status="discarded",
+                source_message=proposal.source_message,
+                confidence=proposal.confidence,
+                created_at=proposal.created_at,
+                expires_at=proposal.expires_at,
+                thread_id=proposal.thread_id,
+            )
+            self._proposals_by_id[proposal.proposal_id] = expired_proposal
+            self._pending_by_thread.pop(thread_id, None)
+            self._audit_repo.record_entry(
+                MemoryAuditLogEntry(
+                    log_id=str(uuid.uuid4()),
+                    proposal_id=proposal.proposal_id,
+                    memory_id=None,
+                    event_type="discarded",
+                    classified_intent=None,
+                    user_message="[PROPOSAL_TTL_EXPIRED]",
+                    resulting_action="proposal_discarded",
+                    session_id=thread_id,
+                    timestamp=effective_now,
+                    details={"reason": "proposal_expired"},
+                )
+            )
+            return True
+        return False
+
+    def _build_proposal_from_llm_candidate(
+        self,
+        llm_candidate: Dict[str, Any],
+        user_message: str,
+        thread_id: str,
+    ) -> Optional[MemoryProposal]:
+        """Validate and construct a `MemoryProposal` from a structured single-call LLM candidate dict (AC-3.2)."""
+        if not isinstance(llm_candidate, dict):
+            return None
+        raw_summary = str(
+            llm_candidate.get("summary")
+            or llm_candidate.get("content")
+            or ""
+        ).strip()
+        if len(raw_summary) < 10:
+            return None
+
+        raw_cat = str(llm_candidate.get("category") or "carrier_rule").strip().lower()
+        if raw_cat not in ("carrier_rule", "incident_context", "b2b_preference"):
+            category: MemoryCategory = "carrier_rule"
+        else:
+            category = cast(MemoryCategory, raw_cat)
+
+        raw_target = str(llm_candidate.get("target_entity") or "").strip()
+        target_entity = (
+            raw_target
+            or _detect_carrier_name(raw_summary)
+            or _detect_carrier_name(user_message)
+            or "Regional Operations"
+        )
+        raw_country = llm_candidate.get("country_code")
+        country_code = (
+            str(raw_country).strip().upper()
+            if isinstance(raw_country, str) and raw_country.strip()
+            else _infer_country_code(f"{raw_summary} {user_message}", carrier=target_entity)
+        )
+
+        # Validate both the user message and the structured summary against anti-poisoning guardrails
+        if user_message and len(user_message.strip()) >= 10:
+            user_verdict = self._guardrail_validator.validate_candidate(
+                content=user_message,
+                category=category,
+                target_entity=target_entity,
+            )
+            if not user_verdict.allowed:
+                return None
+
+        sanitized_summary = mask_sensitive_pii(raw_summary)[:300]
+        verdict = self._guardrail_validator.validate_candidate(
+            content=sanitized_summary,
+            category=category,
+            target_entity=target_entity,
+        )
+        if not verdict.allowed:
+            return None
+
+        raw_conf = llm_candidate.get("confidence", 0.92)
+        try:
+            confidence = max(0.0, min(1.0, float(raw_conf)))
+        except (TypeError, ValueError):
+            confidence = 0.92
+
+        now = datetime.now(timezone.utc)
+        return MemoryProposal(
+            proposal_id=str(llm_candidate.get("proposal_id") or uuid.uuid4()),
+            category=category,
+            target_entity=target_entity,
+            country_code=country_code,
+            summary=sanitized_summary,
+            status="pending",
+            source_message=mask_sensitive_pii(user_message or raw_summary)[:500],
+            confidence=confidence,
+            created_at=now,
+            expires_at=now + timedelta(minutes=15),
+            thread_id=thread_id,
+        )
+
     def get_pending_proposal(self, thread_id: Optional[str]) -> Optional[MemoryProposal]:
-        """Return the active pending proposal for `thread_id`, or None if none is active."""
+        """Return the active pending proposal for `thread_id`, or None if none is active or it has expired."""
         if not thread_id:
             return None
         with self._lock:
+            self._expire_pending_if_needed(thread_id)
             proposal = self._pending_by_thread.get(thread_id)
             if proposal and proposal.status == "pending":
                 return proposal
@@ -418,7 +584,11 @@ class AgentMemoryService:
     def get_proposal_by_id(self, proposal_id: str) -> Optional[MemoryProposal]:
         """Retrieve an in-flight or resolved proposal by its `proposal_id`."""
         with self._lock:
-            return self._proposals_by_id.get(proposal_id)
+            proposal = self._proposals_by_id.get(proposal_id)
+            if proposal and proposal.thread_id and proposal.status == "pending":
+                self._expire_pending_if_needed(proposal.thread_id)
+                proposal = self._proposals_by_id.get(proposal_id)
+            return proposal
 
     def evaluate_turn_for_proposal(
         self,
@@ -426,24 +596,35 @@ class AgentMemoryService:
         base_answer: str,
         thread_id: Optional[str] = None,
         language: str = "en",
+        llm_candidate: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[MemoryProposal], str]:
-        """Perform single-call memory candidate evaluation and attach confirmation prompt if valid (FR-008, FR-010, FR-012).
+        """Perform single-call memory candidate evaluation and attach confirmation prompt if valid (FR-008, FR-010, FR-012, AC-3.2).
 
-        Enforces the single-pending-proposal queue limit (FR-012): if an unresolved proposal
+        Enforces the single-pending-proposal queue limit (FR-012): if an unresolved, non-expired proposal
         is already pending for `thread_id`, no secondary proposal is created.
+        Supports structured single-call LLM output (`llm_candidate`) with deterministic regex extraction as fallback.
         """
         effective_thread = thread_id or "default"
         with self._lock:
+            self._expire_pending_if_needed(effective_thread)
             existing_pending = self._pending_by_thread.get(effective_thread)
             if existing_pending is not None and existing_pending.status == "pending":
                 # Suppress secondary proposal while one is active (FR-012)
                 return existing_pending, base_answer
 
-            proposal = extract_memory_candidate(
-                user_message=user_message,
-                thread_id=effective_thread,
-                guardrail_validator=self._guardrail_validator,
-            )
+            proposal: Optional[MemoryProposal] = None
+            if llm_candidate is not None:
+                proposal = self._build_proposal_from_llm_candidate(
+                    llm_candidate=llm_candidate,
+                    user_message=user_message,
+                    thread_id=effective_thread,
+                )
+            if proposal is None:
+                proposal = extract_memory_candidate(
+                    user_message=user_message,
+                    thread_id=effective_thread,
+                    guardrail_validator=self._guardrail_validator,
+                )
             if proposal is None:
                 return None, base_answer
 
@@ -499,6 +680,7 @@ class AgentMemoryService:
             return None
 
         with self._lock:
+            self._expire_pending_if_needed(thread_id)
             pending = self._pending_by_thread.get(thread_id)
             if pending is None or pending.status != "pending":
                 return None
@@ -756,6 +938,9 @@ class AgentMemoryService:
         """Apply out-of-band REST feedback to a pending memory proposal (T024)."""
         with self._lock:
             proposal = self._proposals_by_id.get(proposal_id)
+            if proposal is not None and proposal.thread_id and proposal.status == "pending":
+                self._expire_pending_if_needed(proposal.thread_id)
+                proposal = self._proposals_by_id.get(proposal_id)
             if proposal is None or proposal.status not in ("pending", "edited"):
                 raise MemoryNotFoundError(
                     entity_id=proposal_id,

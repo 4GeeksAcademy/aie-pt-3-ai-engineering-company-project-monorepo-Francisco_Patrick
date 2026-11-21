@@ -39,13 +39,13 @@ Implement an abstract repository port `AgentMemoryRepositoryPort` and `MemoryAud
 Support specialists cannot tolerate additional latency. FR-008 and SC-002 require that candidate memory proposal detection and response generation happen in a single LLM invocation (or deterministic evaluation turn) without spinning up secondary evaluator agents or triggering multiple round-trips to the LLM (average latency overhead < 100ms).
 
 ### Decision
-Enforce a unified generation and self-evaluation pattern in `generation_node`:
-- The agent workflow uses a structured output schema or integrated generation prompt that simultaneously outputs:
+Enforce a unified generation and self-evaluation pattern in `generation_node` (AC-3.2):
+- The agent workflow supports a single-call structured output schema (`{"answer": "...", "memory_proposal": {...}}` or `{"answer": "...", "memory_candidate": {...}}`) parsed directly by `_parse_structured_llm_output` in `generation_node` alongside `AgentMemoryService.evaluate_turn_for_proposal(..., llm_candidate=...)`:
   1. `answer`: The conversational customer/operator-facing response.
-  2. `memory_candidate`: An optional structured candidate object (`category`, `target_entity`, `summary`, `action_type`, `confidence`).
-- When external LLM generation is active, the system instructs the model to return a structured JSON response (or utilizes function calling / structured outputs with Pydantic).
-- For deterministic fallback mode, a pattern-based operational candidate extractor scans the operator message for known memorable intents (carrier coverage changes, port strike / weather disruption notices, B2B reporting preferences) while instantly discarding non-memorable queries (tracking lookups, thank-yous, translations).
-- The candidate is evaluated against memory guardrails (`MemoryGuardrailValidator`) in the same turn. If valid and passes all anti-poisoning checks, the proposal is attached to `state["pending_proposal"]` and an explicit confirmation prompt is appended to the answer.
+  2. `memory_proposal` / `memory_candidate`: An optional structured candidate object (`category`, `target_entity`, `country_code`, `summary`, `confidence`).
+- When external LLM generation returns structured JSON output in that single call, `generation_node` unpacks `answer` (enforcing corporate business guardrails) and passes the structured candidate directly to `evaluate_turn_for_proposal`, which validates it through `MemoryGuardrailValidator` and PII masking (`mask_sensitive_pii`).
+- **Deterministic Fallback Mode**: When no structured LLM candidate is returned (e.g., plain-text LLM response or deterministic synthesis mode without a live LLM key), `evaluate_turn_for_proposal` automatically falls back to `extract_memory_candidate` — a pattern-based operational candidate extractor (< 1ms) that scans the operator message for memorable intents (carrier coverage changes, port strike / weather disruption notices, B2B reporting preferences) while instantly discarding non-memorable queries (tracking lookups, thank-yous, translations).
+- In both paths, the candidate is evaluated against memory guardrails (`MemoryGuardrailValidator`) in the same turn. If valid and passes all anti-poisoning checks, the proposal is staged in `_pending_by_thread[thread_id]` (with a 15-minute `expires_at` TTL enforced lazily on subsequent accesses) and an explicit confirmation prompt is appended to the answer.
 
 ### Rationale
 - Zero additional network calls or subagent hops, satisfying SC-002 (< 100ms overhead).

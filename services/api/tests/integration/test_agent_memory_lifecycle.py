@@ -253,6 +253,10 @@ class TestAgentMemoryLifecycleIntegration:
             )
         )
         assert turn2.is_refusal is False
+        # Each turn gets a unique trace_id while sharing thread_id for multi-turn proposal resolution
+        assert turn1.trace_id != turn2.trace_id
+        assert agent_service.get_trace(turn1.trace_id).query.startswith("SEUR no longer")
+        assert agent_service.get_trace(turn2.trace_id).query.startswith("Yes, please remember")
         stored_memories = memory_repo.search_memories(
             category="carrier_rule", target_entity="SEUR", country_code="ES"
         )
@@ -468,4 +472,35 @@ class TestAgentMemoryLifecycleIntegration:
         logs_data = logs_resp.json()
         assert len(logs_data) >= 2
         assert {entry["event_type"] for entry in logs_data} >= {"proposed", "approved"}
+
+    def test_ambiguous_non_question_remark_discards_proposal_without_false_positive_residual_query(
+        self,
+    ) -> None:
+        """Ambiguous 12+ char non-question remark ('I need to think about whether to save that') discards proposal cleanly without triggering RAG/tool execution as a residual query."""
+        agent_service, memory_repo, audit_repo, _ = _build_test_agent_service()
+
+        turn1 = agent_service.query(
+            AgentQueryRequest(
+                query="SEUR no longer covers the rural Zaragoza zone; local carriers must be used starting this month.",
+                thread_id="session_ambiguous_remark",
+            )
+        )
+        assert turn1.memory_proposal is not None
+        proposal_id = turn1.memory_proposal.proposal_id
+
+        turn2 = agent_service.query(
+            AgentQueryRequest(
+                query="I need to think about whether to save that.",
+                thread_id="session_ambiguous_remark",
+            )
+        )
+        assert turn2.is_refusal is False
+        assert len(memory_repo.search_memories()) == 0
+        # Pure proposal discard turn: should not consult RAG or operational tools for the hesitation remark
+        assert turn2.sources_consulted == []
+        discard_logs = audit_repo.list_entries(
+            proposal_id=proposal_id, event_type="discarded"
+        )
+        assert len(discard_logs) == 1
+        assert discard_logs[0].resulting_action == "proposal_discarded"
 

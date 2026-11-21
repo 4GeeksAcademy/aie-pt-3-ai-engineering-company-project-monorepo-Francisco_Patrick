@@ -195,10 +195,11 @@ class SupportAgentService(SupportAgentServicePort):
             WorkflowExecutionError: When an unhandled runtime fault occurs inside a node.
         """
         start_ns = time.perf_counter()
-        trace_id = (
+        trace_id = str(uuid.uuid4())
+        thread_id = (
             request.thread_id.strip()
             if request.thread_id and request.thread_id.strip()
-            else str(uuid.uuid4())
+            else trace_id
         )
         effective_min_score = (
             request.min_score
@@ -208,7 +209,7 @@ class SupportAgentService(SupportAgentServicePort):
 
         initial_state: AgentState = {
             "query": request.query,
-            "thread_id": trace_id,
+            "thread_id": thread_id,
             "language": request.language or "en",
             "top_k": request.top_k,
             "min_score": effective_min_score,
@@ -234,7 +235,7 @@ class SupportAgentService(SupportAgentServicePort):
             "recalled_memories": [],
             "proposal_resolution": None,
         }
-        run_config: Dict[str, Any] = {"configurable": {"thread_id": trace_id}}
+        run_config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
 
         try:
             final_state: Dict[str, Any] = self._compiled_graph.invoke(
@@ -283,7 +284,7 @@ class SupportAgentService(SupportAgentServicePort):
             if isinstance(v, dict)
         }
 
-        checkpoints = self.get_checkpoints(trace_id)
+        checkpoints = self.get_checkpoints(thread_id)
         trace = AgentTrace(
             trace_id=trace_id,
             query=sanitized_query,

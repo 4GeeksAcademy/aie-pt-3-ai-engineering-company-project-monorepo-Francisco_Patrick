@@ -13,13 +13,20 @@ Verifies:
 - Single-call structured generation evaluation introduces < 100ms overhead (SC-002).
 """
 
+from datetime import datetime, timedelta, timezone
+import json
 import time
+from typing import List
 import pytest
 
+from application.services.agent_workflow import generation_node
 from application.services.memory_service import (
     AgentMemoryService,
     extract_memory_candidate,
 )
+from domain.agent.entities import AgentState, KnowledgeChunk, RetrievedContext
+from domain.knowledge.entities import generate_chunk_id
+from domain.knowledge.ports import LLMGenerationPort
 from infrastructure.persistence.tinydb.agent_memory_repository import (
     TinyDBAgentMemoryRepository,
 )
@@ -140,3 +147,119 @@ class TestMemoryProposalExtractor:
         assert "Would you like me to remember this rule for future sessions?" in answer_with_prompt
         # Verify zero records written to persistent memory before approval
         assert service.memory_repository.search_memories() == []
+
+    def test_single_call_structured_llm_output_creates_proposal_with_deterministic_fallback(
+        self,
+    ) -> None:
+        """AC-3.2: generation_node parses single-call structured LLM output (answer + memory_proposal) and falls back deterministically when plain text is returned."""
+
+        class _StructuredLLM(LLMGenerationPort):
+            def generate_grounded_answer(
+                self,
+                query: str,
+                contexts: List[RetrievedContext],
+                language: str = "en",
+            ) -> str:
+                return json.dumps(
+                    {
+                        "answer": "Understood. I will note the carrier coverage update for rural Zaragoza.",
+                        "memory_proposal": {
+                            "category": "carrier_rule",
+                            "target_entity": "SEUR",
+                            "country_code": "ES",
+                            "summary": "SEUR no longer covers rural Zaragoza; assign local carriers.",
+                            "confidence": 0.96,
+                        },
+                    }
+                )
+
+        chunk = KnowledgeChunk(
+            id=generate_chunk_id("carrier-coverage", 0),
+            company="trackflow",
+            source_document="carrier-coverage",
+            section="Spain Carrier Coverage",
+            language="en",
+            chunk_index=0,
+            text="In Spain (Zaragoza), TrackFlow partners with SEUR and local carriers.",
+        )
+        ctx = RetrievedContext(chunk=chunk, similarity_score=0.90, rank=1)
+        memory_service = AgentMemoryService(
+            memory_repository=TinyDBAgentMemoryRepository(),
+            audit_repository=TinyDBMemoryAuditLogRepository(),
+        )
+
+        # 1. Single-call structured LLM output path (even when user query wouldn't trigger regex alone)
+        state: AgentState = {
+            "query": "Please note our updated regional dispatch preference for Zaragoza.",
+            "thread_id": "t-structured-llm-1",
+            "trace_id": "trace-structured-1",
+            "contexts": [ctx],
+        }
+        out = generation_node(
+            state=state,
+            llm_generator=_StructuredLLM(),
+            memory_service=memory_service,
+        )
+        assert "Understood. I will note the carrier coverage update for rural Zaragoza." in out["answer"]
+        assert "Would you like me to remember this rule for future sessions?" in out["answer"]
+        assert '"memory_proposal"' not in out["answer"]
+        assert out["memory_proposal"] is not None
+        assert out["memory_proposal"].category == "carrier_rule"
+        assert out["memory_proposal"].target_entity == "SEUR"
+        assert out["memory_proposal"].country_code == "ES"
+        assert out["memory_proposal"].summary == "SEUR no longer covers rural Zaragoza; assign local carriers."
+        assert out["memory_proposal"].confidence == 0.96
+
+    def test_expired_pending_proposal_is_auto_discarded_and_unblocks_thread(
+        self,
+    ) -> None:
+        """Expired pending proposal (expires_at <= now) must be marked discarded, logged in audit repo, removed from _pending_by_thread, and allow new proposals."""
+        audit_repo = TinyDBMemoryAuditLogRepository()
+        service = AgentMemoryService(
+            memory_repository=TinyDBAgentMemoryRepository(),
+            audit_repository=audit_repo,
+        )
+        p1, _ = service.evaluate_turn_for_proposal(
+            user_message="SEUR no longer covers the rural Zaragoza zone; local carriers must be used starting this month.",
+            base_answer="Noted.",
+            thread_id="t-expire-1",
+        )
+        assert p1 is not None
+        # Force expires_at into the past
+        expired_p1 = p1.__class__(
+            proposal_id=p1.proposal_id,
+            category=p1.category,
+            target_entity=p1.target_entity,
+            country_code=p1.country_code,
+            summary=p1.summary,
+            status="pending",
+            source_message=p1.source_message,
+            confidence=p1.confidence,
+            created_at=p1.created_at - timedelta(minutes=20),
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            thread_id=p1.thread_id,
+        )
+        service._pending_by_thread["t-expire-1"] = expired_p1
+        service._proposals_by_id[p1.proposal_id] = expired_p1
+
+        # Calling get_pending_proposal must detect expiration, discard it, and return None
+        assert service.get_pending_proposal("t-expire-1") is None
+        resolved_p1 = service.get_proposal_by_id(p1.proposal_id)
+        assert resolved_p1 is not None
+        assert resolved_p1.status == "discarded"
+
+        discard_logs = audit_repo.list_entries(
+            proposal_id=p1.proposal_id, event_type="discarded"
+        )
+        assert len(discard_logs) == 1
+        assert discard_logs[0].details.get("reason") == "proposal_expired"
+
+        # Thread is now unblocked for a new proposal
+        p2, _ = service.evaluate_turn_for_proposal(
+            user_message="FedEx no longer covers rural Los Angeles; local carriers must be used starting this month.",
+            base_answer="Noted.",
+            thread_id="t-expire-1",
+        )
+        assert p2 is not None
+        assert p2.proposal_id != p1.proposal_id
+        assert p2.target_entity == "FedEx"

@@ -91,18 +91,38 @@ class TestUserIntentClassifier:
             "maybe later",
             "I guess",
             "hmm not sure",
+            "Let me think about that for a moment",
+            "I will check with my supervisor first",
+            "I need to think about whether to save that",
+            "Not right now, maybe next week",
+            "Déjame pensarlo un momento antes de decidir",
+        ],
+    )
+    def test_ambiguous_non_questions_classify_as_unrelated_with_no_residual_query(
+        self, message: str
+    ) -> None:
+        """12+ char non-question ambiguous remarks must NOT populate residual_query."""
+        result = self.classifier.classify(message, self.sample_proposal)
+        assert result.intent == "unrelated_or_ambiguous"
+        assert result.residual_query is None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Can you check current stock for SKU-401?",
             "What is the status of ticket INC-001?",
             "What is TrackFlow's standard return window?",
             "Yes, but what about Seville?",
+            "Please check current inventory for TF-1001",
         ],
     )
-    def test_defaults_safely_to_unrelated_or_ambiguous_on_vague_or_topic_shift(
+    def test_operational_topic_shifts_classify_as_unrelated_with_residual_query(
         self, message: str
     ) -> None:
-        """Ambiguous phrases or topic shifts must classify as 'unrelated_or_ambiguous' (FR-013, SC-003)."""
+        """Genuine operational questions or requests on topic shifts must populate residual_query (FR-013, SC-003)."""
         result = self.classifier.classify(message, self.sample_proposal)
         assert result.intent == "unrelated_or_ambiguous"
+        assert result.residual_query == message
 
     def test_extracts_residual_query_for_multi_intent_turn_continuation(self) -> None:
         """Combined confirmation + operational question must classify disposition and extract residual_query (FR-015)."""

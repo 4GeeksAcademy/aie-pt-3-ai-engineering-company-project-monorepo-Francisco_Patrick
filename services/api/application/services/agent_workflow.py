@@ -15,6 +15,7 @@ Implements:
 """
 
 from pathlib import Path
+import json
 import re
 import sys
 import time
@@ -954,6 +955,54 @@ def _format_inventory_records_summary(output: InventoryToolOutput) -> str:
     return "\n".join(lines)
 
 
+def _parse_structured_llm_output(
+    raw_output: Any,
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Parse single-call LLM output into `(answer_text, optional_memory_candidate_dict)` (AC-3.2).
+
+    Supports:
+    - Plain text string responses -> `(raw_text, None)`
+    - JSON string responses containing `{"answer": "...", "memory_proposal": {...}}` or `"memory_candidate"`
+    - Dict responses containing `{"answer": "...", "memory_proposal": {...}}` or `"memory_candidate"`
+    """
+    if isinstance(raw_output, dict):
+        answer_text = str(raw_output.get("answer") or "").strip()
+        candidate = raw_output.get("memory_proposal") or raw_output.get("memory_candidate")
+        return (
+            answer_text,
+            dict(candidate) if isinstance(candidate, dict) else None,
+        )
+
+    if not isinstance(raw_output, str):
+        return (str(raw_output or ""), None)
+
+    stripped = raw_output.strip()
+    # Unwrap optional markdown json fence
+    if stripped.startswith("```"):
+        fence_match = re.match(
+            r"^```(?:json)?\s*(\{.*\})\s*```$",
+            stripped,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if fence_match:
+            stripped = fence_match.group(1).strip()
+
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict) and "answer" in parsed:
+                answer_text = str(parsed.get("answer") or "").strip()
+                candidate = parsed.get("memory_proposal") or parsed.get("memory_candidate")
+                return (
+                    answer_text,
+                    dict(candidate) if isinstance(candidate, dict) else None,
+                )
+        except Exception:
+            pass
+
+    return (raw_output, None)
+
+
 def generation_node(
     state: AgentState,
     llm_generator: LLMGenerationPort,
@@ -962,7 +1011,7 @@ def generation_node(
 ) -> AgentState:
     """Single-responsibility generation node synthesizing grounded answers from pre-retrieved contexts, live operational tool outputs, and recalled operational memories.
 
-    Also performs single-call memory candidate evaluation (< 100ms, zero secondary LLMs) (T013, FR-008, FR-010).
+    Also performs single-call memory candidate evaluation (< 100ms, zero secondary LLMs) (T013, FR-008, FR-010, AC-3.2).
 
     Args:
         state: Current AgentState.
@@ -989,17 +1038,22 @@ def generation_node(
     segments: List[str] = []
     citations: List[SourceCitation] = []
     memory_proposal: Optional[MemoryProposal] = state.get("memory_proposal")
+    structured_llm_candidate: Optional[Dict[str, Any]] = None
 
     # 1. Include proposal disposition acknowledgment if a pending proposal was resolved in this turn
     pure_proposal_turn = False
     if proposal_resolution is not None:
         ack_text = proposal_resolution.get("acknowledgment_text")
         intent = proposal_resolution.get("classified_intent")
-        if ack_text and intent in ("approve", "reject", "edit"):
+        has_residual = bool(proposal_resolution.get("residual_query"))
+        if ack_text and (
+            intent in ("approve", "reject", "edit")
+            or (intent == "unrelated_or_ambiguous" and not has_residual)
+        ):
             segments.append(str(ack_text))
         if proposal_resolution.get("status") == "edited":
             memory_proposal = proposal_resolution.get("updated_proposal")
-        if not proposal_resolution.get("residual_query"):
+        if not has_residual:
             pure_proposal_turn = True
 
     # 2. Include recalled cross-session operational memories (T028, US3)
@@ -1032,6 +1086,16 @@ def generation_node(
                     guardrail_validator=validator,
                     language=language,
                 )
+                parsed_answer, parsed_candidate = _parse_structured_llm_output(
+                    enforced_rag_answer
+                )
+                if parsed_candidate is not None:
+                    structured_llm_candidate = parsed_candidate
+                    enforced_rag_answer = validator.enforce(
+                        query=query,
+                        answer=parsed_answer,
+                        contexts=contexts,
+                    )
                 segments.append(enforced_rag_answer)
                 citations = list(rag_citations)
             except Exception as exc:
@@ -1049,6 +1113,16 @@ def generation_node(
                     guardrail_validator=validator,
                     language=language,
                 )
+                parsed_answer, parsed_candidate = _parse_structured_llm_output(
+                    enforced_rag_answer
+                )
+                if parsed_candidate is not None:
+                    structured_llm_candidate = parsed_candidate
+                    enforced_rag_answer = validator.enforce(
+                        query=query,
+                        answer=parsed_answer,
+                        contexts=contexts,
+                    )
                 segments.append(enforced_rag_answer)
                 citations = list(rag_citations)
             except Exception as exc:
@@ -1059,13 +1133,14 @@ def generation_node(
 
     final_answer = "\n\n".join(seg for seg in segments if seg).strip()
 
-    # 3. Single-call memory candidate evaluation and proposal prompt attachment (T013, FR-008, FR-010, FR-012)
+    # 3. Single-call memory candidate evaluation and proposal prompt attachment (T013, FR-008, FR-010, FR-012, AC-3.2)
     if memory_service is not None and proposal_resolution is None:
         candidate_proposal, final_answer = memory_service.evaluate_turn_for_proposal(
             user_message=query,
             base_answer=final_answer,
             thread_id=thread_id,
             language=language,
+            llm_candidate=structured_llm_candidate,
         )
         if candidate_proposal is not None:
             memory_proposal = candidate_proposal
@@ -1161,30 +1236,40 @@ def refusal_node(state: AgentState) -> AgentState:
 
 def route_after_intake(
     state: AgentState,
-) -> Literal["ticket_tool", "inventory_tool", "retrieval", "refusal"]:
+) -> Literal["ticket_tool", "inventory_tool", "retrieval", "generation", "refusal"]:
     """Conditional routing edge evaluated immediately after `intake_node`.
 
     Routes empty/short queries and write-mutation attempts directly to `refusal`,
-    and otherwise transitions to the first planned source in `selected_sources`
-    following canonical order (`ticket_tool` -> `inventory_tool` -> `retrieval`).
+    routes pure proposal resolution turns (no residual query and no planned sources)
+    directly to `generation`, and otherwise transitions to the first planned source
+    in `selected_sources` following canonical order (`ticket_tool` -> `inventory_tool` -> `retrieval`).
 
     Args:
         state: AgentState emitted by `intake_node`.
 
     Returns:
-        Target node identifier: `'ticket_tool'`, `'inventory_tool'`, `'retrieval'`, or `'refusal'`.
+        Target node identifier: `'ticket_tool'`, `'inventory_tool'`, `'retrieval'`, `'generation'`, or `'refusal'`.
     """
     query = (state.get("query") or "").strip()
     if (
         len(query) < MIN_QUERY_LENGTH
         or state.get("is_refusal") is True
         or state.get("error")
-        or detect_mutation_attempt(query)
+        or (
+            state.get("proposal_resolution") is None
+            and detect_mutation_attempt(query)
+        )
     ):
         return "refusal"
 
     selected = list(state.get("selected_sources") or [])
     if not selected:
+        proposal_resolution = state.get("proposal_resolution")
+        if (
+            proposal_resolution is not None
+            and not proposal_resolution.get("residual_query")
+        ):
+            return "generation"
         return "retrieval"
 
     if "ticket_tool" in selected:
@@ -1584,6 +1669,7 @@ def build_support_agent_graph(
             "ticket_tool": "ticket_tool",
             "inventory_tool": "inventory_tool",
             "retrieval": "retrieval",
+            "generation": "generation",
             "refusal": "refusal",
         },
     )
