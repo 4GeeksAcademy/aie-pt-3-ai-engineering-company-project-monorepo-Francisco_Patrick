@@ -242,9 +242,31 @@ class UserIntentClassifier(UserIntentClassifierPort):
         re.IGNORECASE,
     )
 
+    _BRIEF_APPROVE_PATTERN = re.compile(
+        r"^\s*(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto|confirm|confirmed|approve|approved)"
+        r"(?:\s*,?\s*(?:please|por\s+favor))?[\s.!]*$",
+        re.IGNORECASE,
+    )
+
+    _BRIEF_REJECT_PATTERN = re.compile(
+        r"^\s*(?:no|nope|reject|rejected|discard|cancel)"
+        r"(?:\s*,?\s*(?:thanks|gracias|please|por\s+favor))?[\s.!]*$",
+        re.IGNORECASE,
+    )
+
     _APPROVE_PREFIX_PATTERN = re.compile(
         r"^\s*(?:"
-        r"(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto)\s*,?\s*(?:please\s+|por\s+favor\s+)?(?:remember|save|store|keep|confirm|approve|guarda|gu[aá]rdalo|recuerda|recu[eé]rdalo)(?:\s+(?:that|this|it|the))?(?:\s+rule)?(?:\s+for\s+[A-Za-z0-9_-]+)?(?:\s+to\s+memory|\s+en\s+memoria|\s+para\s+futuras\s+sesiones|\s+por\s+favor)?"
+        r"(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto)\s*,?\s*(?:please\s+|por\s+favor\s+)?"
+        r"(?:"
+        r"(?:remember|save|store|keep|confirm|approve)"
+        r"(?!to\s+(?!memory\b))"
+        r"(?:\s+(?:that|this|it|the\s+rule|the))(?:\s+rule)?(?:\s+for\s+[A-Za-z0-9_-]+)?"
+        r"(?:\s+(?:to\s+memory|for\s+future\s+sessions|in\s+memory|\s+por\s+favor))?"
+        r"|(?:save|store)\s+to\s+memory"
+        r"|(?:gu[aá]rdalo|recu[eé]rdalo)(?:\s+por\s+favor)?(?:\s+para\s+futuras\s+sesiones|\s+en\s+memoria)?"
+        r"|(?:guarda|recuerda)\s+(?:eso|esto|esa\s+regla|esta\s+regla|la\s+regla)(?:\s+para\s+futuras\s+sesiones|\s+en\s+memoria|\s+por\s+favor)?"
+        r"|(?:guarda|recuerda)\s+(?:en\s+memoria|para\s+futuras\s+sesiones)"
+        r")"
         r"|(?:confirmed|approved|approve)\s*,?\s*(?:and\s+)?(?:save|remember|store)\s+(?:that|this|it)(?:\s+rule)?(?:\s+to\s+memory)?"
         r"|(?:please\s+)?(?:save|remember)\s+(?:that|this)\s+rule(?:\s+for\s+[A-Za-z0-9_-]+)?"
         r")[\s.!]*",
@@ -275,9 +297,9 @@ class UserIntentClassifier(UserIntentClassifierPort):
     )
 
     _OPERATIONAL_QUERY_START_PATTERN = re.compile(
-        r"^\s*(?:what|where|when|how|who|which|why|can\s+you|could\s+you|would\s+you|"
+        r"^\s*(?:(?:yes|yeah|s[ií])\s*,?\s*)?(?:what|where|when|how|who|which|why|can\s+you|could\s+you|would\s+you|"
         r"please\s+(?:check|show|list|find|tell|look\s+up|verify)|"
-        r"check|show|list|find|tell\s+me|look\s+up|"
+        r"check|show|list|find|tell\s+me|look\s+up|remember\s+to|recuerda|"
         r"¿?(?:qu[eé]|d[oó]nde|cu[aá]ndo|c[oó]mo|qui[eé]n|cu[aá]l|cu[aá]nto|puedes|podr[ií]as|por\s+favor))\b",
         re.IGNORECASE,
     )
@@ -358,7 +380,27 @@ class UserIntentClassifier(UserIntentClassifierPort):
                     residual_query=None,
                 )
 
-        # 2. Check for explicit approval (with optional multi-intent residual query)
+        # 2. Check for brief standalone approval (e.g. "Yes", "Sí", "Yes please", "Sí, por favor")
+        if self._BRIEF_APPROVE_PATTERN.match(cleaned):
+            return UserIntentClassification(
+                intent="approve",
+                confidence=0.98,
+                refined_rule=None,
+                residual_query=None,
+            )
+
+        # 3. Check for brief standalone rejection (e.g. "No", "Nope", "No thanks", "No, gracias")
+        if self._BRIEF_REJECT_PATTERN.match(cleaned):
+            return UserIntentClassification(
+                intent="reject",
+                confidence=0.98,
+                refined_rule=None,
+                residual_query=None,
+            )
+
+        # 4. Check for explicit approval with optional multi-intent residual query (FR-015)
+        # Note: "Yes + new instruction" (e.g. "Yes, remember to check stock") fails this pattern
+        # because it lacks an explicit rule confirmation object and introduces a task directive.
         approve_match = self._APPROVE_PREFIX_PATTERN.match(cleaned)
         if approve_match:
             remainder = cleaned[approve_match.end() :].strip()
@@ -370,7 +412,7 @@ class UserIntentClassifier(UserIntentClassifierPort):
                 residual_query=residual_query,
             )
 
-        # 3. Check for explicit rejection (with optional multi-intent residual query)
+        # 5. Check for explicit rejection with optional multi-intent residual query
         reject_match = self._REJECT_PREFIX_PATTERN.match(cleaned)
         if reject_match:
             remainder = cleaned[reject_match.end() :].strip()
@@ -382,8 +424,9 @@ class UserIntentClassifier(UserIntentClassifierPort):
                 residual_query=residual_query,
             )
 
-        # 4. Safe Default: Any ambiguous reply ("ok", "maybe later", "let me think about that")
-        # or topic shift ("Can you check current stock for SKU-401?") defaults to unrelated_or_ambiguous.
+        # 6. Safe Default: Any ambiguous reply ("ok", "maybe later", "let me think about that")
+        # or topic shift ("Can you check current stock for SKU-401?", "Yes, remember to check stock")
+        # defaults to unrelated_or_ambiguous.
         # Only populate residual_query when the message is an actual operational query/request.
         is_operational_question = self._is_operational_query(cleaned)
         return UserIntentClassification(

@@ -28,6 +28,71 @@ class TestUserIntentClassifier:
     @pytest.mark.parametrize(
         "message",
         [
+            "Yes",
+            "Yes.",
+            "Yes!",
+            "Sí",
+            "Si",
+            "Yes please",
+            "Yes, please",
+            "Yes, please.",
+            "Sí, por favor",
+            "Si por favor",
+            "Yeah",
+            "Yep",
+            "Claro",
+            "Por supuesto",
+        ],
+    )
+    def test_classifies_brief_natural_confirmations(self, message: str) -> None:
+        """Brief affirmative natural responses must classify as 'approve' with no residual query."""
+        result = self.classifier.classify(message, self.sample_proposal)
+        assert result.intent == "approve"
+        assert result.confidence >= 0.85
+        assert result.residual_query is None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "No",
+            "No.",
+            "No!",
+            "Nope",
+            "No thanks",
+            "No, thanks.",
+            "No gracias",
+            "No, gracias",
+            "No por favor",
+            "No, por favor",
+        ],
+    )
+    def test_classifies_brief_natural_rejections(self, message: str) -> None:
+        """Brief negative natural responses must classify as 'reject' with no residual query."""
+        result = self.classifier.classify(message, self.sample_proposal)
+        assert result.intent == "reject"
+        assert result.confidence >= 0.85
+        assert result.residual_query is None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Yes, remember to check the stock tomorrow",
+            "Yes, remember to check inventory",
+            "Yes, please check current inventory for TF-1001",
+            "Yes, check the stock tomorrow",
+            "Sí, recuerda comprobar el stock mañana",
+        ],
+    )
+    def test_rejects_yes_plus_new_instruction_as_approval(self, message: str) -> None:
+        """Instructions and commands preceded by affirmatives must NOT classify as 'approve'."""
+        result = self.classifier.classify(message, self.sample_proposal)
+        assert result.intent != "approve"
+        assert result.intent == "unrelated_or_ambiguous"
+        assert result.residual_query is not None
+
+    @pytest.mark.parametrize(
+        "message",
+        [
             "Yes, please remember that rule for SEUR.",
             "Yes, remember this rule",
             "Confirmed, save that to memory.",

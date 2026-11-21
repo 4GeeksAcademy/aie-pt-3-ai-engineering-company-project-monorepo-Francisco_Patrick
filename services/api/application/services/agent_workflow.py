@@ -1251,12 +1251,13 @@ def route_after_intake(
         Target node identifier: `'ticket_tool'`, `'inventory_tool'`, `'retrieval'`, `'generation'`, or `'refusal'`.
     """
     query = (state.get("query") or "").strip()
+    proposal_resolution = state.get("proposal_resolution")
     if (
-        len(query) < MIN_QUERY_LENGTH
+        (len(query) < MIN_QUERY_LENGTH and proposal_resolution is None)
         or state.get("is_refusal") is True
         or state.get("error")
         or (
-            state.get("proposal_resolution") is None
+            proposal_resolution is None
             and detect_mutation_attempt(query)
         )
     ):
