@@ -34,10 +34,19 @@ from application.services.knowledge_service import KnowledgeService
 from application.services.support_agent_service import SupportAgentService
 from application.services.trace_registry import TraceRegistry
 from domain.agent.ports import (
+    AgentMemoryRepositoryPort,
+    AuthorizationGuardrailPort,
+    ContextSanitizerPort,
+    GuardrailObservabilityPort,
+    InputGuardrailPort,
     InventoryStockToolPort,
+    MemoryAuditLogRepositoryPort,
+    MemoryGuardrailPort,
+    OutputGuardrailPort,
     SupportAgentServicePort,
     SupportTicketToolPort,
     TraceRegistryPort,
+    UserIntentClassifierPort,
 )
 from domain.telemetry.ports import TelemetryRepositoryPort
 from domain.knowledge.entities import KnowledgeRuntimeConfig
@@ -308,11 +317,75 @@ def get_knowledge_service_dep(
     )
 
 
-# --- Support Agent with LangGraph Dependencies ---
+# --- Support Agent with LangGraph & Agent Memory Dependencies ---
 _agent_trace_registry_singleton: Optional[TraceRegistryPort] = None
 _support_ticket_tool_singleton: Optional[SupportTicketToolPort] = None
 _inventory_stock_tool_singleton: Optional[InventoryStockToolPort] = None
+_agent_memory_repo_singleton: Optional[AgentMemoryRepositoryPort] = None
+_memory_audit_log_repo_singleton: Optional[MemoryAuditLogRepositoryPort] = None
+_memory_guardrail_singleton: Optional[MemoryGuardrailPort] = None
+_user_intent_classifier_singleton: Optional[UserIntentClassifierPort] = None
+_agent_memory_service_singleton: Optional[Any] = None
+_input_guardrail_singleton: Optional[InputGuardrailPort] = None
+_authorization_guardrail_singleton: Optional[AuthorizationGuardrailPort] = None
+_context_sanitizer_singleton: Optional[ContextSanitizerPort] = None
+_output_guardrail_singleton: Optional[OutputGuardrailPort] = None
+_guardrail_observability_singleton: Optional[GuardrailObservabilityPort] = None
 _support_agent_service_singleton: Optional[SupportAgentServicePort] = None
+
+
+def get_guardrail_observability_dep() -> GuardrailObservabilityPort:
+    """Dependency provider for the shared thread-safe GuardrailObservabilityService (FR-011, FR-012)."""
+    global _guardrail_observability_singleton
+    if _guardrail_observability_singleton is None:
+        from application.services.guardrail_observability import (
+            GuardrailObservabilityService,
+        )
+
+        _guardrail_observability_singleton = GuardrailObservabilityService()
+    return _guardrail_observability_singleton
+
+
+def get_input_guardrail_dep() -> InputGuardrailPort:
+    """Dependency provider for InputGuardrailPort (InputGuardrailValidator)."""
+    global _input_guardrail_singleton
+    if _input_guardrail_singleton is None:
+        from application.services.agent_guardrails import InputGuardrailValidator
+
+        _input_guardrail_singleton = InputGuardrailValidator()
+    return _input_guardrail_singleton
+
+
+def get_authorization_guardrail_dep() -> AuthorizationGuardrailPort:
+    """Dependency provider for AuthorizationGuardrailPort (AuthorizationGuardrailValidator)."""
+    global _authorization_guardrail_singleton
+    if _authorization_guardrail_singleton is None:
+        from application.services.agent_guardrails import (
+            AuthorizationGuardrailValidator,
+        )
+
+        _authorization_guardrail_singleton = AuthorizationGuardrailValidator()
+    return _authorization_guardrail_singleton
+
+
+def get_context_sanitizer_dep() -> ContextSanitizerPort:
+    """Dependency provider for ContextSanitizerPort (TwoTierContextSanitizer)."""
+    global _context_sanitizer_singleton
+    if _context_sanitizer_singleton is None:
+        from application.services.agent_guardrails import TwoTierContextSanitizer
+
+        _context_sanitizer_singleton = TwoTierContextSanitizer()
+    return _context_sanitizer_singleton
+
+
+def get_output_guardrail_dep() -> OutputGuardrailPort:
+    """Dependency provider for OutputGuardrailPort (OutputGuardrailValidator)."""
+    global _output_guardrail_singleton
+    if _output_guardrail_singleton is None:
+        from application.services.agent_guardrails import OutputGuardrailValidator
+
+        _output_guardrail_singleton = OutputGuardrailValidator()
+    return _output_guardrail_singleton
 
 
 def get_trace_registry() -> TraceRegistryPort:
@@ -324,6 +397,74 @@ def get_trace_registry() -> TraceRegistryPort:
 
 
 get_trace_registry_dep = get_trace_registry
+
+
+def get_agent_memory_repository_dep() -> AgentMemoryRepositoryPort:
+    """Dependency provider for AgentMemoryRepositoryPort (TinyDBAgentMemoryRepository)."""
+    global _agent_memory_repo_singleton
+    if _agent_memory_repo_singleton is None:
+        from infrastructure.persistence.tinydb.agent_memory_repository import (
+            TinyDBAgentMemoryRepository,
+        )
+
+        _agent_memory_repo_singleton = TinyDBAgentMemoryRepository()
+    return _agent_memory_repo_singleton
+
+
+def get_memory_audit_log_repository_dep() -> MemoryAuditLogRepositoryPort:
+    """Dependency provider for MemoryAuditLogRepositoryPort (TinyDBMemoryAuditLogRepository)."""
+    global _memory_audit_log_repo_singleton
+    if _memory_audit_log_repo_singleton is None:
+        from infrastructure.persistence.tinydb.memory_audit_log_repository import (
+            TinyDBMemoryAuditLogRepository,
+        )
+
+        _memory_audit_log_repo_singleton = TinyDBMemoryAuditLogRepository()
+    return _memory_audit_log_repo_singleton
+
+
+def get_memory_guardrail_dep() -> MemoryGuardrailPort:
+    """Dependency provider for MemoryGuardrailPort (MemoryGuardrailValidator)."""
+    global _memory_guardrail_singleton
+    if _memory_guardrail_singleton is None:
+        from application.services.memory_guardrails import MemoryGuardrailValidator
+
+        _memory_guardrail_singleton = MemoryGuardrailValidator()
+    return _memory_guardrail_singleton
+
+
+def get_user_intent_classifier_dep() -> UserIntentClassifierPort:
+    """Dependency provider for UserIntentClassifierPort (UserIntentClassifier)."""
+    global _user_intent_classifier_singleton
+    if _user_intent_classifier_singleton is None:
+        from application.services.memory_service import UserIntentClassifier
+
+        _user_intent_classifier_singleton = UserIntentClassifier()
+    return _user_intent_classifier_singleton
+
+
+def get_agent_memory_service_dep(
+    memory_repo: AgentMemoryRepositoryPort = Depends(get_agent_memory_repository_dep),
+    audit_repo: MemoryAuditLogRepositoryPort = Depends(
+        get_memory_audit_log_repository_dep
+    ),
+    guardrail_validator: MemoryGuardrailPort = Depends(get_memory_guardrail_dep),
+    intent_classifier: UserIntentClassifierPort = Depends(
+        get_user_intent_classifier_dep
+    ),
+) -> Any:
+    """Dependency provider for AgentMemoryService orchestrating proposal lifecycle, recall, and consolidation."""
+    global _agent_memory_service_singleton
+    if _agent_memory_service_singleton is None:
+        from application.services.memory_service import AgentMemoryService
+
+        _agent_memory_service_singleton = AgentMemoryService(
+            memory_repository=memory_repo,
+            audit_repository=audit_repo,
+            guardrail_validator=guardrail_validator,
+            intent_classifier=intent_classifier,
+        )
+    return _agent_memory_service_singleton
 
 
 def get_support_ticket_tool_dep(
@@ -361,6 +502,16 @@ def get_support_agent_service(
     ticket_tool: SupportTicketToolPort = Depends(get_support_ticket_tool_dep),
     inventory_tool: InventoryStockToolPort = Depends(get_inventory_stock_tool_dep),
     trace_registry: TraceRegistryPort = Depends(get_trace_registry),
+    memory_service: Any = Depends(get_agent_memory_service_dep),
+    input_guard: InputGuardrailPort = Depends(get_input_guardrail_dep),
+    authorization_guard: AuthorizationGuardrailPort = Depends(
+        get_authorization_guardrail_dep
+    ),
+    context_sanitizer: ContextSanitizerPort = Depends(get_context_sanitizer_dep),
+    output_guard: OutputGuardrailPort = Depends(get_output_guardrail_dep),
+    guardrail_observability: GuardrailObservabilityPort = Depends(
+        get_guardrail_observability_dep
+    ),
     config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> SupportAgentServicePort:
     """Dependency provider for SupportAgentService with compiled LangGraph state machine."""
@@ -373,6 +524,12 @@ def get_support_agent_service(
             ticket_tool=ticket_tool,
             inventory_tool=inventory_tool,
             trace_registry=trace_registry,
+            memory_service=memory_service,
+            input_guard=input_guard,
+            authorization_guard=authorization_guard,
+            context_sanitizer=context_sanitizer,
+            output_guard=output_guard,
+            guardrail_observability=guardrail_observability,
             config=config,
         )
     return _support_agent_service_singleton
@@ -454,21 +611,30 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)) -> Us
 
 
 __all__ = [
+    "get_agent_memory_repository_dep",
+    "get_agent_memory_service_dep",
     "get_audit_log_repository_dep",
     "get_auth_service_dep",
+    "get_authorization_guardrail_dep",
     "get_cache_dep",
+    "get_context_sanitizer_dep",
     "get_current_admin_user",
     "get_current_user",
     "get_email_service_dep",
     "get_embedding_service_dep",
+    "get_guardrail_observability_dep",
     "get_incident_csv_report_service_dep",
     "get_incident_repository_dep",
     "get_incident_service_dep",
+    "get_input_guardrail_dep",
     "get_inventory_repository_dep",
     "get_inventory_service_dep",
     "get_knowledge_config_dep",
     "get_knowledge_service_dep",
     "get_llm_generation_dep",
+    "get_memory_audit_log_repository_dep",
+    "get_memory_guardrail_dep",
+    "get_output_guardrail_dep",
     "get_password_reset_token_repository_dep",
     "get_profile_repository_dep",
     "get_profile_service_dep",
@@ -488,6 +654,7 @@ __all__ = [
     "get_tinydb_dep",
     "get_trace_registry",
     "get_trace_registry_dep",
+    "get_user_intent_classifier_dep",
     "get_user_repository_dep",
     "get_user_service_dep",
     "get_vector_store_dep",

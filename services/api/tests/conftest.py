@@ -4,6 +4,7 @@ import pytest
 
 # Ensure JWT_SECRET_KEY is set before importing app or adapters
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-unit-testing-32-bytes!"
+os.environ.setdefault("MCP_JWT_SECRET", "test-mcp-jwt-secret-key-for-unit-testing-32b!")
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 os.environ["REDIS_URL"] = "memory://"
 os.environ["CELERY_RESULT_BACKEND"] = "cache+memory://"
@@ -16,11 +17,25 @@ if API_DIR not in sys.path:
 from tinydb import TinyDB
 from tinydb.storages import MemoryStorage
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import SQLModel, create_engine, Session, StaticPool
 
 import models  # noqa: F401
 from main import app
-from infrastructure.database import get_db, init_db, engine
+from infrastructure.database import get_db, init_db
+from infrastructure.persistence.sqlmodel.client import sqlmodel_manager
+
+_TEST_IN_MEMORY_ENGINE = create_engine(
+    "sqlite://",
+    echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+sqlmodel_manager.set_engine(_TEST_IN_MEMORY_ENGINE)
+engine = _TEST_IN_MEMORY_ENGINE
+import infrastructure.database as _infra_db
+import infrastructure.persistence.sqlmodel.client as _sqlmodel_client
+_infra_db.engine = _TEST_IN_MEMORY_ENGINE
+_sqlmodel_client.engine = _TEST_IN_MEMORY_ENGINE
 from infrastructure.adapters.security_adapter import JwtSecurityAdapter
 from infrastructure.adapters.tiny_db_repository import (
     TinyDBUserRepository,

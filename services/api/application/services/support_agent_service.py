@@ -18,10 +18,17 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
+from application.services.agent_guardrails import (
+    AuthorizationGuardrailValidator,
+    InputGuardrailValidator,
+    OutputGuardrailValidator,
+    TwoTierContextSanitizer,
+)
 from application.services.agent_workflow import (
     REQUIRED_WORKFLOW_NODES,
     build_support_agent_graph,
 )
+from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.trace_registry import TraceRegistry
 from domain.agent.entities import (
@@ -30,7 +37,10 @@ from domain.agent.entities import (
     AgentQueryResult,
     AgentState,
     AgentTrace,
+    GuardrailAuditEvent,
     InventoryToolOutput,
+    MemoryProposal,
+    OperatingCountry,
     SourceCitation,
     TicketToolOutput,
 )
@@ -39,7 +49,12 @@ from domain.agent.exceptions import (
     WorkflowExecutionError,
 )
 from domain.agent.ports import (
+    AuthorizationGuardrailPort,
+    ContextSanitizerPort,
+    GuardrailObservabilityPort,
+    InputGuardrailPort,
     InventoryStockToolPort,
+    OutputGuardrailPort,
     SupportAgentServicePort,
     SupportTicketToolPort,
     TraceRegistryPort,
@@ -68,21 +83,14 @@ class SupportAgentService(SupportAgentServicePort):
         checkpointer: Optional[BaseCheckpointSaver] = None,
         config: Optional[KnowledgeRuntimeConfig] = None,
         compiled_graph: Optional[CompiledStateGraph] = None,
+        memory_service: Optional[Any] = None,
+        input_guard: Optional[InputGuardrailPort] = None,
+        authorization_guard: Optional[AuthorizationGuardrailPort] = None,
+        context_sanitizer: Optional[ContextSanitizerPort] = None,
+        output_guard: Optional[OutputGuardrailPort] = None,
+        guardrail_observability: Optional[GuardrailObservabilityPort] = None,
     ) -> None:
-        """Initialize SupportAgentService and compile the workflow graph at startup.
-
-        Args:
-            vector_store: VectorStorePort implementation.
-            embedding_service: EmbeddingServicePort implementation.
-            llm_generator: LLMGenerationPort implementation.
-            ticket_tool: Optional SupportTicketToolPort implementation.
-            inventory_tool: Optional InventoryStockToolPort implementation.
-            trace_registry: Optional TraceRegistryPort (defaults to new TraceRegistry).
-            guardrail_validator: Optional BusinessGuardrailValidator instance.
-            checkpointer: Optional LangGraph checkpointer (defaults to MemorySaver).
-            config: Optional KnowledgeRuntimeConfig loaded from .env.
-            compiled_graph: Optional pre-compiled graph override.
-        """
+        """Initialize SupportAgentService and compile the workflow graph at startup."""
         self.config = config or KnowledgeRuntimeConfig.from_env()
         self._vector_store = vector_store
         self._embedding_service = embedding_service
@@ -109,8 +117,43 @@ class SupportAgentService(SupportAgentServicePort):
         else:
             self._inventory_tool = inventory_tool
 
+        if memory_service is None:
+            from application.services.memory_guardrails import MemoryGuardrailValidator
+            from application.services.memory_service import (
+                AgentMemoryService,
+                UserIntentClassifier,
+            )
+            from infrastructure.persistence.tinydb.agent_memory_repository import (
+                TinyDBAgentMemoryRepository,
+            )
+            from infrastructure.persistence.tinydb.memory_audit_log_repository import (
+                TinyDBMemoryAuditLogRepository,
+            )
+
+            self._memory_service: Any = AgentMemoryService(
+                memory_repository=TinyDBAgentMemoryRepository(),
+                audit_repository=TinyDBMemoryAuditLogRepository(),
+                guardrail_validator=MemoryGuardrailValidator(),
+                intent_classifier=UserIntentClassifier(),
+            )
+        else:
+            self._memory_service = memory_service
+
         self._trace_registry: TraceRegistryPort = trace_registry or TraceRegistry()
         self._guardrails = guardrail_validator or BusinessGuardrailValidator()
+        self._input_guard: InputGuardrailPort = input_guard or InputGuardrailValidator()
+        self._authorization_guard: AuthorizationGuardrailPort = (
+            authorization_guard or AuthorizationGuardrailValidator()
+        )
+        self._context_sanitizer: ContextSanitizerPort = (
+            context_sanitizer or TwoTierContextSanitizer()
+        )
+        self._output_guard: OutputGuardrailPort = (
+            output_guard or OutputGuardrailValidator()
+        )
+        self._guardrail_observability: GuardrailObservabilityPort = (
+            guardrail_observability or GuardrailObservabilityService()
+        )
         self._checkpointer: BaseCheckpointSaver = (
             checkpointer if checkpointer is not None else MemorySaver()
         )
@@ -126,8 +169,24 @@ class SupportAgentService(SupportAgentServicePort):
                 guardrail_validator=self._guardrails,
                 checkpointer=self._checkpointer,
                 default_min_score=self.config.similarity_threshold,
+                memory_service=self._memory_service,
+                input_guard=self._input_guard,
+                authorization_guard=self._authorization_guard,
+                context_sanitizer=self._context_sanitizer,
+                output_guard=self._output_guard,
+                observability=self._guardrail_observability,
             )
         )
+
+    @property
+    def guardrail_observability(self) -> GuardrailObservabilityPort:
+        """Return the active GuardrailObservabilityPort instance."""
+        return self._guardrail_observability
+
+    @property
+    def memory_service(self) -> Any:
+        """Return the active AgentMemoryService instance."""
+        return self._memory_service
 
     @property
     def compiled_graph(self) -> CompiledStateGraph:
@@ -164,10 +223,11 @@ class SupportAgentService(SupportAgentServicePort):
             WorkflowExecutionError: When an unhandled runtime fault occurs inside a node.
         """
         start_ns = time.perf_counter()
-        trace_id = (
+        trace_id = str(uuid.uuid4())
+        thread_id = (
             request.thread_id.strip()
             if request.thread_id and request.thread_id.strip()
-            else str(uuid.uuid4())
+            else trace_id
         )
         effective_min_score = (
             request.min_score
@@ -177,6 +237,7 @@ class SupportAgentService(SupportAgentServicePort):
 
         initial_state: AgentState = {
             "query": request.query,
+            "thread_id": thread_id,
             "language": request.language or "en",
             "top_k": request.top_k,
             "min_score": effective_min_score,
@@ -197,8 +258,24 @@ class SupportAgentService(SupportAgentServicePort):
             "step_latencies": {},
             "node_outputs": {},
             "error": None,
+            "pending_proposal": None,
+            "memory_proposal": None,
+            "recalled_memories": [],
+            "proposal_resolution": None,
+            "session_context": request.session_context,
+            "resolved_country": (
+                request.session_context.primary_operating_country
+                if request.session_context is not None
+                else None
+            ),
+            "guardrail_action": "allow",
+            "guardrail_failure_category": "none",
+            "guardrail_reason_code": None,
+            "guardrail_message": None,
+            "casual_redirect_required": False,
+            "guardrail_events": [],
         }
-        run_config: Dict[str, Any] = {"configurable": {"thread_id": trace_id}}
+        run_config: Dict[str, Any] = {"configurable": {"thread_id": thread_id}}
 
         try:
             final_state: Dict[str, Any] = self._compiled_graph.invoke(
@@ -247,7 +324,7 @@ class SupportAgentService(SupportAgentServicePort):
             if isinstance(v, dict)
         }
 
-        checkpoints = self.get_checkpoints(trace_id)
+        checkpoints = self.get_checkpoints(thread_id)
         trace = AgentTrace(
             trace_id=trace_id,
             query=sanitized_query,
@@ -266,6 +343,27 @@ class SupportAgentService(SupportAgentServicePort):
         )
         self._trace_registry.record_trace(trace)
 
+        memory_proposal_raw = final_state.get("memory_proposal")
+        memory_proposal: Optional[MemoryProposal] = (
+            memory_proposal_raw
+            if isinstance(memory_proposal_raw, MemoryProposal)
+            else None
+        )
+        recalled_memories: List[str] = [
+            str(m) for m in (final_state.get("recalled_memories") or [])
+        ]
+        guardrail_interventions: List[GuardrailAuditEvent] = [
+            ev
+            for ev in (final_state.get("guardrail_events") or [])
+            if isinstance(ev, GuardrailAuditEvent)
+        ]
+        resolved_country_raw = final_state.get("resolved_country")
+        resolved_country: Optional[OperatingCountry] = (
+            resolved_country_raw
+            if resolved_country_raw in ("US", "ES")
+            else None
+        )
+
         return AgentQueryResult(
             query=sanitized_query,
             answer=final_answer,
@@ -277,6 +375,10 @@ class SupportAgentService(SupportAgentServicePort):
             fallback_triggered=fallback_triggered,
             sources_consulted=sources_consulted,
             tool_calls=tool_calls,
+            memory_proposal=memory_proposal,
+            recalled_memories=recalled_memories,
+            guardrail_interventions=guardrail_interventions,
+            resolved_country=resolved_country,
         )
 
     def get_trace(self, trace_id: str) -> AgentTrace:

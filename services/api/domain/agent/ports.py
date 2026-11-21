@@ -6,17 +6,29 @@ tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace stor
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from domain.agent.entities import (
     AgentCheckpoint,
     AgentQueryRequest,
     AgentQueryResult,
     AgentTrace,
+    AuthenticatedSessionContext,
+    ConsolidatedCarrierProfile,
+    GuardrailAuditEvent,
+    GuardrailEvaluationResult,
+    GuardrailSummaryReport,
     InventoryToolInput,
     InventoryToolOutput,
+    MemoryAuditLogEntry,
+    MemoryCategory,
+    MemoryGuardrailVerdict,
+    PersistentMemoryRecord,
+    RetrievedContext,
     TicketToolInput,
     TicketToolOutput,
+    UserIntentClassification,
 )
 
 
@@ -144,9 +156,272 @@ class SupportAgentServicePort(ABC):
         """
 
 
+class AgentMemoryRepositoryPort(ABC):
+    """Port interface for storing, querying, and consolidating persistent agent memories (FR-006, FR-007)."""
+
+    @abstractmethod
+    def save_memory(self, record: PersistentMemoryRecord) -> PersistentMemoryRecord:
+        """Persist or update an approved operational memory record.
+
+        Args:
+            record: PersistentMemoryRecord domain object to store.
+
+        Returns:
+            The stored PersistentMemoryRecord with assigned identifiers.
+        """
+
+    @abstractmethod
+    def get_memory(self, memory_id: str) -> Optional[PersistentMemoryRecord]:
+        """Retrieve a persistent memory record by its identifier.
+
+        Args:
+            memory_id: Unique UUID string.
+
+        Returns:
+            PersistentMemoryRecord if found and active, otherwise None.
+        """
+
+    @abstractmethod
+    def search_memories(
+        self,
+        category: Optional[MemoryCategory] = None,
+        target_entity: Optional[str] = None,
+        country_code: Optional[str] = None,
+        active_only: bool = True,
+    ) -> List[PersistentMemoryRecord]:
+        """Search active memories by category, target entity, or country.
+
+        Args:
+            category: Optional functional category filter.
+            target_entity: Optional entity filter (carrier, region, client ID).
+            country_code: Optional ISO country code filter ("ES", "US").
+            active_only: Whether to exclude expired or inactive items.
+
+        Returns:
+            List of matching PersistentMemoryRecord items.
+        """
+
+    @abstractmethod
+    def get_consolidated_carrier_profile(
+        self,
+        carrier: str,
+        country_code: str,
+    ) -> Optional[ConsolidatedCarrierProfile]:
+        """Retrieve the consolidated profile of active operational rules for a carrier and country.
+
+        Args:
+            carrier: Carrier name (e.g. "SEUR", "FedEx").
+            country_code: ISO country code ("ES", "US").
+
+        Returns:
+            ConsolidatedCarrierProfile if records exist, otherwise None.
+        """
+
+    @abstractmethod
+    def evict_expired(self, cutoff_time: datetime) -> int:
+        """Evict or mark inactive any records whose expires_at is older than cutoff_time.
+
+        Args:
+            cutoff_time: UTC threshold timestamp.
+
+        Returns:
+            Count of evicted records.
+        """
+
+
+class MemoryAuditLogRepositoryPort(ABC):
+    """Port interface for persisting and querying immutable memory lifecycle audit logs (FR-014)."""
+
+    @abstractmethod
+    def record_entry(self, entry: MemoryAuditLogEntry) -> None:
+        """Append an immutable audit entry to the audit log store.
+
+        Args:
+            entry: MemoryAuditLogEntry domain object.
+        """
+
+    @abstractmethod
+    def list_entries(
+        self,
+        proposal_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[MemoryAuditLogEntry]:
+        """Query audit log entries ordered newest first.
+
+        Args:
+            proposal_id: Optional filter for a specific proposal lifecycle.
+            event_type: Optional filter by event type ("proposed", "approved", "rejected", etc.).
+            limit: Maximum records to return.
+
+        Returns:
+            List of MemoryAuditLogEntry records.
+        """
+
+
+class MemoryGuardrailPort(ABC):
+    """Port interface for evaluating candidate memories against enterprise guardrails (FR-005, FR-017)."""
+
+    @abstractmethod
+    def validate_candidate(
+        self,
+        content: str,
+        category: str,
+        target_entity: str,
+    ) -> MemoryGuardrailVerdict:
+        """Validate candidate memory content against forbidden categories.
+
+        Args:
+            content: Candidate summary / text.
+            category: Proposed category.
+            target_entity: Carrier or entity identifier.
+
+        Returns:
+            MemoryGuardrailVerdict with allowed=True or allowed=False with violation details.
+        """
+
+
+class UserIntentClassifierPort(ABC):
+    """Port interface for classifying user follow-up intent regarding active memory proposals (FR-011)."""
+
+    @abstractmethod
+    def classify(
+        self,
+        user_message: str,
+        proposal_summary: str,
+    ) -> UserIntentClassification:
+        """Classify user response into approve, reject, edit, or unrelated_or_ambiguous.
+
+        Args:
+            user_message: The follow-up conversational text from the user.
+            proposal_summary: The summary of the pending proposal being evaluated.
+
+        Returns:
+            UserIntentClassification containing intent, confidence, optional refined_rule,
+            and optional residual_query.
+        """
+
+
+class InputGuardrailPort(ABC):
+    """Pre-execution input guardrail port enforcing system authority and domain scope (FR-003..FR-006)."""
+
+    @abstractmethod
+    def evaluate_input(
+        self,
+        query: str,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
+
+
+class AuthorizationGuardrailPort(ABC):
+    """Guardrail port enforcing session-scoped order authorization and US/Spain policy separation (FR-007, FR-008)."""
+
+    @abstractmethod
+    def evaluate_authorization_and_policy(
+        self,
+        query: str,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Verify order ownership against `session_context` and prevent cross-country policy mixing."""
+
+
+class ContextSanitizerPort(ABC):
+    """Two-tier external content sanitizer isolating RAG chunks and tool payloads from system authority (FR-009)."""
+
+    @abstractmethod
+    def sanitize_text_chunk(
+        self,
+        text: str,
+        source_label: str,
+    ) -> GuardrailEvaluationResult:
+        """Apply two-tier defense to an external text snippet."""
+
+    @abstractmethod
+    def sanitize_rag_contexts(
+        self,
+        contexts: List[RetrievedContext],
+    ) -> Tuple[List[RetrievedContext], List[GuardrailEvaluationResult]]:
+        """Sanitize a list of RetrievedContext chunks, dropping quarantined Tier-2 chunks."""
+
+    @abstractmethod
+    def sanitize_ticket_output(
+        self,
+        output: TicketToolOutput,
+    ) -> Tuple[TicketToolOutput, List[GuardrailEvaluationResult]]:
+        """Sanitize descriptions/titles inside TicketToolOutput records."""
+
+    @abstractmethod
+    def sanitize_inventory_output(
+        self,
+        output: InventoryToolOutput,
+    ) -> Tuple[InventoryToolOutput, List[GuardrailEvaluationResult]]:
+        """Sanitize descriptions/names inside InventoryToolOutput records."""
+
+
+class OutputGuardrailPort(ABC):
+    """Post-generation output guardrail port validating structure, security, and restricted domain content (FR-010)."""
+
+    @abstractmethod
+    def validate_output(
+        self,
+        query: str,
+        candidate_answer: str,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+        casual_redirect_required: bool = False,
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Inspect and enforce guardrails on a candidate response before delivery."""
+
+
+class GuardrailObservabilityPort(ABC):
+    """Port interface for logging guardrail interventions and querying aggregated trigger summaries (FR-011, FR-012)."""
+
+    @abstractmethod
+    def record_evaluation(
+        self,
+        result: GuardrailEvaluationResult,
+        session_id: str,
+        raw_preview: str,
+        trace_id: Optional[str] = None,
+    ) -> Optional[GuardrailAuditEvent]:
+        """Record a guardrail evaluation outcome and create a redacted audit event on intervention."""
+
+    @abstractmethod
+    def get_summary(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> GuardrailSummaryReport:
+        """Aggregate trigger counts by failure type ('structural', 'content', 'security') and layer."""
+
+    @abstractmethod
+    def list_events(
+        self,
+        session_id: Optional[str] = None,
+        failure_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[GuardrailAuditEvent]:
+        """List recorded GuardrailAuditEvent entries ordered newest first."""
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Reset counters and stored events (used for deterministic test isolation)."""
+
+
 __all__ = [
+    "AgentMemoryRepositoryPort",
+    "AuthorizationGuardrailPort",
+    "ContextSanitizerPort",
+    "GuardrailObservabilityPort",
+    "InputGuardrailPort",
     "InventoryStockToolPort",
+    "MemoryAuditLogRepositoryPort",
+    "MemoryGuardrailPort",
+    "OutputGuardrailPort",
     "SupportAgentServicePort",
     "SupportTicketToolPort",
     "TraceRegistryPort",
+    "UserIntentClassifierPort",
 ]

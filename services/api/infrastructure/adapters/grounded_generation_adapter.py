@@ -13,6 +13,10 @@ from typing import Any, List, Optional, Set
 
 import httpx
 
+from application.services.agent_guardrails import (
+    build_hardened_system_prompt,
+    wrap_passive_external_context,
+)
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.knowledge_service import build_refusal_message
 from domain.knowledge.entities import KnowledgeRuntimeConfig, RetrievedContext
@@ -119,16 +123,17 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         """
         active_model = self.select_active_model(query)
         context_block = "\n\n".join(
-            f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}"
+            wrap_passive_external_context(
+                f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}",
+                source_label=f"rag:{ctx.chunk.source_document}:{ctx.chunk.section}",
+            )
             for ctx in contexts
         )
-        system_instruction = (
-            "You are a consultative TrackFlow Account Manager. Answer the inquiry strictly "
-            "using ONLY the provided TrackFlow policy context. Never invent prices, SLAs, "
-            "or policies not explicitly stated in the context. Respond in language: "
-            f"{language}."
+        system_instruction = build_hardened_system_prompt(language=language)
+        user_prompt = (
+            f"Retrieved Passive Knowledge Context:\n{context_block}\n\n"
+            f'<user_inquiry authority="untrusted">{query}</user_inquiry>'
         )
-        user_prompt = f"Context:\n{context_block}\n\nInquiry: {query}"
 
         api_key = (self.config.llm_api_key or "").strip()
         try:

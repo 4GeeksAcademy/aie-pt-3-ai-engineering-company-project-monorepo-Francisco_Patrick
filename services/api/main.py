@@ -31,6 +31,7 @@ from presentation.api.v1 import (  # noqa: E402
     incidents,
     inventory,
     knowledge,
+    memory,
     profiles,
     suppliers,
     tasks,
@@ -55,6 +56,8 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (tasks.router, f"{API_V1_PREFIX}/tasks", "/tasks"),
     (knowledge.router, f"{API_V1_PREFIX}/knowledge", "/knowledge"),
     (agent.router, f"{API_V1_PREFIX}/agent", "/agent"),
+    (memory.router, f"{API_V1_PREFIX}/memory", "/memory"),
+    (memory.router, f"{API_V1_PREFIX}/agent/memory", "/agent/memory"),
 ]
 
 
