@@ -1404,11 +1404,11 @@ def build_support_agent_graph(
     """
     resolved_checkpointer = checkpointer if checkpointer is not None else MemorySaver()
     if ticket_tool is None:
-        from infrastructure.adapters.support_ticket_tool_adapter import (
-            IncidentSupportTicketToolAdapter,
+        from infrastructure.adapters.mcp_ticket_tool_adapter import (
+            McpTicketToolAdapter,
         )
 
-        resolved_ticket_tool: SupportTicketToolPort = IncidentSupportTicketToolAdapter()
+        resolved_ticket_tool: SupportTicketToolPort = McpTicketToolAdapter()
     else:
         resolved_ticket_tool = ticket_tool
 

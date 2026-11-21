@@ -329,14 +329,14 @@ get_trace_registry_dep = get_trace_registry
 def get_support_ticket_tool_dep(
     config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> SupportTicketToolPort:
-    """Dependency provider for SupportTicketToolPort (IncidentSupportTicketToolAdapter)."""
+    """Dependency provider for SupportTicketToolPort (McpTicketToolAdapter)."""
     global _support_ticket_tool_singleton
     if _support_ticket_tool_singleton is None:
-        from infrastructure.adapters.support_ticket_tool_adapter import (
-            IncidentSupportTicketToolAdapter,
+        from infrastructure.adapters.mcp_ticket_tool_adapter import (
+            McpTicketToolAdapter,
         )
 
-        _support_ticket_tool_singleton = IncidentSupportTicketToolAdapter(config=config)
+        _support_ticket_tool_singleton = McpTicketToolAdapter(config=config)
     return _support_ticket_tool_singleton
 
 

@@ -177,6 +177,54 @@ class TestSupportAgentRoutesIntegration:
         assert trace_body["sources_consulted"] == ["ticket_tool"]
         assert trace_body["tool_calls"][0]["status"] == "not_found"
 
+    def test_t025_agent_uses_mcp_ticket_tool_adapter_and_multi_source_rag_routing(
+        self,
+    ) -> None:
+        """T025 & US4 Scenarios 1-3: Support Agent uses McpTicketToolAdapter and preserves multi-source ticket_tool -> rag routing."""
+        from infrastructure.adapters.mcp_ticket_tool_adapter import McpTicketToolAdapter
+        from presentation.dependencies import get_support_ticket_tool_dep
+
+        wired_ticket_tool = get_support_ticket_tool_dep()
+        assert isinstance(wired_ticket_tool, McpTicketToolAdapter)
+
+        active_db = get_tinydb()
+        repo = TinyDBIncidentRepository(active_db)
+        repo.save(
+            Incident(
+                id="INC-001",
+                title="Delayed pallet shipment to Zaragoza",
+                description="Pallet delayed at hub.",
+                category=IncidentCategory.WAREHOUSE,
+                status=IncidentStatus.OPEN,
+                origin=IncidentOrigin.INTERNAL,
+                branch="zaragoza",
+                created_at="2026-11-17T09:00:00+00:00",
+                updated_at="2026-11-18T10:30:00+00:00",
+            )
+        )
+
+        hybrid_res = client.post(
+            "/api/v1/agent/query",
+            json={
+                "query": "What is the status of ticket INC-001 and what is TrackFlow's standard return window?",
+                "top_k": 3,
+                "min_score": 0.62,
+            },
+        )
+        assert hybrid_res.status_code == 200
+        hybrid_data = hybrid_res.json()
+        assert hybrid_data["is_refusal"] is False
+        assert hybrid_data["sources_consulted"] == ["ticket_tool", "rag"]
+        assert hybrid_data["node_sequence"] == [
+            "intake",
+            "ticket_tool",
+            "retrieval",
+            "generation",
+        ]
+        assert "INC-001" in hybrid_data["answer"]
+        assert "30 days" in hybrid_data["answer"]
+        assert len(hybrid_data["sources"]) >= 1
+
     def test_t043_query_endpoint_live_inventory_tool_routing(self) -> None:
         """T043: POST /api/v1/agent/query autonomously routes SKU stock queries to inventory_tool."""
         inv_service = InventoryService(inventory_repo=SQLModelInventoryRepository())

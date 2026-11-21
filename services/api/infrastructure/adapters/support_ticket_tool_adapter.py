@@ -13,6 +13,7 @@ Implements `SupportTicketToolPort` (FR-016, FR-017, FR-019, FR-020, FR-021, FR-0
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import time
 from typing import Any, Callable, Dict, List, Optional
+import warnings
 
 import httpx
 
@@ -61,6 +62,12 @@ class IncidentSupportTicketToolAdapter(SupportTicketToolPort):
             internal_api_token: Optional bearer token loaded from environment config.
             http_client: Optional httpx-compatible client for testing HTTP transport.
         """
+        warnings.warn(
+            "IncidentSupportTicketToolAdapter is deprecated and decommissioned in active agent workflows. "
+            "Use McpTicketToolAdapter from infrastructure.adapters.mcp_ticket_tool_adapter instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._config = config or KnowledgeRuntimeConfig.from_env()
         self._incident_service = incident_service
         self._incident_service_factory = incident_service_factory
