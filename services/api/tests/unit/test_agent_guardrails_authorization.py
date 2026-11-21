@@ -174,3 +174,34 @@ class TestCountryResolutionAndPolicySeparation:
         assert detect_explicit_fulfillment_country("Mi pedido en Los Ángeles") == "US"
         assert detect_explicit_fulfillment_country("Shipment from Zaragoza warehouse") == "ES"
         assert detect_explicit_fulfillment_country("Entrega en Madrid") == "ES"
+
+    def test_generic_policy_query_without_session_context_has_no_country_and_is_allowed(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+    ) -> None:
+        """Generic policy query with session_context=None returns resolved_country=None and action='allow'."""
+        query = "¿Cuál es la política general de devoluciones?"
+        result = auth_guard.evaluate_authorization_and_policy(
+            query=query,
+            session_context=None,
+            language="es",
+        )
+        assert result.action == "allow"
+        assert result.failure_category == "none"
+        assert result.resolved_country is None
+
+    def test_spain_policy_query_without_session_context_is_not_blocked_as_us_order(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+    ) -> None:
+        """Query asking for Spain return policy with session_context=None does not trigger false-positive US cross-country block."""
+        query = "Aplica la política de devoluciones de España para compras online"
+        result = auth_guard.evaluate_authorization_and_policy(
+            query=query,
+            session_context=None,
+            language="es",
+        )
+        assert result.action == "allow"
+        assert result.failure_category == "none"
+        assert result.reason_code == "AUTHORIZATION_AND_POLICY_VERIFIED"
+        assert result.resolved_country == "ES"

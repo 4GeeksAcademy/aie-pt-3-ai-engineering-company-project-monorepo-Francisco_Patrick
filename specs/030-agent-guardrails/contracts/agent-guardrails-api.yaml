@@ -57,6 +57,13 @@ paths:
             default: 50
             minimum: 1
             maximum: 100
+        - name: reset
+          in: query
+          required: false
+          description: When true, clear in-memory guardrail counters and events after returning summary
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Aggregated guardrail observability report
@@ -64,6 +71,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GuardrailSummaryResponseSchema"
+
+  /api/v1/agent/guardrails/reset:
+    post:
+      summary: Reset in-memory guardrail trigger counters and audit event history
+      operationId: resetGuardrails
+      tags:
+        - Support Agent Guardrails
+      responses:
+        "200":
+          description: Guardrail metrics and audit events cleared successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardrailResetResponseSchema"
 
 components:
   schemas:
@@ -203,6 +224,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/GuardrailInterventionSchema"
+
+    GuardrailResetResponseSchema:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          example: "cleared"
+        message:
+          type: string
+          example: "Guardrail observability metrics and audit events cleared."
 
     AgentQueryRequestSchema:
       type: object

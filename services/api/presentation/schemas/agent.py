@@ -96,6 +96,16 @@ class GuardrailSummaryResponseSchema(BaseModel):
     )
 
 
+class GuardrailResetResponseSchema(BaseModel):
+    """Response returned by POST /api/v1/agent/guardrails/reset."""
+
+    status: str = Field(default="cleared", description="Status code of the reset operation")
+    message: str = Field(
+        default="Guardrail observability metrics and audit events cleared.",
+        description="Human-readable confirmation of the reset operation",
+    )
+
+
 class AgentQueryRequestSchema(BaseModel):
     """Request payload for submitting policy or operational inquiries to the LangGraph support agent."""
 
@@ -376,6 +386,7 @@ __all__ = [
     "AuthenticatedSessionContextSchema",
     "ConsolidatedCarrierProfileResponseSchema",
     "GuardrailInterventionSchema",
+    "GuardrailResetResponseSchema",
     "GuardrailSummaryResponseSchema",
     "KnowledgeSourceCitationSchema",
     "MemoryAuditLogEntrySchema",

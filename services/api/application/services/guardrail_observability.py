@@ -400,7 +400,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         default=None,
         help="Optional session_id filter",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset/clear in-memory guardrail counters and audit events",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
+
+    from presentation.dependencies import get_guardrail_observability_dep
+
+    obs = get_guardrail_observability_dep()
+    if args.reset:
+        obs.clear()
+        sys.stdout.write("Guardrail observability metrics and audit events cleared.\n")
+        return 0
 
     if args.demo_summary:
         report = _run_demo_summary()

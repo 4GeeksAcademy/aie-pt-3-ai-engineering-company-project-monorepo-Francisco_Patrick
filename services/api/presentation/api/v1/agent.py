@@ -39,6 +39,7 @@ from presentation.schemas.agent import (
     AgentQueryResponseSchema,
     AgentTraceResponseSchema,
     GuardrailInterventionSchema,
+    GuardrailResetResponseSchema,
     GuardrailSummaryResponseSchema,
     KnowledgeSourceCitationSchema,
     MemoryProposalFeedbackRequestSchema,
@@ -205,10 +206,16 @@ async def get_guardrail_summary(
         le=100,
         description="Maximum number of recent sanitized guardrail audit events to include",
     ),
+    reset: bool = Query(
+        default=False,
+        description="When true, clear in-memory guardrail counters and events after returning summary",
+    ),
     observability: GuardrailObservabilityPort = Depends(get_guardrail_observability_dep),
 ) -> GuardrailSummaryResponseSchema:
     """Return aggregated guardrail trigger counts by failure type ('structural', 'content', 'security') and layer."""
     report = await run_in_threadpool(observability.get_summary, session_id, limit)
+    if reset:
+        await run_in_threadpool(observability.clear)
     return GuardrailSummaryResponseSchema(
         total_evaluations=report.total_evaluations,
         total_interventions=report.total_interventions,
@@ -233,6 +240,23 @@ async def get_guardrail_summary(
             )
             for ev in report.recent_events
         ],
+    )
+
+
+@router.post(
+    "/guardrails/reset",
+    response_model=GuardrailResetResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Reset in-memory guardrail trigger counters and audit event history",
+)
+async def reset_guardrails(
+    observability: GuardrailObservabilityPort = Depends(get_guardrail_observability_dep),
+) -> GuardrailResetResponseSchema:
+    """Clear all in-memory guardrail counters and audit events."""
+    await run_in_threadpool(observability.clear)
+    return GuardrailResetResponseSchema(
+        status="cleared",
+        message="Guardrail observability metrics and audit events cleared.",
     )
 
 

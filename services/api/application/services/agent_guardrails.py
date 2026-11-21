@@ -488,7 +488,7 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                 explicit_location_country=explicit_country,
             )
         else:
-            resolved_country = explicit_country or "US"
+            resolved_country = explicit_country
 
         # 1. Session-Scoped Order Ownership Verification (FR-007)
         if referenced_orders:
@@ -566,7 +566,9 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
             requested_policy_country = "US"
 
         if wants_es_on_us or (
-            requested_policy_country == "ES" and resolved_country == "US"
+            resolved_country is not None
+            and requested_policy_country == "ES"
+            and resolved_country == "US"
         ):
             resolved_country = "US"
             msg = (
@@ -598,7 +600,9 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
             )
 
         if wants_us_on_es or (
-            requested_policy_country == "US" and resolved_country == "ES"
+            resolved_country is not None
+            and requested_policy_country == "US"
+            and resolved_country == "ES"
         ):
             resolved_country = "ES"
             msg = (

@@ -384,6 +384,24 @@ class TestRedactionAndRestAndCliObservability:
         assert sum_body["by_layer"]["authorization_guard"] == 1
         assert len(sum_body["recent_events"]) == 1
 
+        # 3. Query GET /api/v1/agent/guardrails/summary with reset=true
+        sum_resp_reset = client.get(
+            "/api/v1/agent/guardrails/summary",
+            params={"reset": True},
+        )
+        assert sum_resp_reset.status_code == 200
+        assert sum_resp_reset.json()["total_interventions"] == 1
+
+        # 4. Verify subsequent summary is cleared
+        sum_resp_after = client.get("/api/v1/agent/guardrails/summary")
+        assert sum_resp_after.status_code == 200
+        assert sum_resp_after.json()["total_interventions"] == 0
+
+        # 5. Verify POST /api/v1/agent/guardrails/reset
+        reset_post_resp = client.post("/api/v1/agent/guardrails/reset")
+        assert reset_post_resp.status_code == 200
+        assert reset_post_resp.json()["status"] == "cleared"
+
     def test_cli_demo_summary_outputs_valid_json_report(
         self,
         capsys: pytest.CaptureFixture[str],
@@ -404,3 +422,13 @@ class TestRedactionAndRestAndCliObservability:
             "context_sanitizer",
             "output_guard",
         }
+
+    def test_cli_reset_flag_clears_metrics(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Verify CLI helper `--reset` clears metrics and reports confirmation."""
+        exit_code = cli_main(["--reset"])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Guardrail observability metrics and audit events cleared." in captured.out

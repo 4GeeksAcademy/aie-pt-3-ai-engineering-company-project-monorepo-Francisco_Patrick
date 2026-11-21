@@ -120,7 +120,7 @@ class ContextSanitizerPort(ABC):
     """Two-tier external content sanitizer isolating RAG chunks and tool payloads from system authority."""
 
     @abstractmethod
-    def sanitize_text_Chunk(
+    def sanitize_text_chunk(
         self,
         text: str,
         source_label: str,
