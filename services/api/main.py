@@ -33,6 +33,7 @@ from presentation.api.v1 import (  # noqa: E402
     knowledge,
     memory,
     profiles,
+    rfp,
     suppliers,
     tasks,
     telemetry,
@@ -58,6 +59,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (agent.router, f"{API_V1_PREFIX}/agent", "/agent"),
     (memory.router, f"{API_V1_PREFIX}/memory", "/memory"),
     (memory.router, f"{API_V1_PREFIX}/agent/memory", "/agent/memory"),
+    (rfp.router, f"{API_V1_PREFIX}/rfp", "/rfp"),
 ]
 
 

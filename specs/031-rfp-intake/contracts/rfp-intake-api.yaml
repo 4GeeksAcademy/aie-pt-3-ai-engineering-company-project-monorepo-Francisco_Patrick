@@ -1,0 +1,405 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow RFP Intake & Analysis API
+  version: 1.0.0
+  description: >
+    API endpoints for asynchronous PDF RFP document intake, readability scoring,
+    agentic classifier and department analysis, ticket status tracking, and Part 2 handoff.
+
+paths:
+  /api/v1/rfp/intake:
+    post:
+      summary: Upload a PDF RFP document for asynchronous intake and analysis
+      operationId: uploadRfpDocument
+      tags:
+        - RFP Intake
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The PDF proposal or RFP document to be analyzed (max 25MB).
+      responses:
+        '202':
+          description: Upload accepted and analysis pipeline initiated in background
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakeTicketAcceptedResponse'
+        '400':
+          description: Invalid file type or empty file uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/tickets:
+    get:
+      summary: List recent RFP intake tickets
+      operationId: listRfpTickets
+      tags:
+        - RFP Intake
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [analizando, descartado, analisis_completo]
+      responses:
+        '200':
+          description: List of tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - items
+                  - total
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IntakeTicketSummary'
+                  total:
+                    type: integer
+
+  /api/v1/rfp/tickets/{ticket_id}:
+    get:
+      summary: Get details, status, and analysis outputs for an intake ticket
+      operationId: getRfpTicketById
+      tags:
+        - RFP Intake
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Complete ticket status and analysis breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakeTicketDetailResponse'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/tickets/{ticket_id}/handoff:
+    get:
+      summary: Get canonical Part 2 handoff payload for a completed intake ticket
+      operationId: getRfpHandoffPayload
+      tags:
+        - RFP Intake
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Part 2 handoff payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntakeHandoffPayloadResponse'
+        '400':
+          description: Ticket is not yet completed or was discarded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    IntakeTicketAcceptedResponse:
+      type: object
+      required:
+        - ticket_id
+        - ticket_number
+        - status
+        - message
+        - created_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        ticket_number:
+          type: string
+          example: "RFP-2026-001"
+        status:
+          type: string
+          enum: [analizando, descartado, analisis_completo]
+          example: "analizando"
+        message:
+          type: string
+          example: "Proposal accepted for analysis. Processing in background."
+        created_at:
+          type: string
+          format: date-time
+
+    IntakeTicketSummary:
+      type: object
+      required:
+        - ticket_id
+        - ticket_number
+        - status
+        - raw_pdf_filename
+        - created_at
+        - updated_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        ticket_number:
+          type: string
+        status:
+          type: string
+          enum: [analizando, descartado, analisis_completo]
+        raw_pdf_filename:
+          type: string
+        client_name:
+          type: string
+          nullable: true
+        rejection_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ReadabilityScoresResponse:
+      type: object
+      required:
+        - flesch_reading_ease
+        - flesch_kincaid_grade
+        - reading_level_label
+        - word_count
+        - sentence_count
+      properties:
+        flesch_reading_ease:
+          type: number
+        flesch_kincaid_grade:
+          type: number
+        reading_level_label:
+          type: string
+        word_count:
+          type: integer
+        sentence_count:
+          type: integer
+
+    RFPMetadataResponse:
+      type: object
+      required:
+        - client_name
+        - client_country
+        - currency
+        - services_requested
+        - departments_needed
+        - unsupported_services
+        - readability_scores
+      properties:
+        client_name:
+          type: string
+        client_country:
+          type: string
+          enum: [US, ES]
+        currency:
+          type: string
+          enum: [USD, EUR]
+        services_requested:
+          type: array
+          items:
+            type: string
+        monthly_volume:
+          type: integer
+          nullable: true
+        deadline:
+          type: string
+          nullable: true
+        budget_range:
+          type: string
+          nullable: true
+        departments_needed:
+          type: array
+          items:
+            type: string
+        unsupported_services:
+          type: array
+          items:
+            type: string
+        readability_scores:
+          $ref: '#/components/schemas/ReadabilityScoresResponse'
+
+    DepartmentSectionResponse:
+      type: object
+      required:
+        - department_id
+        - department_name
+        - responsible_person
+        - key_aspects
+        - open_questions
+        - policy_warnings
+      properties:
+        department_id:
+          type: string
+          enum: [warehouse, lastmile, reverse]
+        department_name:
+          type: string
+        responsible_person:
+          type: string
+        key_aspects:
+          type: object
+          additionalProperties: true
+        open_questions:
+          type: array
+          items:
+            type: string
+        policy_warnings:
+          type: array
+          items:
+            type: string
+
+    InternalContact:
+      type: object
+      required:
+        - name
+        - role
+        - department
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        department:
+          type: string
+
+    IntakeHandoffPayloadResponse:
+      type: object
+      required:
+        - ticket_id
+        - schema_version
+        - executive_summary
+        - flagged_contradictions
+        - key_questions_for_prospect
+        - internal_contacts
+        - full_handoff_json
+        - created_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        schema_version:
+          type: string
+          example: "1.0.0"
+        executive_summary:
+          type: string
+        flagged_contradictions:
+          type: array
+          items:
+            type: string
+        key_questions_for_prospect:
+          type: array
+          items:
+            type: string
+        internal_contacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/InternalContact'
+        full_handoff_json:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    IntakeTicketDetailResponse:
+      type: object
+      required:
+        - ticket_id
+        - ticket_number
+        - status
+        - raw_pdf_filename
+        - created_at
+        - updated_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        ticket_number:
+          type: string
+        status:
+          type: string
+          enum: [analizando, descartado, analisis_completo]
+        raw_pdf_filename:
+          type: string
+        file_size_bytes:
+          type: integer
+        rejection_reason:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        metadata:
+          $ref: '#/components/schemas/RFPMetadataResponse'
+          nullable: true
+        department_sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/DepartmentSectionResponse'
+        handoff:
+          $ref: '#/components/schemas/IntakeHandoffPayloadResponse'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          example: "Sanitized error description"
