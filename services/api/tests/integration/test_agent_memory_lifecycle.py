@@ -504,3 +504,99 @@ class TestAgentMemoryLifecycleIntegration:
         assert len(discard_logs) == 1
         assert discard_logs[0].resulting_action == "proposal_discarded"
 
+    def test_brief_natural_confirmation_persists_memory_rule(self) -> None:
+        """Brief natural affirmative ('Yes') confirms and persists pending memory proposal."""
+        agent_service, memory_repo, audit_repo, _ = _build_test_agent_service()
+
+        turn1 = agent_service.query(
+            AgentQueryRequest(
+                query="SEUR no longer covers the rural Zaragoza zone; local carriers must be used starting this month.",
+                thread_id="session_brief_yes",
+            )
+        )
+        assert turn1.memory_proposal is not None
+        proposal_id = turn1.memory_proposal.proposal_id
+        assert len(memory_repo.search_memories()) == 0
+
+        turn2 = agent_service.query(
+            AgentQueryRequest(
+                query="Yes",
+                thread_id="session_brief_yes",
+            )
+        )
+        assert turn2.is_refusal is False
+        stored_memories = memory_repo.search_memories(
+            category="carrier_rule", target_entity="SEUR", country_code="ES"
+        )
+        assert len(stored_memories) == 1
+        assert "rural Zaragoza" in stored_memories[0].content
+
+        approved_logs = audit_repo.list_entries(
+            proposal_id=proposal_id, event_type="approved"
+        )
+        assert len(approved_logs) == 1
+        assert approved_logs[0].resulting_action == "memory_persisted"
+
+    def test_brief_natural_rejection_discards_memory_rule(self) -> None:
+        """Brief natural negative ('No') rejects pending memory proposal and logs 'rejected'."""
+        agent_service, memory_repo, audit_repo, _ = _build_test_agent_service()
+
+        turn1 = agent_service.query(
+            AgentQueryRequest(
+                query="SEUR no longer covers the rural Zaragoza zone; local carriers must be used starting this month.",
+                thread_id="session_brief_no",
+            )
+        )
+        assert turn1.memory_proposal is not None
+        proposal_id = turn1.memory_proposal.proposal_id
+        assert len(memory_repo.search_memories()) == 0
+
+        turn2 = agent_service.query(
+            AgentQueryRequest(
+                query="No",
+                thread_id="session_brief_no",
+            )
+        )
+        assert turn2.is_refusal is False
+        assert len(memory_repo.search_memories()) == 0
+
+        rejected_logs = audit_repo.list_entries(
+            proposal_id=proposal_id, event_type="rejected"
+        )
+        assert len(rejected_logs) == 1
+        assert rejected_logs[0].resulting_action == "proposal_discarded"
+
+    def test_compound_instruction_discards_proposal_and_executes_query(self) -> None:
+        """Instruction preceded by affirmative ('Yes, remember to check current stock...') rejects approval and executes residual query."""
+        agent_service, memory_repo, audit_repo, _ = _build_test_agent_service()
+
+        turn1 = agent_service.query(
+            AgentQueryRequest(
+                query="SEUR no longer covers the rural Zaragoza zone; local carriers must be used starting this month.",
+                thread_id="session_compound_instruction",
+            )
+        )
+        assert turn1.memory_proposal is not None
+        proposal_id = turn1.memory_proposal.proposal_id
+
+        turn2 = agent_service.query(
+            AgentQueryRequest(
+                query="Yes, remember to check current stock for SKU-401",
+                thread_id="session_compound_instruction",
+            )
+        )
+        assert turn2.is_refusal is False
+        # Memory proposal was NOT saved
+        assert len(memory_repo.search_memories()) == 0
+
+        discard_logs = audit_repo.list_entries(
+            proposal_id=proposal_id, event_type="discarded"
+        )
+        assert len(discard_logs) == 1
+        assert discard_logs[0].resulting_action == "proposal_discarded"
+
+        # Residual query was executed
+        assert "inventory_tool" in turn2.sources_consulted
+        assert "SKU-401" in turn2.answer
+        assert "320 units" in turn2.answer
+
