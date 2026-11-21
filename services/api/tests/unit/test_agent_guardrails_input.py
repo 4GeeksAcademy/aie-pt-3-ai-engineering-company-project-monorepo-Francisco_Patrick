@@ -176,6 +176,15 @@ class TestPersonalTaskRefusalAndCasualTriviaRedirection:
             "¿Cuál es el SLA de entrega de TrackFlow en Zaragoza y España durante rebajas de enero?",
             "What is the current status of support ticket INC-001 in Los Angeles?",
             "How many units of SKU TF-100 are currently in stock?",
+            "Where is my stuff?",
+            "Can I get my money back?",
+            "My box arrived broken",
+            "¿Dónde está mi paquete?",
+            "Dame el estado del pedido #45821",
+            "Can you check current stock for SKU-401?",
+            "What carrier should I assign for rural shipments in Zaragoza?",
+            "Yes",
+            "No",
         ],
     )
     def test_in_domain_queries_are_allowed(
@@ -183,12 +192,41 @@ class TestPersonalTaskRefusalAndCasualTriviaRedirection:
         input_guard: InputGuardrailValidator,
         in_domain_query: str,
     ) -> None:
-        """Valid TrackFlow tracking, returns, SLAs, and incident queries must pass input_guard."""
+        """Valid TrackFlow tracking, returns, SLAs, incidents, inventory, and confirmation turns must pass input_guard."""
         result = input_guard.evaluate_input(query=in_domain_query, language="en")
 
         assert result.action == "allow"
         assert result.failure_category == "none"
         assert result.input_category == "in_domain"
+        assert result.reason_code == "IN_DOMAIN_ALLOWED"
+
+    @pytest.mark.parametrize(
+        ("case_label", "query", "language"),
+        [
+            ("capital_of_france_en", "what is the capital of France?", "en"),
+            ("photosynthesis_en", "explain photosynthesis", "en"),
+            ("weather_in_paris_en", "what is the weather in Paris like", "en"),
+            ("capital_of_france_es", "¿cuál es la capital de Francia?", "es"),
+            ("tell_joke_es", "cuéntame un chiste", "es"),
+        ],
+    )
+    def test_out_of_domain_queries_are_blocked_and_redirected(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_label: str,
+        query: str,
+        language: str,
+    ) -> None:
+        """General out-of-domain queries must be blocked at layer 1 with failure_category='content' and personal_task refusal."""
+        result = input_guard.evaluate_input(query=query, language=language)
+
+        assert result.layer == "input_guard", f"Failed on {case_label}"
+        assert result.action == "block", f"Failed block on {case_label}"
+        assert result.failure_category == "content"
+        assert result.input_category == "personal_task"
+        assert result.reason_code == "OUT_OF_DOMAIN_TASK"
+        assert result.message is not None
+        assert "TrackFlow" in result.message
 
 
 def test_hardened_system_prompt_contains_immutable_authority_and_country_scope() -> None:
