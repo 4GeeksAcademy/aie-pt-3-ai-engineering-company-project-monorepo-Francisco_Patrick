@@ -1,0 +1,454 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Support Agent Memory & Self-Improvement API
+  version: 1.0.0
+  description: >
+    Public REST contracts for TrackFlow Support Agent persistent memory, proposal feedback,
+    and memory audit trails, adhering to Monorepo Constitution Principles I, II, IV, and VII.
+paths:
+  /api/v1/agent/query:
+    post:
+      summary: Submit operational query to LangGraph support agent (with optional proposal feedback)
+      description: >
+        Executes the compiled LangGraph support agent workflow. If a previous memory proposal
+        was presented on this thread, the incoming query is evaluated for confirmation/feedback
+        intent (approve, reject, edit, unrelated_or_ambiguous). If approved, memory is committed;
+        if rejected or ambiguous, the proposal is safely discarded. Any residual operational inquiry
+        is processed in the exact same turn.
+      tags:
+        - Support Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentQueryRequestSchema'
+      responses:
+        '200':
+          description: Grounded response with citations, optional memory proposal, and execution trace metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentQueryResponseSchema'
+        '500':
+          description: Sanitized internal workflow error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/memory/proposals/pending:
+    get:
+      summary: Retrieve active pending memory proposal for a session/thread
+      tags:
+        - Agent Memory
+      parameters:
+        - name: thread_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Thread or session identifier
+      responses:
+        '200':
+          description: Active pending proposal or null if none pending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryProposalResponseSchema'
+        '404':
+          description: No active proposal found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/memory/proposals/{proposal_id}/feedback:
+    post:
+      summary: Submit explicit out-of-band feedback on an active memory proposal
+      tags:
+        - Agent Memory
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique proposal UUID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryProposalFeedbackRequestSchema'
+      responses:
+        '200':
+          description: Feedback applied successfully (approved, rejected, or edited).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryProposalFeedbackResponseSchema'
+        '404':
+          description: Proposal not found or already resolved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/memory/carriers/{carrier}:
+    get:
+      summary: Retrieve consolidated carrier operational profile
+      tags:
+        - Agent Memory
+      parameters:
+        - name: carrier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Carrier identifier (e.g. SEUR, FedEx, GLS)
+        - name: country_code
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ES, US]
+          description: Country code filter
+      responses:
+        '200':
+          description: Consolidated carrier profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidatedCarrierProfileResponseSchema'
+        '404':
+          description: No active memories found for carrier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/memory/carriers/{carrier}/{country_code}:
+    get:
+      summary: Retrieve consolidated carrier operational profile by carrier and country path parameters
+      tags:
+        - Agent Memory
+      parameters:
+        - name: carrier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Carrier identifier (e.g. SEUR, FedEx, GLS)
+        - name: country_code
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [ES, US]
+          description: Country ISO code
+      responses:
+        '200':
+          description: Consolidated carrier profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsolidatedCarrierProfileResponseSchema'
+        '404':
+          description: No active memories found for carrier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SanitizedErrorResponse'
+
+  /api/v1/agent/memory/audit-logs:
+    get:
+      summary: Query memory lifecycle audit log entries
+      tags:
+        - Agent Memory
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [proposed, approved, rejected, edited, discarded, evicted]
+      responses:
+        '200':
+          description: List of immutable audit entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemoryAuditLogEntrySchema'
+
+components:
+  schemas:
+    AgentQueryRequestSchema:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Customer policy inquiry or operator operational instruction/confirmation
+        top_k:
+          type: integer
+          default: 3
+          minimum: 1
+          maximum: 20
+        min_score:
+          type: number
+          default: 0.62
+          minimum: 0.0
+          maximum: 1.0
+        thread_id:
+          type: string
+          nullable: true
+          description: Thread or session identifier for state checkpointing and memory queue tracking
+        language:
+          type: string
+          default: en
+
+    MemoryProposalSchema:
+      type: object
+      required:
+        - proposal_id
+        - category
+        - target_entity
+        - summary
+        - status
+        - confidence
+        - created_at
+      properties:
+        proposal_id:
+          type: string
+          format: uuid
+        category:
+          type: string
+          enum: [carrier_rule, incident_context, b2b_preference]
+        target_entity:
+          type: string
+        country_code:
+          type: string
+          nullable: true
+        summary:
+          type: string
+        status:
+          type: string
+          enum: [pending, approved, rejected, edited, discarded]
+        confidence:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+
+    AgentQueryResponseSchema:
+      type: object
+      required:
+        - query
+        - answer
+        - is_refusal
+        - trace_id
+        - node_sequence
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+        answer:
+          type: string
+        is_refusal:
+          type: boolean
+        fallback_triggered:
+          type: boolean
+          default: false
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeSourceCitationSchema'
+        sources_consulted:
+          type: array
+          items:
+            type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallTraceSchema'
+        memory_proposal:
+          $ref: '#/components/schemas/MemoryProposalSchema'
+          nullable: true
+        recalled_memories:
+          type: array
+          items:
+            type: string
+          description: Recalled operational rules applied in this turn
+        trace_id:
+          type: string
+        node_sequence:
+          type: array
+          items:
+            type: string
+        execution_time_ms:
+          type: number
+
+    MemoryProposalResponseSchema:
+      type: object
+      properties:
+        proposal:
+          $ref: '#/components/schemas/MemoryProposalSchema'
+          nullable: true
+
+    MemoryProposalFeedbackRequestSchema:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, edit]
+        refined_content:
+          type: string
+          nullable: true
+          description: Modified rule content required if action is 'edit'
+        operator_id:
+          type: string
+          nullable: true
+
+    MemoryProposalFeedbackResponseSchema:
+      type: object
+      required:
+        - proposal_id
+        - status
+        - resulting_action
+      properties:
+        proposal_id:
+          type: string
+        status:
+          type: string
+        resulting_action:
+          type: string
+        committed_memory_id:
+          type: string
+          nullable: true
+
+    ConsolidatedCarrierProfileResponseSchema:
+      type: object
+      required:
+        - carrier
+        - country_code
+        - active_rules
+        - last_verified_at
+      properties:
+        carrier:
+          type: string
+        country_code:
+          type: string
+        active_rules:
+          type: array
+          items:
+            type: string
+        memory_ids:
+          type: array
+          items:
+            type: string
+        last_verified_at:
+          type: string
+          format: date-time
+
+    MemoryAuditLogEntrySchema:
+      type: object
+      required:
+        - log_id
+        - event_type
+        - user_message
+        - resulting_action
+        - timestamp
+      properties:
+        log_id:
+          type: string
+        proposal_id:
+          type: string
+          nullable: true
+        memory_id:
+          type: string
+          nullable: true
+        event_type:
+          type: string
+        classified_intent:
+          type: string
+          nullable: true
+        user_message:
+          type: string
+        resulting_action:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        details:
+          type: object
+          additionalProperties: true
+
+    KnowledgeSourceCitationSchema:
+      type: object
+      required:
+        - source_document
+        - section
+        - similarity_score
+      properties:
+        source_document:
+          type: string
+        section:
+          type: string
+        similarity_score:
+          type: number
+
+    ToolCallTraceSchema:
+      type: object
+      required:
+        - tool_name
+        - status
+        - total_matched
+        - returned_count
+        - latency_ms
+      properties:
+        tool_name:
+          type: string
+        status:
+          type: string
+        total_matched:
+          type: integer
+        returned_count:
+          type: integer
+        latency_ms:
+          type: number
+        error_message:
+          type: string
+          nullable: true
+
+    SanitizedErrorResponse:
+      type: object
+      required:
+        - detail
+        - error_code
+      properties:
+        detail:
+          type: string
+        error_code:
+          type: string
+        trace_id:
+          type: string
+          nullable: true

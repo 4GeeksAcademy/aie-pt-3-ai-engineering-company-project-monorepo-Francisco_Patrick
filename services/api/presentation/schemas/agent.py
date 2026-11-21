@@ -67,6 +67,107 @@ class ToolCallTraceSchema(BaseModel):
     )
 
 
+class MemoryProposalSchema(BaseModel):
+    """Structured memory candidate proposal returned in single-turn evaluation (FR-008, FR-010)."""
+
+    proposal_id: str = Field(..., description="Unique proposal UUID")
+    category: Literal["carrier_rule", "incident_context", "b2b_preference"] = Field(
+        ..., description="Operational memory category"
+    )
+    target_entity: str = Field(
+        ..., description="Target carrier, branch/region, or B2B client identifier"
+    )
+    country_code: Optional[str] = Field(
+        default=None, description="Optional ISO 2-letter country code (e.g. 'ES', 'US')"
+    )
+    summary: str = Field(..., description="Normalized rule summary proposed to the operator")
+    status: Literal["pending", "approved", "rejected", "edited", "discarded"] = Field(
+        ..., description="Current proposal lifecycle status"
+    )
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Self-evaluation confidence score"
+    )
+    created_at: str = Field(..., description="ISO-8601 UTC timestamp of proposal creation")
+
+
+class MemoryProposalResponseSchema(BaseModel):
+    """Response payload for retrieving the active pending memory proposal for a session."""
+
+    proposal: Optional[MemoryProposalSchema] = Field(
+        default=None, description="Active pending proposal or null if none pending"
+    )
+
+
+class MemoryProposalFeedbackRequestSchema(BaseModel):
+    """Request payload for submitting explicit out-of-band feedback on a pending memory proposal."""
+
+    action: Literal["approve", "reject", "edit"] = Field(
+        ..., description="Explicit operator disposition on the proposal"
+    )
+    refined_content: Optional[str] = Field(
+        default=None,
+        description="Modified rule content required when action is 'edit'",
+    )
+    operator_id: Optional[str] = Field(
+        default=None,
+        description="Optional operator identifier for confirmation attribution",
+    )
+
+
+class MemoryProposalFeedbackResponseSchema(BaseModel):
+    """Response payload returned after processing explicit proposal feedback."""
+
+    proposal_id: str = Field(..., description="Unique proposal UUID")
+    status: Literal["pending", "approved", "rejected", "edited", "discarded"] = Field(
+        ..., description="Updated proposal lifecycle status"
+    )
+    resulting_action: str = Field(
+        ..., description="Concrete system action taken ('memory_persisted', 'proposal_discarded', 'proposal_edited')"
+    )
+    committed_memory_id: Optional[str] = Field(
+        default=None, description="Persisted memory UUID when status is 'approved'"
+    )
+
+
+class ConsolidatedCarrierProfileResponseSchema(BaseModel):
+    """Consolidated operational profile for a carrier and country (FR-016)."""
+
+    carrier: str = Field(..., description="Carrier identifier (e.g. 'SEUR', 'FedEx')")
+    country_code: str = Field(..., description="Country ISO code ('ES', 'US')")
+    active_rules: List[str] = Field(
+        default_factory=list,
+        description="Deduplicated list of active operational constraints (max 20)",
+    )
+    memory_ids: List[str] = Field(
+        default_factory=list,
+        description="Underlying persistent memory record UUIDs",
+    )
+    last_verified_at: str = Field(
+        ..., description="ISO-8601 UTC timestamp of most recent rule confirmation"
+    )
+
+
+class MemoryAuditLogEntrySchema(BaseModel):
+    """Immutable audit log record of a memory proposal lifecycle event (FR-014)."""
+
+    log_id: str = Field(..., description="Unique audit log UUID")
+    proposal_id: Optional[str] = Field(default=None, description="Associated proposal UUID")
+    memory_id: Optional[str] = Field(default=None, description="Associated memory UUID if committed")
+    event_type: str = Field(
+        ..., description="Lifecycle event category ('proposed', 'approved', 'rejected', 'edited', 'discarded', 'evicted')"
+    )
+    classified_intent: Optional[str] = Field(
+        default=None, description="Classified user intent ('approve', 'reject', 'edit', 'unrelated_or_ambiguous')"
+    )
+    user_message: str = Field(..., description="Sanitized operator message triggering the event")
+    resulting_action: str = Field(..., description="Concrete system action executed")
+    session_id: Optional[str] = Field(default=None, description="Session or thread identifier")
+    timestamp: str = Field(..., description="ISO-8601 UTC timestamp of the audit event")
+    details: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional structured audit metadata"
+    )
+
+
 class AgentQueryResponseSchema(BaseModel):
     """Response payload returned by POST /api/v1/agent/query."""
 
@@ -89,11 +190,19 @@ class AgentQueryResponseSchema(BaseModel):
     )
     sources_consulted: List[str] = Field(
         default_factory=list,
-        description="Ordered list of data sources consulted during the run ('ticket_tool', 'inventory_tool', 'rag')",
+        description="Ordered list of data sources consulted during the run ('ticket_tool', 'inventory_tool', 'rag', 'agent_memory')",
     )
     tool_calls: List[ToolCallTraceSchema] = Field(
         default_factory=list,
         description="Ordered summary of operational tool invocations",
+    )
+    memory_proposal: Optional[MemoryProposalSchema] = Field(
+        default=None,
+        description="Optional structured memory candidate proposed during single-call evaluation",
+    )
+    recalled_memories: List[str] = Field(
+        default_factory=list,
+        description="Recalled persistent operational rules applied in this turn",
     )
     trace_id: str = Field(
         ..., description="Unique execution trace UUID for audit and state inspection"
@@ -168,7 +277,13 @@ __all__ = [
     "AgentQueryRequestSchema",
     "AgentQueryResponseSchema",
     "AgentTraceResponseSchema",
+    "ConsolidatedCarrierProfileResponseSchema",
     "KnowledgeSourceCitationSchema",
+    "MemoryAuditLogEntrySchema",
+    "MemoryProposalFeedbackRequestSchema",
+    "MemoryProposalFeedbackResponseSchema",
+    "MemoryProposalResponseSchema",
+    "MemoryProposalSchema",
     "SanitizedErrorResponse",
     "ToolCallTraceSchema",
 ]

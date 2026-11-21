@@ -80,9 +80,53 @@ class TraceNotFoundError(EntityNotFoundError):
         super().__init__(message=resolved_msg, entity_name="AgentTrace", entity_id=trace_id)
 
 
+class MemoryNotFoundError(EntityNotFoundError):
+    """Raised when a persistent memory record, carrier profile, or pending proposal cannot be found."""
+
+    def __init__(
+        self,
+        entity_id: str,
+        entity_name: str = "AgentMemory",
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize memory not found error."""
+        resolved_msg = message or f"{entity_name} '{entity_id}' was not found."
+        super().__init__(message=resolved_msg, entity_name=entity_name, entity_id=entity_id)
+
+
+class MemoryGuardrailViolationError(AgentDomainException):
+    """Raised when a candidate memory violates TrackFlow anti-poisoning or sensitive data guardrails."""
+
+    def __init__(
+        self,
+        violation_code: str,
+        reason: str,
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize memory guardrail violation error."""
+        self.violation_code = violation_code
+        self.reason = reason
+        resolved_msg = message or f"Memory guardrail violation [{violation_code}]: {reason}"
+        super().__init__(resolved_msg)
+
+
+class MemoryStorageError(AgentDomainException):
+    """Raised when reading or writing to the dedicated agent memory store fails."""
+
+    def __init__(
+        self,
+        message: str = "An error occurred while accessing persistent agent memory storage.",
+    ) -> None:
+        """Initialize memory storage error."""
+        super().__init__(message)
+
+
 __all__ = [
     "AgentDomainException",
     "GraphCompilationError",
+    "MemoryGuardrailViolationError",
+    "MemoryNotFoundError",
+    "MemoryStorageError",
     "StateValidationError",
     "ToolExecutionTimeoutError",
     "TraceNotFoundError",

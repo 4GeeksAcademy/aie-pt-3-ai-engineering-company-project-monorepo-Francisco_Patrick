@@ -6,6 +6,7 @@ tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace stor
 """
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from domain.agent.entities import (
@@ -13,10 +14,16 @@ from domain.agent.entities import (
     AgentQueryRequest,
     AgentQueryResult,
     AgentTrace,
+    ConsolidatedCarrierProfile,
     InventoryToolInput,
     InventoryToolOutput,
+    MemoryAuditLogEntry,
+    MemoryCategory,
+    MemoryGuardrailVerdict,
+    PersistentMemoryRecord,
     TicketToolInput,
     TicketToolOutput,
+    UserIntentClassification,
 )
 
 
@@ -144,9 +151,159 @@ class SupportAgentServicePort(ABC):
         """
 
 
+class AgentMemoryRepositoryPort(ABC):
+    """Port interface for storing, querying, and consolidating persistent agent memories (FR-006, FR-007)."""
+
+    @abstractmethod
+    def save_memory(self, record: PersistentMemoryRecord) -> PersistentMemoryRecord:
+        """Persist or update an approved operational memory record.
+
+        Args:
+            record: PersistentMemoryRecord domain object to store.
+
+        Returns:
+            The stored PersistentMemoryRecord with assigned identifiers.
+        """
+
+    @abstractmethod
+    def get_memory(self, memory_id: str) -> Optional[PersistentMemoryRecord]:
+        """Retrieve a persistent memory record by its identifier.
+
+        Args:
+            memory_id: Unique UUID string.
+
+        Returns:
+            PersistentMemoryRecord if found and active, otherwise None.
+        """
+
+    @abstractmethod
+    def search_memories(
+        self,
+        category: Optional[MemoryCategory] = None,
+        target_entity: Optional[str] = None,
+        country_code: Optional[str] = None,
+        active_only: bool = True,
+    ) -> List[PersistentMemoryRecord]:
+        """Search active memories by category, target entity, or country.
+
+        Args:
+            category: Optional functional category filter.
+            target_entity: Optional entity filter (carrier, region, client ID).
+            country_code: Optional ISO country code filter ("ES", "US").
+            active_only: Whether to exclude expired or inactive items.
+
+        Returns:
+            List of matching PersistentMemoryRecord items.
+        """
+
+    @abstractmethod
+    def get_consolidated_carrier_profile(
+        self,
+        carrier: str,
+        country_code: str,
+    ) -> Optional[ConsolidatedCarrierProfile]:
+        """Retrieve the consolidated profile of active operational rules for a carrier and country.
+
+        Args:
+            carrier: Carrier name (e.g. "SEUR", "FedEx").
+            country_code: ISO country code ("ES", "US").
+
+        Returns:
+            ConsolidatedCarrierProfile if records exist, otherwise None.
+        """
+
+    @abstractmethod
+    def evict_expired(self, cutoff_time: datetime) -> int:
+        """Evict or mark inactive any records whose expires_at is older than cutoff_time.
+
+        Args:
+            cutoff_time: UTC threshold timestamp.
+
+        Returns:
+            Count of evicted records.
+        """
+
+
+class MemoryAuditLogRepositoryPort(ABC):
+    """Port interface for persisting and querying immutable memory lifecycle audit logs (FR-014)."""
+
+    @abstractmethod
+    def record_entry(self, entry: MemoryAuditLogEntry) -> None:
+        """Append an immutable audit entry to the audit log store.
+
+        Args:
+            entry: MemoryAuditLogEntry domain object.
+        """
+
+    @abstractmethod
+    def list_entries(
+        self,
+        proposal_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[MemoryAuditLogEntry]:
+        """Query audit log entries ordered newest first.
+
+        Args:
+            proposal_id: Optional filter for a specific proposal lifecycle.
+            event_type: Optional filter by event type ("proposed", "approved", "rejected", etc.).
+            limit: Maximum records to return.
+
+        Returns:
+            List of MemoryAuditLogEntry records.
+        """
+
+
+class MemoryGuardrailPort(ABC):
+    """Port interface for evaluating candidate memories against enterprise guardrails (FR-005, FR-017)."""
+
+    @abstractmethod
+    def validate_candidate(
+        self,
+        content: str,
+        category: str,
+        target_entity: str,
+    ) -> MemoryGuardrailVerdict:
+        """Validate candidate memory content against forbidden categories.
+
+        Args:
+            content: Candidate summary / text.
+            category: Proposed category.
+            target_entity: Carrier or entity identifier.
+
+        Returns:
+            MemoryGuardrailVerdict with allowed=True or allowed=False with violation details.
+        """
+
+
+class UserIntentClassifierPort(ABC):
+    """Port interface for classifying user follow-up intent regarding active memory proposals (FR-011)."""
+
+    @abstractmethod
+    def classify(
+        self,
+        user_message: str,
+        proposal_summary: str,
+    ) -> UserIntentClassification:
+        """Classify user response into approve, reject, edit, or unrelated_or_ambiguous.
+
+        Args:
+            user_message: The follow-up conversational text from the user.
+            proposal_summary: The summary of the pending proposal being evaluated.
+
+        Returns:
+            UserIntentClassification containing intent, confidence, optional refined_rule,
+            and optional residual_query.
+        """
+
+
 __all__ = [
+    "AgentMemoryRepositoryPort",
     "InventoryStockToolPort",
+    "MemoryAuditLogRepositoryPort",
+    "MemoryGuardrailPort",
     "SupportAgentServicePort",
     "SupportTicketToolPort",
     "TraceRegistryPort",
+    "UserIntentClassifierPort",
 ]
