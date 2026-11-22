@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.ai/schemas/rfp/arbitration-log.schema.json",
+  "title": "ArbitrationLogEntry",
+  "description": "Schema for deterministic conflict arbitration records produced by the arbitration node.",
+  "type": "object",
+  "required": [
+    "id",
+    "ticket_id",
+    "trigger_id",
+    "arbiter",
+    "rule_applied",
+    "resolution_details",
+    "created_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier of the arbitration log record."
+    },
+    "ticket_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID of the associated RFP ticket."
+    },
+    "trigger_id": {
+      "type": "string",
+      "enum": ["volume-vs-capacity", "returns-sla-breach", "currency-mismatch"],
+      "description": "Canonical conflict trigger identified in the structured state."
+    },
+    "arbiter": {
+      "type": "string",
+      "enum": ["Miguel Torres", "Sofía Ramos"],
+      "description": "Named authorized arbiter assigned by briefing §7."
+    },
+    "rule_applied": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Explicit statement of the business rule applied."
+    },
+    "resolution_details": {
+      "type": "object",
+      "description": "Structured metadata detailing before/after state diff and assigned remediation.",
+      "properties": {
+        "affected_departments": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["warehouse", "lastmile", "reverse"] }
+        },
+        "action_taken": { "type": "string" },
+        "capped_volume": { "type": ["integer", "null"] },
+        "enforced_currency": { "type": ["string", "null"] }
+      },
+      "required": ["affected_departments", "action_taken"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp of arbitration execution."
+    }
+  },
+  "additionalProperties": false
+}
