@@ -133,4 +133,40 @@ describe('DepartmentApprovalPanel Component Tests (T028, T029 - User Story 4)', 
     ) as HTMLTextAreaElement | null;
     expect(textarea).not.toBeNull();
   });
+
+  test('T030: enforces non-empty feedback when reject is clicked', async () => {
+    const submittedPayloads: ResumeDecisionRequestDTO[] = [];
+    const handleDecision = async (payload: ResumeDecisionRequestDTO): Promise<void> => {
+      submittedPayloads.push(payload);
+    };
+
+    act(() => {
+      root!.render(
+        <DepartmentApprovalPanel
+          ticketId="11111111-2222-3333-4444-555555555555"
+          sections={sampleSections}
+          onSubmitDecision={handleDecision}
+        />
+      );
+    });
+
+    const rejectBtn = container?.querySelector(
+      '[data-testid="reject-btn-warehouse"]'
+    ) as HTMLButtonElement | null;
+    expect(rejectBtn).not.toBeNull();
+
+    // First click reveals feedback textarea and shows mandatory reject feedback message without submitting
+    await act(async () => {
+      rejectBtn!.click();
+    });
+
+    expect(submittedPayloads).toHaveLength(0);
+    const errorBanner = container?.querySelector('[data-testid="validation-error-warehouse"]');
+    expect(errorBanner?.textContent).toContain('motivo del rechazo');
+
+    const textarea = container?.querySelector(
+      '[data-testid="feedback-textarea-warehouse"]'
+    ) as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+  });
 });

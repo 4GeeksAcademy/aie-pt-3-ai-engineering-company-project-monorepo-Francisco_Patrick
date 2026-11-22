@@ -141,19 +141,25 @@ export function DepartmentApprovalPanel({
     const approver = section.responsible_person || DEFAULT_LEADS[deptId];
     const feedbackText = (feedbackMap[deptId] ?? '').trim();
 
-    if (decision === 'request_changes') {
+    if (decision === 'request_changes' || decision === 'reject') {
       if (activeFeedbackDept !== deptId) {
         setActiveFeedbackDept(deptId);
         setValidationErrorMap((prev) => ({
           ...prev,
-          [deptId]: 'Debe especificar instrucciones de revisión antes de solicitar cambios.',
+          [deptId]:
+            decision === 'reject'
+              ? 'Debe especificar el motivo del rechazo antes de confirmar.'
+              : 'Debe especificar instrucciones de revisión antes de solicitar cambios.',
         }));
         return;
       }
       if (feedbackText.length < 5) {
         setValidationErrorMap((prev) => ({
           ...prev,
-          [deptId]: 'Las instrucciones de revisión son obligatorias (mínimo 5 caracteres).',
+          [deptId]:
+            decision === 'reject'
+              ? 'El motivo del rechazo es obligatorio (mínimo 5 caracteres).'
+              : 'Las instrucciones de revisión son obligatorias (mínimo 5 caracteres).',
         }));
         return;
       }
@@ -298,7 +304,7 @@ export function DepartmentApprovalPanel({
                       onChange={(e) =>
                         setFeedbackMap((prev) => ({ ...prev, [deptId]: e.target.value }))
                       }
-                      placeholder="Indique los ajustes de tarifas, volumen o SLA requeridos..."
+                      placeholder="Indique los motivos de rechazo o ajustes de tarifas, volumen o SLA requeridos (mínimo 5 caracteres)..."
                       className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-400"
                     />
                   </div>

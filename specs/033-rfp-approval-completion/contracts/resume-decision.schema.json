@@ -30,7 +30,7 @@
     {
       "if": {
         "properties": {
-          "decision": { "const": "request_changes" }
+          "decision": { "enum": ["request_changes", "reject"] }
         }
       },
       "then": {

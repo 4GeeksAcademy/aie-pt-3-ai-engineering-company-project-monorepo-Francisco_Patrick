@@ -110,10 +110,10 @@ def validate_resume_decision(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     feedback = payload.get("feedback")
-    if decision == "request_changes":
+    if decision in ("request_changes", "reject"):
         if not isinstance(feedback, str) or len(feedback.strip()) < 5:
             raise ResumeValidationError(
-                "Non-empty revision 'feedback' (minimum 5 characters) is mandatory when decision is 'request_changes'."
+                f"Non-empty revision 'feedback' (minimum 5 characters) is mandatory when decision is '{decision}'."
             )
 
     return {

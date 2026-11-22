@@ -65,7 +65,7 @@ class RFPApprovalService:
     def enter_approval_milestone(
         self,
         ticket_id: UUID,
-        run_initial_arbitration: bool = False,
+        run_initial_arbitration: bool = True,
     ) -> Dict[str, Any]:
         """Transition ticket to `esperando_aprobación` and initialize scoped department interrupts."""
         ticket = self.repository.get_ticket(ticket_id)
@@ -162,6 +162,7 @@ class RFPApprovalService:
         self.pipeline.start_approval_phase(
             ticket_id=ticket_id,
             rfp_metadata=meta_dict,
+            run_initial_arbitration=True,
         )
         # Restore already-approved sections if any were previously recorded in DB
         for sec in sections:

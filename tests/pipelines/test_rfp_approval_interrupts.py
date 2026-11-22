@@ -9,6 +9,7 @@ import pytest
 from sqlmodel import Session
 
 from application.agent.rfp_approval_service import RFPApprovalService
+from presentation.schemas.rfp import ResumeDecisionRequest
 from data.pipelines.rfp_approval_completion.pipeline import (
     BranchNotInterruptedError,
     RFPApprovalCompletionPipeline,
@@ -241,6 +242,38 @@ def test_resume_input_validation_and_decision_routing(
             }
         )
 
+    # Missing feedback on reject raises ResumeValidationError
+    with pytest.raises(ResumeValidationError, match="feedback"):
+        validate_resume_decision(
+            {
+                "department_id": "warehouse",
+                "decision": "reject",
+                "approver": "Ana Whitfield",
+                "feedback": "   ",
+            }
+        )
+
+    # Valid reject with non-empty feedback succeeds
+    valid_reject = validate_resume_decision(
+        {
+            "department_id": "warehouse",
+            "decision": "reject",
+            "approver": "Ana Whitfield",
+            "feedback": "Rates exceed allocated departmental budget.",
+        }
+    )
+    assert valid_reject["decision"] == "reject"
+    assert valid_reject["feedback"] == "Rates exceed allocated departmental budget."
+
+    # ResumeDecisionRequest schema validation requires feedback on reject
+    with pytest.raises(ValueError, match="feedback"):
+        ResumeDecisionRequest(
+            department_id="warehouse",
+            decision="reject",
+            approver="Ana Whitfield",
+            feedback="",
+        )
+
     ticket_id = _seed_multi_department_ticket(rfp_repository, ["warehouse", "lastmile"])
     service = RFPApprovalService(
         repository=rfp_repository,
@@ -322,3 +355,99 @@ def test_resume_request_changes_revises_branch_without_rerunning_upstream(
     assert after_meta.client_name == original_meta.client_name
     assert after_meta.readability_scores == original_meta.readability_scores
     assert ticket is not None and ticket.raw_pdf_path == "data/raw/trackflow-request-1.pdf"
+
+
+def test_enter_approval_milestone_defaults_to_initial_arbitration(
+    rfp_repository: SQLModelIntakeTicketRepository,
+    sqlite_checkpointer: SqliteSaver,
+) -> None:
+    """Verify that enter_approval_milestone defaults to run_initial_arbitration=True and resolves conflicts on entry."""
+    ticket_id = uuid4()
+    ticket = IntakeTicket.create(
+        raw_pdf_path="data/raw/trackflow-request-1.pdf",
+        raw_pdf_filename="trackflow-request-1.pdf",
+        file_size_bytes=4096,
+        ticket_id=ticket_id,
+    )
+    ticket.mark_under_evaluation()
+    rfp_repository.save_ticket(ticket)
+
+    meta = RFPMetadata(
+        id=uuid4(),
+        ticket_id=ticket_id,
+        client_name="ModaViva, S.L.",
+        client_country="ES",
+        currency="EUR",
+        services_requested=["warehousing", "lastmile"],
+        monthly_volume=5000,
+        deadline="2026-12-20",
+        budget_range="25,000 EUR/mes",
+        departments_needed=["warehouse", "lastmile"],  # type: ignore[arg-type]
+        unsupported_services=[],
+        readability_scores=ReadabilityScores(
+            flesch_reading_ease=64.0,
+            flesch_kincaid_grade=8.1,
+            reading_level_label="Standard",
+            word_count=420,
+            sentence_count=24,
+        ),
+    )
+    rfp_repository.save_metadata(meta)
+
+    rfp_repository.save_department_section(
+        DepartmentSection(
+            id=uuid4(),
+            ticket_id=ticket_id,
+            department_id="warehouse",  # type: ignore[arg-type]
+            department_name="Warehouse Operations",
+            responsible_person="Ana Whitfield",
+            key_aspects={"warehouse_capacity": 3000},
+            open_questions=[],
+            policy_warnings=[],
+            draft_content="Committed capacity: 3,000 orders per month at Zaragoza hub. Rates in EUR.",
+            iteration=0,
+            status="passed",
+            approval_status="pending",
+        )
+    )
+
+    rfp_repository.save_department_section(
+        DepartmentSection(
+            id=uuid4(),
+            ticket_id=ticket_id,
+            department_id="lastmile",  # type: ignore[arg-type]
+            department_name="Last Mile and Carrier Management",
+            responsible_person="Carlos Vega",
+            key_aspects={"monthly_volume": 5000},
+            open_questions=[],
+            policy_warnings=[],
+            draft_content="We handle 5,000 monthly shipments across Spain. Rates in EUR.",
+            iteration=0,
+            status="passed",
+            approval_status="pending",
+        )
+    )
+
+    service = RFPApprovalService(
+        repository=rfp_repository,
+        checkpointer=sqlite_checkpointer,
+    )
+
+    # Calling without run_initial_arbitration argument should default to True
+    milestone_res = service.enter_approval_milestone(ticket_id)
+    assert milestone_res["ticket_status"] == TicketStatus.WAITING_FOR_APPROVAL.value
+
+    # Verify arbitration log was created by initial arbitration
+    logs = service.list_arbitration_logs(ticket_id)
+    vol_logs = [log for log in logs if log.trigger_id == "volume-vs-capacity"]
+    assert len(vol_logs) == 1
+    assert vol_logs[0].resolution_details["capped_volume"] == 3000
+
+    # Verify lastmile section draft was adjusted by initial arbitration prior to human review
+    lm_sec = rfp_repository.get_department_section(ticket_id, "lastmile")
+    assert lm_sec is not None
+    assert lm_sec.approval_status == "pending"
+    assert "3000" in lm_sec.draft_content
+    assert "Miguel Torres" in lm_sec.draft_content
+    assert "capped at 3000" in lm_sec.draft_content
+

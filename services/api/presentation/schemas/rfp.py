@@ -251,16 +251,16 @@ class ResumeDecisionRequest(BaseModel):
     )
     feedback: Optional[str] = Field(
         default=None,
-        description="Mandatory feedback if decision is 'request_changes'",
+        description="Mandatory feedback if decision is 'request_changes' or 'reject'",
     )
 
     @model_validator(mode="after")
     def validate_feedback_for_changes(self) -> "ResumeDecisionRequest":
-        """Enforce non-empty revision feedback when decision is 'request_changes'."""
-        if self.decision == "request_changes":
+        """Enforce non-empty revision feedback when decision is 'request_changes' or 'reject'."""
+        if self.decision in ("request_changes", "reject"):
             if not self.feedback or len(self.feedback.strip()) < 5:
                 raise ValueError(
-                    "Non-empty 'feedback' (minimum 5 characters) is mandatory when decision is 'request_changes'."
+                    f"Non-empty 'feedback' (minimum 5 characters) is mandatory when decision is '{self.decision}'."
                 )
         return self
 
