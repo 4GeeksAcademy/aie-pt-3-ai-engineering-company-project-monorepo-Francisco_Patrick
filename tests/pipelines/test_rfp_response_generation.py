@@ -50,4 +50,5 @@ from tests.pipelines.test_rfp_handoff_packaging import (  # noqa: E402, F401
 )
 from tests.pipelines.test_rfp_iteration_cap import (  # noqa: E402, F401
     test_iteration_cap_exhaustion_escalates_to_needs_human_review_in_db,
+    test_success_scenario_persists_approved_sections_and_part3_handoff_in_db,
 )

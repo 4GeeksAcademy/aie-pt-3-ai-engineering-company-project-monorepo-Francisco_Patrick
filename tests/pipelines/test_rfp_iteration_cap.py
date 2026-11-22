@@ -176,3 +176,114 @@ def test_iteration_cap_exhaustion_escalates_to_needs_human_review_in_db() -> Non
         assert wh_section is not None
         assert wh_section.status == "passed"
         assert wh_section.iteration == 1
+
+
+def test_success_scenario_persists_approved_sections_and_part3_handoff_in_db() -> None:
+    """Verify successful end-to-end generation and SQLModel persistence for passing proposals."""
+    engine = get_engine()
+    init_db(engine)
+    ticket_id = uuid4()
+
+    with Session(engine) as session:
+        repo = SQLModelIntakeTicketRepository(session)
+        ticket = IntakeTicket.create(
+            raw_pdf_path="data/raw/mock_modaviva.pdf",
+            raw_pdf_filename="trackflow-request-1.pdf",
+            file_size_bytes=2048,
+            ticket_id=ticket_id,
+        )
+        ticket.mark_complete()
+        repo.save_ticket(ticket)
+
+        meta = RFPMetadata(
+            id=uuid4(),
+            ticket_id=ticket_id,
+            client_name="ModaViva, S.L.",
+            client_country="ES",
+            currency="EUR",
+            services_requested=["warehousing", "returns"],
+            monthly_volume=3500,
+            deadline="2026-12-15",
+            budget_range=None,
+            departments_needed=["warehouse", "reverse"],
+            unsupported_services=[],
+            readability_scores=ReadabilityScores(
+                flesch_reading_ease=62.0,
+                flesch_kincaid_grade=8.5,
+                reading_level_label="Standard",
+                word_count=350,
+                sentence_count=20,
+            ),
+        )
+        repo.save_metadata(meta)
+
+        repo.save_department_section(
+            DepartmentSection(
+                id=uuid4(),
+                ticket_id=ticket_id,
+                department_id="warehouse",
+                department_name="Operaciones de Almacén",
+                responsible_person="Ana Whitfield",
+                key_aspects={"warehouse_location_preference": "Zaragoza", "sku_count": 300},
+                open_questions=[],
+                policy_warnings=[],
+            )
+        )
+        repo.save_department_section(
+            DepartmentSection(
+                id=uuid4(),
+                ticket_id=ticket_id,
+                department_id="reverse",
+                department_name="Logística Inversa",
+                responsible_person="Sofía Ramos",
+                key_aspects={
+                    "return_window_days": 30,
+                    "estimated_return_rate": 0.15,
+                    "inspection_required": True,
+                    "disposition_flow": ["reventa", "reacondicionamiento", "descarte"],
+                },
+                open_questions=[],
+                policy_warnings=[],
+            )
+        )
+
+        pipeline = RFPResponseGenerationPipeline(
+            repository=repo,
+            max_attempts=3,
+        )
+        part3_handoff = pipeline.execute_for_ticket(ticket_id)
+
+        # All sections passed and overall handoff status is passed
+        assert part3_handoff.overall_status == "passed"
+        assert part3_handoff.ticket_id == ticket_id
+
+        # Verify DB ticket status
+        updated_ticket = repo.get_ticket(ticket_id)
+        assert updated_ticket is not None
+        assert updated_ticket.status == TicketStatus.UNDER_EVALUATION
+
+        # Verify both sections in DB are marked passed with iteration 1
+        wh_section = repo.get_department_section(ticket_id, "warehouse")
+        assert wh_section is not None
+        assert wh_section.status == "passed"
+        assert wh_section.iteration == 1
+        assert wh_section.draft_content is not None
+        assert len(wh_section.evaluation_results) >= 1
+        assert wh_section.evaluation_results[-1]["overall_pass"] is True
+
+        rev_section = repo.get_department_section(ticket_id, "reverse")
+        assert rev_section is not None
+        assert rev_section.status == "passed"
+        assert rev_section.iteration == 1
+        assert rev_section.draft_content is not None
+        assert len(rev_section.evaluation_results) >= 1
+        assert rev_section.evaluation_results[-1]["overall_pass"] is True
+
+        # Verify Part 3 handoff payload was persisted in DB
+        persisted_payload = repo.get_part3_handoff_payload(ticket_id)
+        assert persisted_payload is not None
+        assert persisted_payload.overall_status == "passed"
+        assert persisted_payload.ticket_id == ticket_id
+        assert "warehouse" in persisted_payload.department_sections
+        assert "reverse" in persisted_payload.department_sections
+
