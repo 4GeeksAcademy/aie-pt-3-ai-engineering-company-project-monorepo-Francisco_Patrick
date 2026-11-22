@@ -21,9 +21,9 @@
 
 **Purpose**: Project initialization, directory structure, and dependency setup
 
-- [ ] T001 Create pipeline directory structure in data/pipelines/rfp_response_generation/ and test suites in tests/pipelines/
-- [ ] T002 [P] Configure and verify pipeline dependencies (textstat, sqlmodel, langgraph, pydantic) in services/api/requirements.txt
-- [ ] T003 [P] Extend shared TypeScript contracts with Part 2 types and handoff schemas in packages/shared/types/rfp.ts
+- [X] T001 Create pipeline directory structure in data/pipelines/rfp_response_generation/ and test suites in tests/pipelines/
+- [X] T002 [P] Configure and verify pipeline dependencies (textstat, sqlmodel, langgraph, pydantic) in services/api/requirements.txt
+- [X] T003 [P] Extend shared TypeScript contracts with Part 2 types and handoff schemas in packages/shared/types/rfp.ts
 
 ---
 
@@ -33,11 +33,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Extend domain entities and value objects (TicketStatus enum, ReadabilityEvaluation, RelevanceEvaluation, ComplianceEvaluation, EvaluationResult, Part3HandoffPayload) in services/api/domain/rfp/entities.py
-- [ ] T005 [P] Define deterministic compliance rule definitions and error codes for briefing rules in data/pipelines/rfp_response_generation/compliance_rules.py
-- [ ] T006 [P] Extend SQLModel database tables (DepartmentSectionTable draft columns, Part3HandoffPayloadTable) in services/api/infrastructure/persistence/sqlmodel/models.py
-- [ ] T007 Extend IntakeTicketRepositoryPort and SQLModel repository implementation for draft updates, evaluation logging, and Part 3 handoff persistence in services/api/domain/rfp/ports.py and services/api/infrastructure/persistence/sqlmodel/rfp_repository.py
-- [ ] T008 [P] Update Pydantic presentation request/response schemas matching OpenAPI contract in services/api/presentation/schemas/rfp.py
+- [X] T004 Extend domain entities and value objects (TicketStatus enum, ReadabilityEvaluation, RelevanceEvaluation, ComplianceEvaluation, EvaluationResult, Part3HandoffPayload) in services/api/domain/rfp/entities.py
+- [X] T005 [P] Define deterministic compliance rule definitions and error codes for briefing rules in data/pipelines/rfp_response_generation/compliance_rules.py
+- [X] T006 [P] Extend SQLModel database tables (DepartmentSectionTable draft columns, Part3HandoffPayloadTable) in services/api/infrastructure/persistence/sqlmodel/models.py
+- [X] T007 Extend IntakeTicketRepositoryPort and SQLModel repository implementation for draft updates, evaluation logging, and Part 3 handoff persistence in services/api/domain/rfp/ports.py and services/api/infrastructure/persistence/sqlmodel/rfp_repository.py
+- [X] T008 [P] Update Pydantic presentation request/response schemas matching OpenAPI contract in services/api/presentation/schemas/rfp.py
 
 **Checkpoint**: Core foundation ready - user story implementation can begin
 
@@ -51,16 +51,16 @@
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T009 [P] [US1] Unit tests for department generator agents in tests/pipelines/test_rfp_generators.py
-- [ ] T010 [P] [US1] Unit tests for knowledge retrieval and currency formatting in services/api/tests/unit/agent/test_rfp_generator_agents.py
+- [X] T009 [P] [US1] Unit tests for department generator agents in tests/pipelines/test_rfp_generators.py
+- [X] T010 [P] [US1] Unit tests for knowledge retrieval and currency formatting in services/api/tests/unit/agent/test_rfp_generator_agents.py
 
 ### Implementation for User Story 1
 
-- [ ] T011 [P] [US1] Implement Warehouse proposal generator agent (Ana Whitfield) in services/api/application/agent/rfp_generator_agents.py
-- [ ] T012 [P] [US1] Implement LastMile proposal generator agent (Carlos Vega) in services/api/application/agent/rfp_generator_agents.py
-- [ ] T013 [P] [US1] Implement Reverse Logistics proposal generator agent (Sofía Ramos) in services/api/application/agent/rfp_generator_agents.py
-- [ ] T014 [US1] Implement vector knowledge retrieval helper with graceful fallback to briefing standards in services/api/application/agent/rfp_generator_agents.py
-- [ ] T015 [US1] Implement ticket intake handoff ingestion and initial status transition to generando_borrador in services/api/application/agent/rfp_response_service.py
+- [X] T011 [P] [US1] Implement Warehouse proposal generator agent (Ana Whitfield) in services/api/application/agent/rfp_generator_agents.py
+- [X] T012 [P] [US1] Implement LastMile proposal generator agent (Carlos Vega) in services/api/application/agent/rfp_generator_agents.py
+- [X] T013 [P] [US1] Implement Reverse Logistics proposal generator agent (Sofía Ramos) in services/api/application/agent/rfp_generator_agents.py
+- [X] T014 [US1] Implement vector knowledge retrieval helper with graceful fallback to briefing standards in services/api/application/agent/rfp_generator_agents.py
+- [X] T015 [US1] Implement ticket intake handoff ingestion and initial status transition to generando_borrador in services/api/application/agent/rfp_response_service.py
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently (MVP)
 
@@ -74,17 +74,17 @@
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T016 [P] [US2] Unit tests for readability evaluation in tests/pipelines/test_rfp_evaluators.py
-- [ ] T017 [P] [US2] Unit tests for compliance rules engine and 5 briefing rules in tests/pipelines/test_compliance_rules.py
-- [ ] T018 [P] [US2] Focused test for compliance-failure fixture (returns turnaround < 48h, currency mismatch, missing SLA) in tests/pipelines/test_rfp_compliance_failures.py
+- [X] T016 [P] [US2] Unit tests for readability evaluation in tests/pipelines/test_rfp_evaluators.py
+- [X] T017 [P] [US2] Unit tests for compliance rules engine and 5 briefing rules in tests/pipelines/test_compliance_rules.py
+- [X] T018 [P] [US2] Focused test for compliance-failure fixture (returns turnaround < 48h, currency mismatch, missing SLA) in tests/pipelines/test_rfp_compliance_failures.py
 
 ### Implementation for User Story 2
 
-- [ ] T019 [P] [US2] Implement deterministic readability scorer using textstat in data/pipelines/rfp_response_generation/evaluator.py
-- [ ] T020 [P] [US2] Implement relevance checker against Part 1 key_aspects in data/pipelines/rfp_response_generation/evaluator.py
-- [ ] T021 [P] [US2] Implement the 5 briefing compliance rule validators (RULE-CURRENCY, RULE-SLA, RULE-RETURNS-TIME, RULE-DISCOUNT-TIERS, RULE-CARRIER-RATES) in data/pipelines/rfp_response_generation/compliance_rules.py
-- [ ] T022 [US2] Implement parallel multi-dimensional evaluator coordinator emitting structured EvaluationResult in data/pipelines/rfp_response_generation/evaluator.py
-- [ ] T023 [US2] Implement wrapper evaluation agent coordinating readability, relevance, and compliance in services/api/application/agent/rfp_evaluator_agent.py
+- [X] T019 [P] [US2] Implement deterministic readability scorer using textstat in data/pipelines/rfp_response_generation/evaluator.py
+- [X] T020 [P] [US2] Implement relevance checker against Part 1 key_aspects in data/pipelines/rfp_response_generation/evaluator.py
+- [X] T021 [P] [US2] Implement the 5 briefing compliance rule validators (RULE-CURRENCY, RULE-SLA, RULE-RETURNS-TIME, RULE-DISCOUNT-TIERS, RULE-CARRIER-RATES) in data/pipelines/rfp_response_generation/compliance_rules.py
+- [X] T022 [US2] Implement parallel multi-dimensional evaluator coordinator emitting structured EvaluationResult in data/pipelines/rfp_response_generation/evaluator.py
+- [X] T023 [US2] Implement wrapper evaluation agent coordinating readability, relevance, and compliance in services/api/application/agent/rfp_evaluator_agent.py
 
 **Checkpoint**: At this point, User Stories 1 and 2 work independently
 
@@ -98,14 +98,14 @@
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T024 [P] [US3] Unit tests for generator–evaluator revision loop with feedback injection in tests/pipelines/test_rfp_feedback_loop.py
-- [ ] T025 [P] [US3] Unit and integration tests for iteration cap exhaustion (3 attempts) escalating to needs_human_review in tests/pipelines/test_rfp_iteration_cap.py
+- [X] T024 [P] [US3] Unit tests for generator–evaluator revision loop with feedback injection in tests/pipelines/test_rfp_feedback_loop.py
+- [X] T025 [P] [US3] Unit and integration tests for iteration cap exhaustion (3 attempts) escalating to needs_human_review in tests/pipelines/test_rfp_iteration_cap.py
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement isolated generator–evaluator feedback loop per active department in data/pipelines/rfp_response_generation/pipeline.py
-- [ ] T027 [US3] Implement iteration counter tracking and cap enforcement (max 3 total attempts) in data/pipelines/rfp_response_generation/pipeline.py
-- [ ] T028 [US3] Implement graceful escalation logic marking section and ticket as needs_human_review upon cap exhaustion in data/pipelines/rfp_response_generation/pipeline.py
+- [X] T026 [US3] Implement isolated generator–evaluator feedback loop per active department in data/pipelines/rfp_response_generation/pipeline.py
+- [X] T027 [US3] Implement iteration counter tracking and cap enforcement (max 3 total attempts) in data/pipelines/rfp_response_generation/pipeline.py
+- [X] T028 [US3] Implement graceful escalation logic marking section and ticket as needs_human_review upon cap exhaustion in data/pipelines/rfp_response_generation/pipeline.py
 
 **Checkpoint**: Generator-evaluator feedback loop and bounded iteration caps work reliably
 
@@ -119,15 +119,15 @@
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T029 [P] [US4] Contract tests for generation API endpoints in services/api/tests/integration/test_rfp_generation_api.py
-- [ ] T030 [P] [US4] Integration tests for Part 3 handoff payload compilation and schema validation in tests/pipelines/test_rfp_handoff_packaging.py
+- [X] T029 [P] [US4] Contract tests for generation API endpoints in services/api/tests/integration/test_rfp_generation_api.py
+- [X] T030 [P] [US4] Integration tests for Part 3 handoff payload compilation and schema validation in tests/pipelines/test_rfp_handoff_packaging.py
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Implement end-to-end pipeline orchestrator joining all active department loops in data/pipelines/rfp_response_generation/pipeline.py
-- [ ] T032 [US4] Implement Part 3 handoff payload compiler matching part3-handoff.schema.json in data/pipelines/rfp_response_generation/pipeline.py
-- [ ] T033 [US4] Implement state persistence and audit log updates in services/api/application/agent/rfp_response_service.py
-- [ ] T034 [US4] Implement FastAPI presentation endpoints (POST /generate-proposal, GET /sections, GET /part3-handoff) in services/api/presentation/api/v1/rfp.py
+- [X] T031 [US4] Implement end-to-end pipeline orchestrator joining all active department loops in data/pipelines/rfp_response_generation/pipeline.py
+- [X] T032 [US4] Implement Part 3 handoff payload compiler matching part3-handoff.schema.json in data/pipelines/rfp_response_generation/pipeline.py
+- [X] T033 [US4] Implement state persistence and audit log updates in services/api/application/agent/rfp_response_service.py
+- [X] T034 [US4] Implement FastAPI presentation endpoints (POST /generate-proposal, GET /sections, GET /part3-handoff) in services/api/presentation/api/v1/rfp.py
 
 **Checkpoint**: All user stories fully integrated and functional
 
@@ -137,10 +137,10 @@
 
 **Purpose**: Verification against quickstart guide, full test suite execution, TypeScript typing, and architectural Constitution checks
 
-- [ ] T035 [P] Run and validate quickstart scenarios in specs/032-rfp-response-generation/quickstart.md
-- [ ] T036 [P] Run full backend pipeline and API test suite (pytest tests/pipelines/ and pytest services/api/tests/unit/agent/)
-- [ ] T037 [P] Run TypeScript compiler check (npm run typecheck) across workspace to verify zero any and type safety in packages/shared/types/rfp.ts
-- [ ] T038 Verify Constitution compliance (Principle I service boundaries, Principle II API compatibility, Principle IV error sanitization, Principle VII vector governance)
+- [X] T035 [P] Run and validate quickstart scenarios in specs/032-rfp-response-generation/quickstart.md
+- [X] T036 [P] Run full backend pipeline and API test suite (pytest tests/pipelines/ and pytest services/api/tests/unit/agent/)
+- [X] T037 [P] Run TypeScript compiler check (npm run typecheck) across workspace to verify zero any and type safety in packages/shared/types/rfp.ts
+- [X] T038 Verify Constitution compliance (Principle I service boundaries, Principle II API compatibility, Principle IV error sanitization, Principle VII vector governance)
 
 ---
 

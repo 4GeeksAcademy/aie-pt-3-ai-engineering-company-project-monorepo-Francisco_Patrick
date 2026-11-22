@@ -1,10 +1,20 @@
-"""Pydantic presentation schemas for RFP Intake API matching OpenAPI contract."""
+"""Pydantic presentation schemas for RFP Intake & Response Generation API matching OpenAPI contracts."""
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+TicketStatusLiteral = Literal[
+    "analizando",
+    "descartado",
+    "analisis_completo",
+    "generando_borrador",
+    "en_evaluación",
+    "needs_human_review",
+]
 
 
 class ErrorResponse(BaseModel):
@@ -21,9 +31,20 @@ class IntakeTicketAcceptedResponse(BaseModel):
 
     ticket_id: UUID
     ticket_number: str
-    status: Literal["analizando", "descartado", "analisis_completo"]
+    status: TicketStatusLiteral
     message: str
     created_at: datetime
+
+
+class ProposalGenerationAcceptedResponse(BaseModel):
+    """Immediate response returned when initiating Part 2 proposal generation (HTTP 202)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    status: str = Field(default="generando_borrador")
+    message: str
+    active_departments: List[Literal["warehouse", "lastmile", "reverse"]]
 
 
 class IntakeTicketSummary(BaseModel):
@@ -33,7 +54,7 @@ class IntakeTicketSummary(BaseModel):
 
     ticket_id: UUID
     ticket_number: str
-    status: Literal["analizando", "descartado", "analisis_completo"]
+    status: TicketStatusLiteral
     raw_pdf_filename: str
     client_name: Optional[str] = None
     rejection_reason: Optional[str] = None
@@ -77,17 +98,68 @@ class RFPMetadataResponse(BaseModel):
     readability_scores: ReadabilityScoresResponse
 
 
-class DepartmentSectionResponse(BaseModel):
-    """Analysis results from a specific department worker."""
+class ReadabilityEvaluationSchema(BaseModel):
+    """Readability dimension evaluation outcome."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pass_status: bool
+    score: float
+    details: str
+
+
+class RelevanceEvaluationSchema(BaseModel):
+    """Relevance dimension evaluation outcome."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pass_status: bool
+    missing_aspects: List[str] = Field(default_factory=list)
+
+
+class ComplianceEvaluationSchema(BaseModel):
+    """Compliance dimension evaluation outcome."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pass_status: bool
+    rule_ids: List[str] = Field(default_factory=list)
+    violations: List[str] = Field(default_factory=list)
+
+
+class EvaluationResultSchema(BaseModel):
+    """Structured multi-dimensional evaluation result for a department section draft."""
 
     model_config = ConfigDict(from_attributes=True)
 
     department_id: Literal["warehouse", "lastmile", "reverse"]
+    iteration: int
+    readability: ReadabilityEvaluationSchema
+    relevance: RelevanceEvaluationSchema
+    compliance: ComplianceEvaluationSchema
+    overall_pass: bool
+    feedback_for_generator: str
+    evaluated_at: datetime
+
+
+class DepartmentSectionResponse(BaseModel):
+    """Analysis and proposal draft results for a specific department."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Optional[UUID] = None
+    ticket_id: Optional[UUID] = None
+    department_id: Literal["warehouse", "lastmile", "reverse"]
     department_name: str
     responsible_person: str
-    key_aspects: Dict[str, Any]
-    open_questions: List[str]
-    policy_warnings: List[str]
+    key_aspects: Dict[str, Any] = Field(default_factory=dict)
+    open_questions: List[str] = Field(default_factory=list)
+    policy_warnings: List[str] = Field(default_factory=list)
+    status: str = "pending"
+    iteration: int = 0
+    draft_content: Optional[str] = None
+    latest_evaluation: Optional[EvaluationResultSchema] = None
+    evaluation_results: List[EvaluationResultSchema] = Field(default_factory=list)
 
 
 class InternalContact(BaseModel):
@@ -115,6 +187,30 @@ class IntakeHandoffPayloadResponse(BaseModel):
     created_at: datetime
 
 
+class Part3DepartmentSectionBundleSchema(BaseModel):
+    """Per-department finalized draft and evaluation bundle for Part 3 handoff."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    draft_content: str
+    status: Literal["passed", "needs_human_review"]
+    iteration: int
+    evaluation_result: EvaluationResultSchema
+
+
+class Part3HandoffPayloadResponse(BaseModel):
+    """Canonical Part 3 proposal approval handoff payload."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    schema_version: str = "2.0.0"
+    overall_status: Literal["passed", "needs_human_review"]
+    rfp_metadata: Dict[str, Any]
+    department_sections: Dict[str, Part3DepartmentSectionBundleSchema]
+    emitted_at: datetime
+
+
 class IntakeTicketDetailResponse(BaseModel):
     """Comprehensive ticket response including metadata, sections, and handoff."""
 
@@ -122,7 +218,7 @@ class IntakeTicketDetailResponse(BaseModel):
 
     ticket_id: UUID
     ticket_number: str
-    status: Literal["analizando", "descartado", "analisis_completo"]
+    status: TicketStatusLiteral
     raw_pdf_filename: str
     file_size_bytes: int
     rejection_reason: Optional[str] = None

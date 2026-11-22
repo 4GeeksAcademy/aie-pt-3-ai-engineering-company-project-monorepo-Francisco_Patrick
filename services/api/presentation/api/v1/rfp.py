@@ -22,20 +22,31 @@ from fastapi import (
 from sqlmodel import Session
 
 from application.agent.rfp_intake_pipeline import run_rfp_pipeline_background
-from domain.rfp.entities import IntakeTicket, TicketStatus
+from application.agent.rfp_response_service import (
+    RFPResponseGenerationService,
+    run_rfp_response_generation_background,
+)
+from domain.rfp.entities import DepartmentSection, IntakeTicket, TicketStatus
 from domain.rfp.ports import IntakeTicketRepositoryPort
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
 from presentation.dependencies import get_sqlmodel_session_dep
 from presentation.schemas.rfp import (
+    ComplianceEvaluationSchema,
     DepartmentSectionResponse,
     ErrorResponse,
+    EvaluationResultSchema,
     IntakeHandoffPayloadResponse,
     IntakeTicketAcceptedResponse,
     IntakeTicketDetailResponse,
     IntakeTicketListResponse,
     IntakeTicketSummary,
     InternalContact,
+    Part3DepartmentSectionBundleSchema,
+    Part3HandoffPayloadResponse,
+    ProposalGenerationAcceptedResponse,
+    ReadabilityEvaluationSchema,
     ReadabilityScoresResponse,
+    RelevanceEvaluationSchema,
     RFPMetadataResponse,
 )
 
@@ -52,6 +63,55 @@ def get_rfp_repository(
 ) -> IntakeTicketRepositoryPort:
     """Dependency injection provider for RFP intake repository."""
     return SQLModelIntakeTicketRepository(session)
+
+
+def _map_eval_dict_to_schema(eval_dict: dict) -> EvaluationResultSchema:
+    """Convert serialized evaluation result dict into EvaluationResultSchema."""
+    read_d = eval_dict.get("readability") or {}
+    rel_d = eval_dict.get("relevance") or {}
+    comp_d = eval_dict.get("compliance") or {}
+    return EvaluationResultSchema(
+        department_id=eval_dict["department_id"],
+        iteration=int(eval_dict.get("iteration", 1)),
+        readability=ReadabilityEvaluationSchema(
+            pass_status=bool(read_d.get("pass_status", read_d.get("pass", False))),
+            score=float(read_d.get("score", 0.0)),
+            details=str(read_d.get("details", "")),
+        ),
+        relevance=RelevanceEvaluationSchema(
+            pass_status=bool(rel_d.get("pass_status", rel_d.get("pass", False))),
+            missing_aspects=list(rel_d.get("missing_aspects") or []),
+        ),
+        compliance=ComplianceEvaluationSchema(
+            pass_status=bool(comp_d.get("pass_status", comp_d.get("pass", False))),
+            rule_ids=list(comp_d.get("rule_ids") or []),
+            violations=list(comp_d.get("violations") or []),
+        ),
+        overall_pass=bool(eval_dict.get("overall_pass", False)),
+        feedback_for_generator=str(eval_dict.get("feedback_for_generator", "")),
+        evaluated_at=eval_dict.get("evaluated_at") or datetime.now(timezone.utc),
+    )
+
+
+def _map_section_to_response(s: DepartmentSection) -> DepartmentSectionResponse:
+    """Project DepartmentSection domain entity to DepartmentSectionResponse DTO."""
+    eval_schemas = [_map_eval_dict_to_schema(ed) for ed in (s.evaluation_results or [])]
+    latest_eval = eval_schemas[-1] if eval_schemas else None
+    return DepartmentSectionResponse(
+        id=s.id,
+        ticket_id=s.ticket_id,
+        department_id=s.department_id,
+        department_name=s.department_name,
+        responsible_person=s.responsible_person,
+        key_aspects=s.key_aspects,
+        open_questions=s.open_questions,
+        policy_warnings=s.policy_warnings,
+        status=s.status,
+        iteration=s.iteration,
+        draft_content=s.draft_content,
+        latest_evaluation=latest_eval,
+        evaluation_results=eval_schemas,
+    )
 
 
 @router.post(
@@ -210,17 +270,7 @@ def get_rfp_ticket_by_id(
         )
 
     sections_entities = repository.list_department_sections(ticket.id)
-    sections_response = [
-        DepartmentSectionResponse(
-            department_id=s.department_id,
-            department_name=s.department_name,
-            responsible_person=s.responsible_person,
-            key_aspects=s.key_aspects,
-            open_questions=s.open_questions,
-            policy_warnings=s.policy_warnings,
-        )
-        for s in sections_entities
-    ]
+    sections_response = [_map_section_to_response(s) for s in sections_entities]
 
     handoff_entity = repository.get_handoff_payload(ticket.id)
     handoff_response = None
@@ -303,4 +353,120 @@ def get_rfp_handoff_payload(
         ],
         full_handoff_json=handoff_entity.full_handoff_json,
         created_at=handoff_entity.created_at,
+    )
+
+
+@router.post(
+    "/{ticket_id}/generate-proposal",
+    response_model=ProposalGenerationAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Trigger Proposal Draft Generation & Evaluation",
+    responses={
+        202: {"model": ProposalGenerationAcceptedResponse},
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def generate_rfp_proposal(
+    ticket_id: UUID,
+    background_tasks: BackgroundTasks,
+    repository: IntakeTicketRepositoryPort = Depends(get_rfp_repository),
+) -> ProposalGenerationAcceptedResponse:
+    """Initiate asynchronous department proposal generator agents and parallel evaluation loop."""
+    service = RFPResponseGenerationService(repository)
+    try:
+        updated_ticket, active_departments = service.initiate_proposal_generation(ticket_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    background_tasks.add_task(run_rfp_response_generation_background, updated_ticket.id)
+
+    return ProposalGenerationAcceptedResponse(
+        ticket_id=updated_ticket.id,
+        status=updated_ticket.status.value,
+        message="Proposal draft generation pipeline initiated.",
+        active_departments=active_departments,
+    )
+
+
+@router.get(
+    "/{ticket_id}/sections",
+    response_model=List[DepartmentSectionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Department Proposal Sections & Status",
+    responses={
+        200: {"model": List[DepartmentSectionResponse]},
+        404: {"model": ErrorResponse},
+    },
+)
+def list_rfp_department_sections(
+    ticket_id: UUID,
+    repository: IntakeTicketRepositoryPort = Depends(get_rfp_repository),
+) -> List[DepartmentSectionResponse]:
+    """Return generated draft text, evaluation status, and iteration count for all active departments."""
+    ticket = repository.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ticket '{ticket_id}' not found.",
+        )
+
+    sections = repository.list_department_sections(ticket_id)
+    return [_map_section_to_response(s) for s in sections]
+
+
+@router.get(
+    "/{ticket_id}/part3-handoff",
+    response_model=Part3HandoffPayloadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve Part 3 Proposal Handoff Payload",
+    responses={
+        200: {"model": Part3HandoffPayloadResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def get_rfp_part3_handoff(
+    ticket_id: UUID,
+    repository: IntakeTicketRepositoryPort = Depends(get_rfp_repository),
+) -> Part3HandoffPayloadResponse:
+    """Return the compiled Part 3 proposal package including all department drafts and evaluations."""
+    ticket = repository.get_ticket(ticket_id)
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ticket '{ticket_id}' not found.",
+        )
+
+    part3_entity = repository.get_part3_handoff_payload(ticket_id)
+    if not part3_entity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Part 3 handoff payload not found for ticket '{ticket_id}'.",
+        )
+
+    bundles: dict[str, Part3DepartmentSectionBundleSchema] = {}
+    for dept_id, bundle_dict in (part3_entity.department_sections or {}).items():
+        eval_dict = bundle_dict.get("evaluation_result") or {}
+        bundles[dept_id] = Part3DepartmentSectionBundleSchema(
+            draft_content=str(bundle_dict.get("draft_content", "")),
+            status=bundle_dict.get("status", "needs_human_review"),
+            iteration=int(bundle_dict.get("iteration", 1)),
+            evaluation_result=_map_eval_dict_to_schema(eval_dict),
+        )
+
+    return Part3HandoffPayloadResponse(
+        ticket_id=part3_entity.ticket_id,
+        schema_version=part3_entity.schema_version,
+        overall_status=part3_entity.overall_status,
+        rfp_metadata=part3_entity.rfp_metadata,
+        department_sections=bundles,
+        emitted_at=part3_entity.emitted_at,
     )

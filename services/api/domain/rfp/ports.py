@@ -1,4 +1,4 @@
-"""Domain ports (interfaces) for RFP Intake & Analysis."""
+"""Domain ports (interfaces) for RFP Intake, Proposal Generation & Analysis."""
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
@@ -6,8 +6,10 @@ from uuid import UUID
 
 from domain.rfp.entities import (
     DepartmentSection,
+    EvaluationResult,
     IntakeHandoffPayload,
     IntakeTicket,
+    Part3HandoffPayload,
     ReadabilityScores,
     RFPMetadata,
     TicketStatus,
@@ -15,7 +17,7 @@ from domain.rfp.entities import (
 
 
 class IntakeTicketRepositoryPort(ABC):
-    """Port for persisting and retrieving RFP intake tickets and analysis artifacts."""
+    """Port for persisting and retrieving RFP intake tickets, drafts, evaluations, and handoffs."""
 
     @abstractmethod
     def save_ticket(self, ticket: IntakeTicket) -> IntakeTicket:
@@ -60,6 +62,26 @@ class IntakeTicketRepositoryPort(ABC):
         pass
 
     @abstractmethod
+    def get_department_section(
+        self, ticket_id: UUID, department_id: str
+    ) -> Optional[DepartmentSection]:
+        """Retrieve a specific department section by ticket_id and department_id."""
+        pass
+
+    @abstractmethod
+    def update_department_section_draft(
+        self,
+        ticket_id: UUID,
+        department_id: str,
+        draft_content: Optional[str],
+        iteration: int,
+        status: str,
+        evaluation_result: Optional[EvaluationResult] = None,
+    ) -> Optional[DepartmentSection]:
+        """Update draft content, iteration counter, status, and evaluation history for a department section."""
+        pass
+
+    @abstractmethod
     def list_department_sections(self, ticket_id: UUID) -> List[DepartmentSection]:
         """List all department analysis sections for a ticket."""
         pass
@@ -72,6 +94,16 @@ class IntakeTicketRepositoryPort(ABC):
     @abstractmethod
     def get_handoff_payload(self, ticket_id: UUID) -> Optional[IntakeHandoffPayload]:
         """Retrieve the canonical Part 2 handoff payload for a ticket."""
+        pass
+
+    @abstractmethod
+    def save_part3_handoff_payload(self, payload: Part3HandoffPayload) -> Part3HandoffPayload:
+        """Persist or update the canonical Part 3 handoff payload."""
+        pass
+
+    @abstractmethod
+    def get_part3_handoff_payload(self, ticket_id: UUID) -> Optional[Part3HandoffPayload]:
+        """Retrieve the canonical Part 3 handoff payload for a ticket."""
         pass
 
 
