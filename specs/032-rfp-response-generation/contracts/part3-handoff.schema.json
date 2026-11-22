@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.internal/schemas/rfp/part3-handoff.schema.json",
+  "title": "Part3HandoffPayload",
+  "description": "Schema for canonical Part 3 handoff package emitted upon completion of proposal section drafting and evaluation.",
+  "type": "object",
+  "required": [
+    "ticket_id",
+    "schema_version",
+    "overall_status",
+    "rfp_metadata",
+    "department_sections",
+    "emitted_at"
+  ],
+  "properties": {
+    "ticket_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "overall_status": {
+      "type": "string",
+      "enum": ["passed", "needs_human_review"]
+    },
+    "rfp_metadata": {
+      "type": "object",
+      "required": [
+        "client_name",
+        "client_country",
+        "currency",
+        "departments_needed"
+      ],
+      "properties": {
+        "client_name": { "type": "string" },
+        "client_country": { "type": "string", "enum": ["US", "ES"] },
+        "currency": { "type": "string", "enum": ["USD", "EUR"] },
+        "monthly_volume": { "type": ["integer", "null"] },
+        "deadline": { "type": ["string", "null"] },
+        "departments_needed": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["warehouse", "lastmile", "reverse"] }
+        }
+      }
+    },
+    "department_sections": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "draft_content",
+          "status",
+          "iteration",
+          "evaluation_result"
+        ],
+        "properties": {
+          "draft_content": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "needs_human_review"]
+          },
+          "iteration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "evaluation_result": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
