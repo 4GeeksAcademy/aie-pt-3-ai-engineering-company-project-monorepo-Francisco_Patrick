@@ -8,8 +8,10 @@ from uuid import UUID
 from sqlmodel import Session, select
 
 from domain.rfp.entities import (
+    ArbitrationLog,
     DepartmentSection,
     EvaluationResult,
+    FinalDocument,
     IntakeHandoffPayload,
     IntakeTicket,
     InternalContact,
@@ -20,7 +22,9 @@ from domain.rfp.entities import (
 )
 from domain.rfp.ports import IntakeTicketRepositoryPort
 from infrastructure.persistence.sqlmodel.models import (
+    ArbitrationLogTable,
     DepartmentSectionTable,
+    FinalDocumentTable,
     IntakeHandoffPayloadTable,
     IntakeTicketTable,
     Part3HandoffPayloadTable,
@@ -193,6 +197,10 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
                 iteration=section.iteration,
                 status=section.status,
                 evaluation_results=list(section.evaluation_results),
+                approval_status=section.approval_status,
+                approver=section.approver,
+                review_feedback=section.review_feedback,
+                approved_at=section.approved_at,
                 created_at=section.created_at,
                 updated_at=section.updated_at or now,
             )
@@ -207,6 +215,10 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             db_record.iteration = section.iteration
             db_record.status = section.status
             db_record.evaluation_results = list(section.evaluation_results)
+            db_record.approval_status = section.approval_status
+            db_record.approver = section.approver
+            db_record.review_feedback = section.review_feedback
+            db_record.approved_at = section.approved_at
             db_record.updated_at = now
             self.session.add(db_record)
 
@@ -267,6 +279,130 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
         )
         records = self.session.exec(statement).all()
         return [self._to_domain_section(r) for r in records]
+
+    def update_department_section_approval(
+        self,
+        ticket_id: UUID,
+        department_id: str,
+        approval_status: str,
+        approver: Optional[str] = None,
+        review_feedback: Optional[str] = None,
+        iteration: Optional[int] = None,
+        draft_content: Optional[str] = None,
+        approved_at: Optional[datetime] = None,
+    ) -> Optional[DepartmentSection]:
+        """Update Part 3 human approval status, approver, feedback, and timestamp for a department section."""
+        statement = select(DepartmentSectionTable).where(
+            DepartmentSectionTable.ticket_id == ticket_id,
+            DepartmentSectionTable.department_id == department_id,
+        )
+        db_record = self.session.exec(statement).first()
+        if db_record is None:
+            return None
+
+        db_record.approval_status = approval_status
+        if approver is not None:
+            db_record.approver = approver
+        if review_feedback is not None:
+            db_record.review_feedback = review_feedback
+        elif approval_status == "approved":
+            db_record.review_feedback = None
+        if iteration is not None:
+            db_record.iteration = iteration
+        if draft_content is not None:
+            db_record.draft_content = draft_content
+        if approved_at is not None:
+            db_record.approved_at = approved_at
+        elif approval_status == "approved" and db_record.approved_at is None:
+            db_record.approved_at = datetime.now(timezone.utc)
+        elif approval_status != "approved":
+            db_record.approved_at = None
+
+        db_record.updated_at = datetime.now(timezone.utc)
+        self.session.add(db_record)
+        self.session.commit()
+        self.session.refresh(db_record)
+        return self._to_domain_section(db_record)
+
+    # ---------------------------------------------------------
+    # Part 3 Arbitration Log & Final Document Operations
+    # ---------------------------------------------------------
+
+    def save_arbitration_log(self, log: ArbitrationLog) -> ArbitrationLog:
+        """Persist a deterministic conflict arbitration audit log entry."""
+        db_record = self.session.get(ArbitrationLogTable, log.id)
+        if db_record is None:
+            db_record = ArbitrationLogTable(
+                id=log.id,
+                ticket_id=log.ticket_id,
+                trigger_id=log.trigger_id,
+                arbiter=log.arbiter,
+                rule_applied=log.rule_applied,
+                resolution_details=dict(log.resolution_details),
+                created_at=log.created_at,
+            )
+            self.session.add(db_record)
+        else:
+            db_record.trigger_id = log.trigger_id
+            db_record.arbiter = log.arbiter
+            db_record.rule_applied = log.rule_applied
+            db_record.resolution_details = dict(log.resolution_details)
+            self.session.add(db_record)
+
+        self.session.commit()
+        self.session.refresh(db_record)
+        return self._to_domain_arbitration_log(db_record)
+
+    def list_arbitration_logs(self, ticket_id: UUID) -> List[ArbitrationLog]:
+        """Retrieve all arbitration audit log entries for a ticket ordered chronologically."""
+        statement = (
+            select(ArbitrationLogTable)
+            .where(ArbitrationLogTable.ticket_id == ticket_id)
+            .order_by(ArbitrationLogTable.created_at.asc())
+        )
+        records = self.session.exec(statement).all()
+        return [self._to_domain_arbitration_log(r) for r in records]
+
+    def save_final_document(self, document: FinalDocument) -> FinalDocument:
+        """Persist or update the synthesized final proposal document for a ticket."""
+        statement = select(FinalDocumentTable).where(
+            FinalDocumentTable.ticket_id == document.ticket_id
+        )
+        db_record = self.session.exec(statement).first()
+        if db_record is None:
+            db_record = FinalDocumentTable(
+                id=document.id,
+                ticket_id=document.ticket_id,
+                title=document.title,
+                client_name=document.client_name,
+                currency=document.currency,
+                executive_summary=document.executive_summary,
+                sections=dict(document.sections),
+                generated_at=document.generated_at,
+            )
+            self.session.add(db_record)
+        else:
+            db_record.title = document.title
+            db_record.client_name = document.client_name
+            db_record.currency = document.currency
+            db_record.executive_summary = document.executive_summary
+            db_record.sections = dict(document.sections)
+            db_record.generated_at = document.generated_at
+            self.session.add(db_record)
+
+        self.session.commit()
+        self.session.refresh(db_record)
+        return self._to_domain_final_document(db_record)
+
+    def get_final_document(self, ticket_id: UUID) -> Optional[FinalDocument]:
+        """Retrieve the synthesized final proposal document for a ticket."""
+        statement = select(FinalDocumentTable).where(
+            FinalDocumentTable.ticket_id == ticket_id
+        )
+        record = self.session.exec(statement).first()
+        if record is None:
+            return None
+        return self._to_domain_final_document(record)
 
     # ---------------------------------------------------------
     # Handoff Payload Operations (Part 1 -> Part 2 & Part 2 -> Part 3)
@@ -413,8 +549,35 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             iteration=int(getattr(record, "iteration", 0) or 0),
             status=str(getattr(record, "status", "pending") or "pending"),
             evaluation_results=list(getattr(record, "evaluation_results", None) or []),
+            approval_status=str(getattr(record, "approval_status", "pending") or "pending"),
+            approver=getattr(record, "approver", None),
+            review_feedback=getattr(record, "review_feedback", None),
+            approved_at=getattr(record, "approved_at", None),
             created_at=record.created_at,
             updated_at=getattr(record, "updated_at", None) or record.created_at,
+        )
+
+    def _to_domain_arbitration_log(self, record: ArbitrationLogTable) -> ArbitrationLog:
+        return ArbitrationLog(
+            id=record.id,
+            ticket_id=record.ticket_id,
+            trigger_id=record.trigger_id,  # type: ignore
+            arbiter=record.arbiter,  # type: ignore
+            rule_applied=record.rule_applied,
+            resolution_details=record.resolution_details or {},
+            created_at=record.created_at,
+        )
+
+    def _to_domain_final_document(self, record: FinalDocumentTable) -> FinalDocument:
+        return FinalDocument(
+            id=record.id,
+            ticket_id=record.ticket_id,
+            title=record.title,
+            client_name=record.client_name,
+            currency=record.currency,  # type: ignore
+            executive_summary=record.executive_summary,
+            sections=record.sections or {},
+            generated_at=record.generated_at,
         )
 
     def _to_domain_handoff(self, record: IntakeHandoffPayloadTable) -> IntakeHandoffPayload:

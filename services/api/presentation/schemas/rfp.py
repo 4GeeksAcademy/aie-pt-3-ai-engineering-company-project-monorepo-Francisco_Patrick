@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 TicketStatusLiteral = Literal[
@@ -14,6 +14,24 @@ TicketStatusLiteral = Literal[
     "generando_borrador",
     "en_evaluación",
     "needs_human_review",
+    "esperando_aprobación",
+    "terminado",
+]
+
+ApprovalStatusLiteral = Literal[
+    "pending",
+    "approved",
+    "rejected",
+    "changes_requested",
+    "needs_human_review",
+]
+
+ApprovalDecisionLiteral = Literal["approve", "reject", "request_changes"]
+
+ArbitrationTriggerLiteral = Literal[
+    "volume-vs-capacity",
+    "returns-sla-breach",
+    "currency-mismatch",
 ]
 
 
@@ -160,6 +178,10 @@ class DepartmentSectionResponse(BaseModel):
     draft_content: Optional[str] = None
     latest_evaluation: Optional[EvaluationResultSchema] = None
     evaluation_results: List[EvaluationResultSchema] = Field(default_factory=list)
+    approval_status: str = "pending"
+    approver: Optional[str] = None
+    review_feedback: Optional[str] = None
+    approved_at: Optional[datetime] = None
 
 
 class InternalContact(BaseModel):
@@ -211,8 +233,91 @@ class Part3HandoffPayloadResponse(BaseModel):
     emitted_at: datetime
 
 
+class ResumeDecisionRequest(BaseModel):
+    """Request payload for resuming an interrupted department approval branch (Part 3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    department_id: Literal["warehouse", "lastmile", "reverse"] = Field(
+        ..., description="Department branch being resumed"
+    )
+    decision: ApprovalDecisionLiteral = Field(
+        ..., description="Human reviewer operational decision"
+    )
+    approver: str = Field(
+        ...,
+        min_length=2,
+        description="Name of responsible department lead (Ana Whitfield, Carlos Vega, Sofía Ramos)",
+    )
+    feedback: Optional[str] = Field(
+        default=None,
+        description="Mandatory feedback if decision is 'request_changes'",
+    )
+
+    @model_validator(mode="after")
+    def validate_feedback_for_changes(self) -> "ResumeDecisionRequest":
+        """Enforce non-empty revision feedback when decision is 'request_changes'."""
+        if self.decision == "request_changes":
+            if not self.feedback or len(self.feedback.strip()) < 5:
+                raise ValueError(
+                    "Non-empty 'feedback' (minimum 5 characters) is mandatory when decision is 'request_changes'."
+                )
+        return self
+
+
+class ResumeDecisionResponse(BaseModel):
+    """Response payload returned after resuming an interrupted department approval branch."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    department_id: Literal["warehouse", "lastmile", "reverse"]
+    approval_status: ApprovalStatusLiteral
+    ticket_status: Literal["esperando_aprobación", "terminado", "needs_human_review"]
+    message: str
+    approved_at: Optional[datetime] = None
+
+
+class ArbitrationLogResponse(BaseModel):
+    """Deterministic conflict arbitration log record schema."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ticket_id: UUID
+    trigger_id: ArbitrationTriggerLiteral
+    arbiter: str
+    rule_applied: str
+    resolution_details: Dict[str, Any]
+    created_at: datetime
+
+
+class ArbitrationLogListResponse(BaseModel):
+    """List wrapper for ticket arbitration log records."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: List[ArbitrationLogResponse]
+    total: int
+
+
+class FinalDocumentResponse(BaseModel):
+    """Consolidated final commercial proposal document response schema."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ticket_id: UUID
+    title: str
+    client_name: str
+    currency: Literal["USD", "EUR"]
+    executive_summary: str
+    sections: Dict[str, Any]
+    generated_at: datetime
+
+
 class IntakeTicketDetailResponse(BaseModel):
-    """Comprehensive ticket response including metadata, sections, and handoff."""
+    """Comprehensive ticket response including metadata, sections, handoff, arbitration logs, and final document."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -226,5 +331,7 @@ class IntakeTicketDetailResponse(BaseModel):
     metadata: Optional[RFPMetadataResponse] = None
     department_sections: List[DepartmentSectionResponse] = Field(default_factory=list)
     handoff: Optional[IntakeHandoffPayloadResponse] = None
+    arbitration_logs: List[ArbitrationLogResponse] = Field(default_factory=list)
+    final_document: Optional[FinalDocumentResponse] = None
     created_at: datetime
     updated_at: datetime

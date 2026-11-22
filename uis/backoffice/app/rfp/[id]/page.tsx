@@ -10,6 +10,9 @@ import { TicketStatusBadge } from '../../../components/rfp/TicketStatusBadge';
 import { ReadabilityMetricCard } from '../../../components/rfp/ReadabilityMetricCard';
 import { DepartmentKeyAspectsCard } from '../../../components/rfp/DepartmentKeyAspectsCard';
 import { HandoffJsonViewer } from '../../../components/rfp/HandoffJsonViewer';
+import { DepartmentApprovalPanel } from '../../../components/rfp/DepartmentApprovalPanel';
+import { ArbitrationLogViewer } from '../../../components/rfp/ArbitrationLogViewer';
+import { FinalDocumentViewer } from '../../../components/rfp/FinalDocumentViewer';
 
 /**
  * Page props interface matching Next.js App Router dynamic route parameters.
@@ -185,9 +188,34 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
         </div>
       )}
 
-      {/* Complete Analysis Sections */}
-      {ticket.status === 'analisis_completo' && (
+      {/* Complete Analysis & Part 3 Approval / Final Document Sections */}
+      {(ticket.status === 'analisis_completo' ||
+        ticket.status === 'en_evaluación' ||
+        ticket.status === 'needs_human_review' ||
+        ticket.status === 'esperando_aprobación' ||
+        ticket.status === 'terminado') && (
         <div className="space-y-8">
+          {/* Final Consolidated Proposal Document (when 100% approved / terminado) */}
+          {ticket.final_document && <FinalDocumentViewer document={ticket.final_document} />}
+
+          {/* Part 3 Human-in-the-Loop Department Approval Panel */}
+          {(ticket.status === 'esperando_aprobación' ||
+            ticket.status === 'needs_human_review' ||
+            ticket.status === 'terminado') && (
+            <DepartmentApprovalPanel
+              ticketId={ticket.ticket_id}
+              sections={ticket.department_sections}
+              onDecisionRecorded={() => {
+                void fetchTicket();
+              }}
+            />
+          )}
+
+          {/* Part 3 Deterministic Conflict Arbitration Audit Viewer */}
+          {ticket.arbitration_logs && ticket.arbitration_logs.length > 0 && (
+            <ArbitrationLogViewer logs={ticket.arbitration_logs} />
+          )}
+
           {/* Executive Summary for Sales */}
           {ticket.handoff && (
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4 shadow-sm">
