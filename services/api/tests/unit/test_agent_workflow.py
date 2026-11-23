@@ -757,7 +757,8 @@ class TestUserStory6TracingAndCheckpointing:
             )
         )
 
-        assert result.trace_id == thread_id
+        assert result.trace_id != ""
+        assert result.trace_id != thread_id
         assert result.node_sequence == ["intake", "ticket_tool", "retrieval", "generation"]
         assert result.sources_consulted == ["ticket_tool", "rag"]
         assert result.fallback_triggered is False
@@ -765,11 +766,12 @@ class TestUserStory6TracingAndCheckpointing:
         assert result.tool_calls[0]["tool_name"] == "ticket_tool"
         assert result.tool_calls[0]["status"] == "success"
 
-        trace = service.get_trace(thread_id)
+        trace = service.get_trace(result.trace_id)
         assert trace.sources_consulted == ["ticket_tool", "rag"]
         assert trace.fallback_triggered is False
         assert len(trace.tool_calls) == 1
         assert len(trace.checkpoints) >= 1
+        assert trace.checkpoints[-1].thread_id == thread_id
         assert trace.checkpoints[-1].state_delta["sources_consulted"] == ["ticket_tool", "rag"]
 
         with pytest.raises(TraceNotFoundError):
