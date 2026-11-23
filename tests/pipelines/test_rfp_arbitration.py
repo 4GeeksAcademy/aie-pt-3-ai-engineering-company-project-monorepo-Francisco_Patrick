@@ -9,8 +9,8 @@ from uuid import uuid4
 import jsonschema
 from sqlmodel import Session
 
-from application.agent.rfp_approval_service import RFPApprovalService
-from application.agent.rfp_arbitration_agent import RFPArbitrationAgent
+from data.pipelines.rfp_intake.rfp_approval_service import RFPApprovalService
+from data.pipelines.rfp_intake.rfp_arbitration_agent import RFPArbitrationAgent
 from data.pipelines.rfp_approval_completion.arbitration import (
     arbitration_node,
     evaluate_and_arbitrate_conflicts,
@@ -75,7 +75,7 @@ def test_volume_vs_capacity_conflict_arbitration_under_miguel_torres(
             "draft_content": (
                 "## Warehouse Proposal\n"
                 "Committed capacity: 3,000 orders per month at Zaragoza hub. "
-                "Rates in EUR: 16.50 EUR per pallet. 99.2% on-time SLA."
+                "Rates in EUR: 16.00 EUR por m³. 90% on-time SLA."
             ),
             "iteration_count": 0,
             "approval_status": "pending",
@@ -197,7 +197,7 @@ def test_currency_mismatch_conflict_arbitration_and_canonical_rewriting() -> Non
                 "key_aspects": {"currency": "EUR"},
                 "draft_content": (
                     "## Warehouse Proposal for Luna Cosmetics Inc.\n"
-                    "Pallet Storage Rate: 16.50 EUR per pallet (€16.50). "
+                    "Pallet Storage Rate: 16.00 EUR por m³ (€16.00). "
                     "Turnaround takes 48 to 72 hours."
                 ),
                 "iteration_count": 0,

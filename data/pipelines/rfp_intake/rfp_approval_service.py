@@ -113,8 +113,10 @@ class RFPApprovalService:
                 f"Department section '{department_id}' not found for ticket '{ticket_id}'."
             )
 
-        # 3. Check if branch is already finalized in database
-        if section.approval_status in ("approved", "rejected", "needs_human_review"):
+        # 3. Check if branch is already finalized in database (allow reopening rejected branches on request_changes or approve)
+        if section.approval_status in ("approved", "needs_human_review") or (
+            section.approval_status == "rejected" and validated["decision"] not in ("request_changes", "approve")
+        ):
             raise BranchNotInterruptedError(
                 f"Department section '{department_id}' for ticket '{ticket_id}' is already finalized "
                 f"with status '{section.approval_status}' and is not paused in an interrupt."

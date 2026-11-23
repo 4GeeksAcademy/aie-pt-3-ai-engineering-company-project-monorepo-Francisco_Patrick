@@ -40,7 +40,7 @@ describe('DepartmentApprovalPanel Component Tests (T028, T029 - User Story 4)', 
       key_aspects: { warehouse_location_preference: 'Zaragoza' },
       open_questions: [],
       policy_warnings: [],
-      draft_content: '## Warehouse Proposal for ModaViva\n16.50 EUR per pallet.',
+      draft_content: '## Warehouse Proposal for ModaViva\n16.00 EUR por m³.',
       approval_status: 'pending',
     },
     {

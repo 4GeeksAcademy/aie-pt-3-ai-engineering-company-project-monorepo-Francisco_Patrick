@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlmodel import Session
 
-from application.agent.rfp_approval_service import RFPApprovalService
+from data.pipelines.rfp_intake.rfp_approval_service import RFPApprovalService
 from presentation.schemas.rfp import ResumeDecisionRequest
 from data.pipelines.rfp_approval_completion.pipeline import (
     BranchNotInterruptedError,
@@ -93,7 +93,7 @@ def _seed_multi_department_ticket(
                 policy_warnings=[],
                 draft_content=(
                     f"## {d_name} Proposal for ModaViva, S.L.\n"
-                    f"Lead: {d_lead}. All rates in EUR. We commit to a 99.2% on-time SLA. "
+                    f"Lead: {d_lead}. All rates in EUR. We commit to a 90% on-time SLA. "
                     "Turnaround is 48 to 72 hours.\n"
                     "| Monthly Volume Tier | Volume Discount (%) |\n|---|---|\n| 1-2500 | 0% |\n| 2501+ | 5% |"
                 ),
@@ -450,4 +450,69 @@ def test_enter_approval_milestone_defaults_to_initial_arbitration(
     assert "3000" in lm_sec.draft_content
     assert "Miguel Torres" in lm_sec.draft_content
     assert "capped at 3000" in lm_sec.draft_content
+
+
+def test_rejection_lifecycle_and_commercial_reopening(
+    rfp_repository: SQLModelIntakeTicketRepository,
+    sqlite_checkpointer: SqliteSaver,
+) -> None:
+    """Verify that department rejection escalates ticket out of esperando_aprobación and allows commercial reopening."""
+    ticket_id = _seed_multi_department_ticket(rfp_repository, ["warehouse", "lastmile"])
+    service = RFPApprovalService(
+        repository=rfp_repository,
+        checkpointer=sqlite_checkpointer,
+    )
+    service.enter_approval_milestone(ticket_id)
+
+    # 1. Department rejects proposal
+    reject_res = service.resume_department_approval(
+        ticket_id=ticket_id,
+        department_id="warehouse",
+        decision="reject",
+        approver="Ana Whitfield",
+        feedback="Rechazado por falta de viabilidad en capacidad de almacenamiento.",
+    )
+    assert reject_res["approval_status"] == "rejected"
+    assert reject_res["ticket_status"] == TicketStatus.NEEDS_HUMAN_REVIEW.value
+    assert reject_res["ticket_status"] != TicketStatus.WAITING_FOR_APPROVAL.value
+
+    # Verify repository ticket was escalated to needs_human_review
+    saved_ticket = rfp_repository.get_ticket(ticket_id)
+    assert saved_ticket is not None
+    assert saved_ticket.status == TicketStatus.NEEDS_HUMAN_REVIEW
+
+    # 2. Blind repeat resume without reopening fails with BranchNotInterruptedError
+    with pytest.raises(BranchNotInterruptedError):
+        service.resume_department_approval(
+            ticket_id=ticket_id,
+            department_id="warehouse",
+            decision="reject",
+            approver="Ana Whitfield",
+            feedback="Rechazado de nuevo.",
+        )
+
+    # 3. Commercial reopening with request_changes allows remediation
+    reopen_res = service.resume_department_approval(
+        ticket_id=ticket_id,
+        department_id="warehouse",
+        decision="request_changes",
+        approver="Miguel Torres",
+        feedback="Ajustar viabilidad comercial y replantear layout de estanterías.",
+    )
+    assert reopen_res["approval_status"] == "changes_requested"
+    assert reopen_res["ticket_status"] == TicketStatus.WAITING_FOR_APPROVAL.value
+
+    reopened_ticket = rfp_repository.get_ticket(ticket_id)
+    assert reopened_ticket is not None
+    assert reopened_ticket.status == TicketStatus.WAITING_FOR_APPROVAL
+
+    # 4. Warehouse lead approves remediated draft
+    approve_wh = service.resume_department_approval(
+        ticket_id=ticket_id,
+        department_id="warehouse",
+        decision="approve",
+        approver="Ana Whitfield",
+    )
+    assert approve_wh["approval_status"] == "approved"
+
 

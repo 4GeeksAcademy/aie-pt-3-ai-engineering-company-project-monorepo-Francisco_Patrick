@@ -9,7 +9,7 @@ from uuid import uuid4
 import jsonschema
 import pytest
 
-from application.agent.rfp_approval_service import RFPApprovalService
+from data.pipelines.rfp_intake.rfp_approval_service import RFPApprovalService
 from data.pipelines.rfp_approval_completion.state import (
     COMMERCIAL_DIRECTOR,
     SqliteSaver,
@@ -98,7 +98,7 @@ def test_final_document_compilation_executive_summary_and_currency_binding() -> 
         "warehouse": {
             "department_name": "Warehouse Operations",
             "responsible_person": "Ana Whitfield",
-            "draft_content": "## Warehouse Proposal\nAll rates in USD ($18.00 USD). 99.2% SLA.",
+            "draft_content": "## Warehouse Proposal\nAll rates in USD ($18.00 USD). 90% SLA.",
             "approval_status": "approved",
             "approver": "Ana Whitfield",
             "approved_at": "2026-11-22T10:30:00+00:00",
@@ -207,7 +207,7 @@ def test_automatic_final_synthesis_and_ticket_status_terminado_preserving_fields
             key_aspects={"warehouse_location_preference": "Zaragoza", "sku_count": 300},
             open_questions=["Confirm pallet height"],
             policy_warnings=[],
-            draft_content="## Warehouse Proposal for ModaViva\nAll prices in EUR (16.50 EUR). 99.2% SLA. 48 to 72 hours.",
+            draft_content="## Warehouse Proposal for ModaViva\nAll prices in EUR (16.00 EUR por m³). 90% SLA. 48 to 72 hours.",
             iteration=1,
             status="passed",
             evaluation_results=wh_eval,
@@ -264,6 +264,11 @@ def test_automatic_final_synthesis_and_ticket_status_terminado_preserving_fields
     assert persisted_doc.currency == "EUR"
     assert "warehouse" in persisted_doc.sections
     assert "reverse" in persisted_doc.sections
+    wh_approved = persisted_doc.sections["warehouse"]["approved_content"]
+    assert "16.00 EUR por m³" in wh_approved
+    assert "90% SLA" in wh_approved
+    assert "16.50" not in wh_approved
+    assert "99.2%" not in wh_approved
 
     # Verify ticket status and complete preservation of Part 1 & Part 2 fields
     completed_ticket = rfp_repository.get_ticket(ticket_id)
@@ -323,7 +328,7 @@ def test_execution_trace_recording_across_nodes(
             key_aspects={},
             open_questions=[],
             policy_warnings=[],
-            draft_content="## Warehouse Draft in EUR (16.50 EUR). 99.2% SLA. 48 to 72 hours.",
+            draft_content="## Warehouse Draft in EUR (16.00 EUR por m³). 90% SLA. 48 to 72 hours.",
             iteration=1,
             status="passed",
         )
@@ -335,7 +340,9 @@ def test_execution_trace_recording_across_nodes(
     )
     start_res = service.enter_approval_milestone(ticket_id)
     assert len(start_res["execution_trace"]) >= 1
-    assert start_res["execution_trace"][0]["node_name"] == "prepare_branch_review"
+    start_nodes = [t["node_name"] for t in start_res["execution_trace"]]
+    assert "arbitration_node" in start_nodes
+    assert "prepare_branch_review" in start_nodes
 
     resume_res = service.resume_department_approval(
         ticket_id=ticket_id,
@@ -348,10 +355,15 @@ def test_execution_trace_recording_across_nodes(
     assert "prepare_branch_review" in recorded_nodes
     assert "human_approval_checkpoint" in recorded_nodes
     assert "finalize_branch_approval" in recorded_nodes
+    assert "arbitration_node" in recorded_nodes
+    assert "final_synthesis_node" in recorded_nodes
 
     for entry in traces:
         assert isinstance(entry["node_name"], str)
-        assert entry["department_id"] == "warehouse"
+        if entry["node_name"] in ("arbitration_node", "final_synthesis_node"):
+            assert entry["department_id"] is None
+        else:
+            assert entry["department_id"] == "warehouse"
         assert isinstance(entry["input_state"], dict)
         assert isinstance(entry["output_state"], dict)
         assert isinstance(entry["timestamp"], str) and "T" in entry["timestamp"]

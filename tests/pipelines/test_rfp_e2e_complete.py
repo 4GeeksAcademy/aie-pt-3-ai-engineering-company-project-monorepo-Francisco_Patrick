@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from application.agent.rfp_approval_service import RFPApprovalService
-from application.agent.rfp_intake_pipeline import RFPIntakePipeline
-from application.agent.rfp_response_service import RFPResponseGenerationService
+from data.pipelines.rfp_intake.rfp_approval_service import RFPApprovalService
+from data.pipelines.rfp_intake.rfp_intake_pipeline import RFPIntakePipeline
+from data.pipelines.rfp_intake.rfp_response_service import RFPResponseGenerationService
 from data.pipelines.rfp_approval_completion.state import SqliteSaver
 from domain.rfp.entities import IntakeTicket, TicketStatus
 from infrastructure.persistence.sqlmodel.rfp_repository import (

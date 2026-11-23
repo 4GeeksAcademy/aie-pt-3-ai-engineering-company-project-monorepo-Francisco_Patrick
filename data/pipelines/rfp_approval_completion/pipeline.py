@@ -33,7 +33,7 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import (  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     BaseDepartmentGeneratorAgent,
     get_department_generator_agent,
 )
@@ -368,15 +368,33 @@ class RFPApprovalCompletionPipeline:
         ]
 
         arbitration_logs: List[ArbitrationLog] = []
+        arb_traces: List[ExecutionTraceEntryDict] = []
         if run_initial_arbitration:
-            meta, sections, arbitration_logs = evaluate_and_arbitrate_conflicts(
-                ticket_id=ticket_id,
-                rfp_metadata=meta,
-                department_sections=sections,
-                max_revisions=self.max_revisions,
+            arb_state = arbitration_node(
+                {
+                    "ticket_id": str(ticket_id),
+                    "rfp_metadata": meta,
+                    "department_sections": sections,
+                    "max_revisions": self.max_revisions,
+                    "arbitration_logs": [],
+                    "execution_trace": [],
+                }
             )
-            if self.repository is not None:
-                for log_entry in arbitration_logs:
+            meta = arb_state["rfp_metadata"]
+            sections = arb_state["department_sections"]
+            arb_traces = list(arb_state.get("execution_trace") or [])
+            for log_dict in arb_state.get("arbitration_logs", []):
+                log_entry = ArbitrationLog(
+                    id=UUID(log_dict["id"]),
+                    ticket_id=ticket_id,
+                    trigger_id=log_dict["trigger_id"],
+                    arbiter=log_dict["arbiter"],
+                    rule_applied=log_dict["rule_applied"],
+                    resolution_details=log_dict["resolution_details"],
+                    created_at=datetime.fromisoformat(log_dict["created_at"]),
+                )
+                arbitration_logs.append(log_entry)
+                if self.repository is not None:
                     self.repository.save_arbitration_log(log_entry)
 
         if self.repository is not None:
@@ -386,7 +404,7 @@ class RFPApprovalCompletionPipeline:
                 self.repository.save_ticket(ticket)
 
         branch_statuses: Dict[str, str] = {}
-        traces: List[ExecutionTraceEntryDict] = []
+        traces: List[ExecutionTraceEntryDict] = list(arb_traces)
 
         for dept_id in active_departments:
             sec = sections.get(dept_id) or {}
@@ -481,17 +499,33 @@ class RFPApprovalCompletionPipeline:
 
         current_approval_status = snapshot.values.get("approval_status")
         if not snapshot.next:
-            raise BranchNotInterruptedError(
-                f"Department branch '{department_id}' for ticket '{ticket_id}' is not currently paused in an interrupt "
-                f"(current approval_status='{current_approval_status}')."
+            if current_approval_status == "rejected" and decision in ("request_changes", "approve"):
+                branch_state = dict(snapshot.values)
+                branch_state["review_feedback"] = validated.get("feedback")
+                branch_state["approver"] = validated.get("approver")
+                if decision == "request_changes":
+                    branch_state["approval_status"] = "pending"
+                    revised_update = self._node_revise_department_draft(branch_state)
+                    branch_state.update(revised_update)
+                    self.branch_graph.invoke(branch_state, config=config)
+                elif decision == "approve":
+                    branch_state["approval_status"] = "pending"
+                    self.branch_graph.invoke(branch_state, config=config)
+                    self.branch_graph.invoke(Command(resume=validated), config=config)
+                after_snapshot = self.branch_graph.get_state(config)
+                branch_state = dict(after_snapshot.values or branch_state)
+            else:
+                raise BranchNotInterruptedError(
+                    f"Department branch '{department_id}' for ticket '{ticket_id}' is not currently paused in an interrupt "
+                    f"(current approval_status='{current_approval_status}')."
+                )
+        else:
+            resumed_values = self.branch_graph.invoke(
+                Command(resume=validated),
+                config=config,
             )
-
-        resumed_values = self.branch_graph.invoke(
-            Command(resume=validated),
-            config=config,
-        )
-        after_snapshot = self.branch_graph.get_state(config)
-        branch_state = dict(after_snapshot.values or resumed_values)
+            after_snapshot = self.branch_graph.get_state(config)
+            branch_state = dict(after_snapshot.values or resumed_values)
 
         # Determine effective persisted approval status
         if after_snapshot.next and validated["decision"] == "request_changes":
@@ -524,7 +558,9 @@ class RFPApprovalCompletionPipeline:
             )
 
         # Check all active branches for this ticket to see if 100% are approved
-        ticket_status, final_doc = self._evaluate_ticket_completion_gate(ticket_id)
+        ticket_status, final_doc, gate_traces = self._evaluate_ticket_completion_gate(ticket_id)
+        merged_traces = list(branch_state.get("execution_trace") or [])
+        merged_traces.extend(gate_traces)
 
         return {
             "ticket_id": str(ticket_id),
@@ -536,7 +572,7 @@ class RFPApprovalCompletionPipeline:
             "draft_content": draft_content,
             "escalation_note": branch_state.get("escalation_note"),
             "final_document": final_doc.to_schema_dict() if final_doc else None,
-            "execution_trace": list(branch_state.get("execution_trace") or []),
+            "execution_trace": merged_traces,
             "message": self._build_resume_message(
                 department_id=department_id,
                 approval_status=effective_approval_status,
@@ -547,7 +583,7 @@ class RFPApprovalCompletionPipeline:
     def _evaluate_ticket_completion_gate(
         self,
         ticket_id: UUID,
-    ) -> Tuple[str, Optional[FinalDocument]]:
+    ) -> Tuple[str, Optional[FinalDocument], List[ExecutionTraceEntryDict]]:
         """Check whether all active department branches have approved; if so, run arbitration & final synthesis."""
         meta, sections = self._load_or_merge_ticket_context(ticket_id)
         raw_depts = meta.get("departments_needed") or list(sections.keys())
@@ -591,20 +627,65 @@ class RFPApprovalCompletionPipeline:
                         error_message=f"Escalated to {COMMERCIAL_DIRECTOR}: department revision limit reached."
                     )
                     self.repository.save_ticket(ticket)
-            return TicketStatus.NEEDS_HUMAN_REVIEW.value, None
+            return TicketStatus.NEEDS_HUMAN_REVIEW.value, None, []
+
+        # Check if any branch was rejected
+        rejected_depts = [
+            d for d in active_departments if sections.get(d, {}).get("approval_status") == "rejected"
+        ]
+        if rejected_depts:
+            first_rejected = rejected_depts[0]
+            feedback = (
+                sections.get(first_rejected, {}).get("review_feedback")
+                or "Department rejected proposal."
+            )
+            err_msg = (
+                f"Escalated to {COMMERCIAL_DIRECTOR} (Commercial Director): "
+                f"department '{first_rejected}' rejected proposal: {feedback}"
+            )
+            if self.repository is not None:
+                ticket = self.repository.get_ticket(ticket_id)
+                if ticket is not None:
+                    ticket.mark_needs_human_review(error_message=err_msg)
+                    self.repository.save_ticket(ticket)
+            return TicketStatus.NEEDS_HUMAN_REVIEW.value, None, []
 
         if not can_synthesize_final_document(active_departments, sections):
-            return TicketStatus.WAITING_FOR_APPROVAL.value, None
+            if self.repository is not None:
+                ticket = self.repository.get_ticket(ticket_id)
+                if ticket is not None and ticket.status != TicketStatus.WAITING_FOR_APPROVAL:
+                    ticket.mark_waiting_for_approval()
+                    self.repository.save_ticket(ticket)
+            return TicketStatus.WAITING_FOR_APPROVAL.value, None, []
 
-        # All active departments approved -> Run deterministic conflict check before synthesis
-        updated_meta, updated_sections, arb_logs = evaluate_and_arbitrate_conflicts(
-            ticket_id=ticket_id,
-            rfp_metadata=meta,
-            department_sections=sections,
-            max_revisions=self.max_revisions,
+        gate_traces: List[ExecutionTraceEntryDict] = []
+
+        # All active departments approved -> Run deterministic conflict check before synthesis via traced arbitration_node
+        arb_state = arbitration_node(
+            {
+                "ticket_id": str(ticket_id),
+                "rfp_metadata": meta,
+                "department_sections": sections,
+                "max_revisions": self.max_revisions,
+                "arbitration_logs": [],
+                "execution_trace": [],
+            }
         )
+        updated_meta = arb_state["rfp_metadata"]
+        updated_sections = arb_state["department_sections"]
+        gate_traces.extend(arb_state.get("execution_trace") or [])
+
         if self.repository is not None:
-            for log_entry in arb_logs:
+            for log_dict in arb_state.get("arbitration_logs", []):
+                log_entry = ArbitrationLog(
+                    id=UUID(log_dict["id"]),
+                    ticket_id=ticket_id,
+                    trigger_id=log_dict["trigger_id"],
+                    arbiter=log_dict["arbiter"],
+                    rule_applied=log_dict["rule_applied"],
+                    resolution_details=log_dict["resolution_details"],
+                    created_at=datetime.fromisoformat(log_dict["created_at"]),
+                )
                 self.repository.save_arbitration_log(log_entry)
 
         # If arbitration forced a section back into changes_requested or rejected, block synthesis!
@@ -618,7 +699,9 @@ class RFPApprovalCompletionPipeline:
                         review_feedback=sec_data.get("review_feedback"),
                         draft_content=sec_data.get("draft_content"),
                     )
-            return TicketStatus.WAITING_FOR_APPROVAL.value, None
+            if any(updated_sections.get(d, {}).get("approval_status") == "rejected" for d in active_departments):
+                return TicketStatus.NEEDS_HUMAN_REVIEW.value, None, gate_traces
+            return TicketStatus.WAITING_FOR_APPROVAL.value, None, gate_traces
 
         # Synthesize final document via traced final_synthesis_node
         synth_state = final_synthesis_node(
@@ -627,9 +710,10 @@ class RFPApprovalCompletionPipeline:
                 "rfp_metadata": updated_meta,
                 "department_sections": updated_sections,
                 "active_departments": active_departments,
-                "execution_trace": [],
+                "execution_trace": gate_traces,
             }
         )
+        gate_traces = list(synth_state.get("execution_trace") or [])
         final_doc_dict = synth_state["final_document"]
         final_doc = FinalDocument(
             id=UUID(final_doc_dict["id"]),
@@ -649,7 +733,7 @@ class RFPApprovalCompletionPipeline:
                 ticket.mark_terminado()
                 self.repository.save_ticket(ticket)
 
-        return TicketStatus.TERMINADO.value, final_doc
+        return TicketStatus.TERMINADO.value, final_doc, gate_traces
 
     def _load_or_merge_ticket_context(
         self,
