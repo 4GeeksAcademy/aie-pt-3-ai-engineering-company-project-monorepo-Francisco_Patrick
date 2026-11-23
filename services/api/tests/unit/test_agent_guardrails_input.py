@@ -6,9 +6,11 @@ jailbreak rephrasings plus multi-intent security precedence).
 """
 
 import pytest
+from typing import get_type_hints
 
 from application.services.agent_guardrails import (
     InputGuardrailValidator,
+    _has_prior_support_or_clarification_context,
     build_hardened_system_prompt,
 )
 
@@ -397,3 +399,15 @@ def test_hardened_system_prompt_contains_immutable_authority_and_country_scope()
     assert "United States (Los Angeles) and Spain (Zaragoza)" in prompt
     assert "UPS, FedEx, DHL, MRW, SEUR" in prompt
     assert "Active Authoritative Jurisdiction for this turn: ES" in prompt
+
+
+def test_guardrails_type_annotations_evaluate_cleanly() -> None:
+    """Ensure runtime annotation evaluation succeeds without NameError for Any or related types."""
+    hints_helper = get_type_hints(_has_prior_support_or_clarification_context)
+    assert "conversation_history" in hints_helper
+    assert "context" in hints_helper
+
+    hints_method = get_type_hints(InputGuardrailValidator.evaluate_input)
+    assert "conversation_history" in hints_method
+    assert "context" in hints_method
+

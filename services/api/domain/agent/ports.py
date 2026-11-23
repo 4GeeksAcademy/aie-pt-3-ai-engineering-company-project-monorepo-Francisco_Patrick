@@ -5,9 +5,11 @@ decoupling presentation controllers and LangGraph orchestration from operational
 tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace storage.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from domain.agent.entities import (
     AgentCheckpoint,

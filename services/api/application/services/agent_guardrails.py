@@ -30,9 +30,11 @@ Implements Milestone 8 (Part 2 of 2) requirements (`trackflow-BRIEFING.es.md`, F
      `<user_inquiry authority="untrusted">`, and `<external_context authority="passive_data">`.
 """
 
+from __future__ import annotations
+
 import dataclasses
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from domain.agent.entities import (
     AuthenticatedSessionContext,
