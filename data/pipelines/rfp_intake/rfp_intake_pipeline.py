@@ -9,14 +9,14 @@ from uuid import UUID, uuid4
 from langgraph.graph import END, START, StateGraph
 from sqlmodel import Session
 
-from application.agent.rfp_classifier_agent import RFPClassifierAgent
-from application.agent.rfp_department_workers import (
+from data.pipelines.rfp_intake.rfp_classifier_agent import RFPClassifierAgent
+from data.pipelines.rfp_intake.rfp_department_workers import (
     LastMileWorker,
     ReverseWorker,
     WarehouseWorker,
 )
-from application.agent.rfp_orchestrator_agent import RFPOrchestratorAgent
-from application.agent.rfp_synthesizer_agent import RFPSynthesizerAgent
+from data.pipelines.rfp_intake.rfp_orchestrator_agent import RFPOrchestratorAgent
+from data.pipelines.rfp_intake.rfp_synthesizer_agent import RFPSynthesizerAgent
 from domain.rfp.entities import (
     DepartmentSection,
     IntakeHandoffPayload,

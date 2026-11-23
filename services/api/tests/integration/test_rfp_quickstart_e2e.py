@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from sqlmodel import Session
 
-from application.agent.rfp_intake_pipeline import RFPIntakePipeline
+from data.pipelines.rfp_intake import RFPIntakePipeline
 from domain.rfp.entities import IntakeTicket, TicketStatus
 from infrastructure.persistence.sqlmodel.client import get_engine
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
