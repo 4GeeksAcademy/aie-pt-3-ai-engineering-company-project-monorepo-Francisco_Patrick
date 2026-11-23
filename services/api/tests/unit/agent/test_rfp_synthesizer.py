@@ -3,7 +3,7 @@
 from uuid import uuid4
 import pytest
 
-from application.agent.rfp_synthesizer_agent import RFPSynthesizerAgent
+from data.pipelines.rfp_intake.rfp_synthesizer_agent import RFPSynthesizerAgent
 from domain.rfp.entities import (
     DepartmentSection,
     ReadabilityScores,

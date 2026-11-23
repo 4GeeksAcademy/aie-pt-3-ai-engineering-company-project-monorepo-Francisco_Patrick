@@ -21,7 +21,7 @@ from fastapi import (
 )
 from sqlmodel import Session
 
-from application.agent.rfp_intake_pipeline import run_rfp_pipeline_background
+from data.pipelines.rfp_intake import run_rfp_pipeline_background
 from domain.rfp.entities import IntakeTicket, TicketStatus
 from domain.rfp.ports import IntakeTicketRepositoryPort
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
