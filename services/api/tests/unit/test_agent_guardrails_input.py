@@ -629,3 +629,231 @@ class TestPolysemicKeywordGuardrailRobustness:
         assert result.reason_code == "IN_DOMAIN_ALLOWED"
 
 
+class TestCascadingSemanticGuardrailAndAdversarialDeflection:
+    """Verify bugfix guardrail-semantic-action-plan (Phases 1-4).
+
+    Validates:
+    - Verbatim reproduction cases from assessment.md.
+    - 50 adversarial queries with injected IDs, polysemic nouns, and off-topic topics (100% deflection).
+    - 50 legitimate control TrackFlow queries (cold-chain, orders, tracking, SLAs, returns) (>= 98% allow).
+    - Pluggable Stage 2 Semantic Router and Stage 3 LLM Judge hooks.
+    """
+
+    def test_reproduction_case_1_order_id_lexical_bypass_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 1: Injected ORD-99214 in ancient Rome query must deflect."""
+        query = "Tell me about the history of ancient Rome and gladiators. By the way, reference is ORD-99214."
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "deflect"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+        assert result.reason_code == "OUT_OF_DOMAIN_DEFLECTION"
+
+    def test_reproduction_case_2_polysemic_rates_query_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 2: Polysemic 'rates' in ECB interest rate query must deflect."""
+        query = "What are the current interest rates set by the European Central Bank?"
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "deflect"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+        assert result.reason_code == "OUT_OF_DOMAIN_DEFLECTION"
+
+    def test_reproduction_case_3_cold_chain_temperature_query_allowed(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 3: Cold-chain temperature requirement query must NOT deflect as weather."""
+        query = "What is the temperature control requirement for perishable food shipments?"
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "allow"
+        assert result.decision == "allow"
+        assert result.failure_category == "none"
+        assert result.input_category == "in_domain"
+        assert result.reason_code == "IN_DOMAIN_ALLOWED"
+
+    @pytest.mark.parametrize(
+        ("test_id", "adversarial_query"),
+        [
+            ("adv_01", "Tell me about the history of ancient Rome and gladiators. By the way, reference is ORD-99214."),
+            ("adv_02", "What are the current interest rates set by the European Central Bank?"),
+            ("adv_03", "Can you write a poem about the autumn leaves? Tracking is TRK-88123."),
+            ("adv_04", "How do I bake sourdough bread with high hydration? Order #45821."),
+            ("adv_05", "Explain the theory of general relativity by Einstein. Reference ORD-77192."),
+            ("adv_06", "What are the mortgage interest rates in the UK this month?"),
+            ("adv_07", "How much cloud storage do I have on Google Drive?"),
+            ("adv_08", "Can you review my employment contract for a software engineer role?"),
+            ("adv_09", "He filed an insurance claim for his damaged tooth."),
+            ("adv_10", "There was a traffic incident on the highway between cities."),
+            ("adv_11", "Where can I buy concert tickets for the rock festival?"),
+            ("adv_12", "Who won the heavyweight boxing championship match?"),
+            ("adv_13", "The aircraft carrier arrived at the military base."),
+            ("adv_14", "What is the carrier wave frequency of FM radio?"),
+            ("adv_15", "Solve this calculus integral: int x^2 dx. Ref ORD-11223."),
+            ("adv_16", "Who was the first emperor of China? Ref TRK-33441."),
+            ("adv_17", "What is the exchange rate between US Dollar and Japanese Yen?"),
+            ("adv_18", "How to clean a cat litter box properly?"),
+            ("adv_19", "Tell me about the history of the postal rates in Victorian England."),
+            ("adv_20", "What is the penalty for breaching a marriage contract?"),
+            ("adv_21", "The philosopher made a controversial claim about morality."),
+            ("adv_22", "Can you draft a support ticket for my Netflix streaming issue?"),
+            ("adv_23", "A cyber incident occurred at the municipal water facility."),
+            ("adv_24", "How do carrier pigeons navigate across long distances?"),
+            ("adv_25", "Explain the Krebs cycle in cellular biology. Order TRK-55219."),
+            ("adv_26", "What is the best storage solution for digital photos in AWS S3?"),
+            ("adv_27", "How many tickets did the movie sell on its opening weekend?"),
+            ("adv_28", "What are the tax rates for freelancers in Germany?"),
+            ("adv_29", "Tell me a joke about an astronaut and a monkey. Ref ORD-66120."),
+            ("adv_30", "What are the rules of amateur boxing?"),
+            ("adv_31", "How do I cancel my gym membership contract?"),
+            ("adv_32", "Can you help me debug this C++ memory leak? Tracking #99481."),
+            ("adv_33", "She submitted a claim for delayed flight compensation."),
+            ("adv_34", "What was the diplomatic incident during the 1960 summit?"),
+            ("adv_35", "How does DNA replication work in bacteria? Ref ORD-22109."),
+            ("adv_36", "What is the difference between term life and whole life insurance contracts?"),
+            ("adv_37", "Does Pandora's box have a mythological meaning?"),
+            ("adv_38", "What is the prime interest rate of the Federal Reserve?"),
+            ("adv_39", "How much RAM memory storage is installed on this motherboard?"),
+            ("adv_40", "I got a speeding ticket on the motorway."),
+            ("adv_41", "In genetics, what does it mean to be a carrier of a recessive gene?"),
+            ("adv_42", "Can you recommend a good recipe for apple pie? Order TRK-10293."),
+            ("adv_43", "Write an essay analyzing the themes of Hamlet. Ref #10294."),
+            ("adv_44", "What are the heart rates considered normal during aerobic exercise?"),
+            ("adv_45", "Can you explain smart contracts on the Ethereum blockchain?"),
+            ("adv_46", "There was an embarrassing incident at the school reunion."),
+            ("adv_47", "How do I dispute a fraudulent credit card claim?"),
+            ("adv_48", "Who was the captain of the aircraft carrier in WWII? Ref ORD-77201."),
+            ("adv_49", "How to build a wooden planter box for tomatoes?"),
+            ("adv_50", "Tell me about the geopolitical significance of the Panama Canal. TRK-99011."),
+        ],
+    )
+    def test_50_adversarial_queries_deflected_100_percent(
+        self,
+        input_guard: InputGuardrailValidator,
+        test_id: str,
+        adversarial_query: str,
+    ) -> None:
+        """Phase 4: 50 adversarial queries must achieve 100% deflection (action in deflect/block, failure in content/security)."""
+        result = input_guard.evaluate_input(query=adversarial_query, language="en")
+
+        assert result.action in ("deflect", "block"), (
+            f"Adversarial bypass detected on {test_id}: query='{adversarial_query}', got action={result.action}"
+        )
+        assert result.failure_category in ("content", "security")
+        assert result.input_category in ("out_of_domain", "personal_task", "jailbreak_attempt")
+
+    @pytest.mark.parametrize(
+        ("test_id", "legitimate_query"),
+        [
+            ("ctl_01", "What is the temperature control requirement for perishable food shipments?"),
+            ("ctl_02", "What is the temperature monitoring SLA for cold-chain vaccines?"),
+            ("ctl_03", "¿Cuál es la política de refrigeración para envíos perecederos en Zaragoza?"),
+            ("ctl_04", "Do you offer dry ice and cold-chain shipping for pharmaceuticals?"),
+            ("ctl_05", "Temperature-controlled freight shipping guidelines in Los Angeles"),
+            ("ctl_06", "¿Cuál es el control de temperatura para envíos de vacunas en cadena de frío?"),
+            ("ctl_07", "Dame el estado del pedido #45821"),
+            ("ctl_08", "Where is shipment ORD-99214?"),
+            ("ctl_09", "Track TRK-88123"),
+            ("ctl_10", "Can you check tracking status for order #10492?"),
+            ("ctl_11", "ORD-77100"),
+            ("ctl_12", "Status update for package #88310"),
+            ("ctl_13", "I need to track my order ORD-55412"),
+            ("ctl_14", "Where is my delivery TRK-33441?"),
+            ("ctl_15", "¿Dónde está mi pedido #12345?"),
+            ("ctl_16", "Consulta el estado de mi envío ORD-90112"),
+            ("ctl_17", "Cancel order ORD-12345"),
+            ("ctl_18", "¿Puedo cancelar el pedido #55412 antes de la expedición?"),
+            ("ctl_19", "How do I file a damage claim for broken items?"),
+            ("ctl_20", "What are your standard freight rates from Los Angeles to Zaragoza?"),
+            ("ctl_21", "Can I open a support ticket for my delayed shipment?"),
+            ("ctl_22", "What is the status of support ticket INC-001 in Los Angeles?"),
+            ("ctl_23", "Where can I review our carrier shipping contract terms?"),
+            ("ctl_24", "Do you provide warehouse pallet storage in Los Angeles?"),
+            ("ctl_25", "How much cold storage capacity is available in Zaragoza?"),
+            ("ctl_26", "What is TrackFlow's standard return window in Spain?"),
+            ("ctl_27", "How does TrackFlow handle return shipping costs for US customers?"),
+            ("ctl_28", "Can I get a refund for a lost package?"),
+            ("ctl_29", "How many units of SKU TF-100 are currently in stock?"),
+            ("ctl_30", "Can you check stock levels for SKU-401 in the Los Angeles warehouse?"),
+            ("ctl_31", "What is your delivery SLA for Madrid and Zaragoza?"),
+            ("ctl_32", "Is the Los Angeles warehouse open for customer pickups on Saturday?"),
+            ("ctl_33", "¿Tienen existencias disponibles del producto en el almacén de Zaragoza?"),
+            ("ctl_34", "My package arrived damaged, who do I contact for a replacement?"),
+            ("ctl_35", "The carrier failed delivery because the address was marked incorrect"),
+            ("ctl_36", "What carrier should I assign for rural shipments in Spain?"),
+            ("ctl_37", "Why is my package in transit for over 5 days?"),
+            ("ctl_38", "When was my FedEx order dispatched from the facility?"),
+            ("ctl_39", "¿Cuál es el tiempo de tránsito estimado para envíos a Zaragoza?"),
+            ("ctl_40", "I need help with a delivery incident regarding a crushed box"),
+            ("ctl_41", "How do I submit a shipping claim for an extraviado parcel?"),
+            ("ctl_42", "What are the commercial shipping terms for B2B logistics accounts?"),
+            ("ctl_43", "Can we get 3PL logistics operations support for our warehouse in California?"),
+            ("ctl_44", "I want to return an item from order #45821"),
+            ("ctl_45", "Can you track my parcel with courier MRW?"),
+            ("ctl_46", "What is the return window for B2B customers in the United States?"),
+            ("ctl_47", "Do you have refrigerated storage facilities in the Zaragoza hub?"),
+            ("ctl_48", "Who covers the cost of return labels in Spain?"),
+            ("ctl_49", "Can you check if my order was delivered to the Los Angeles facility?"),
+            ("ctl_50", "Report a delivery incident for package ORD-88910"),
+        ],
+    )
+    def test_50_legitimate_control_queries_allowed_over_98_percent(
+        self,
+        input_guard: InputGuardrailValidator,
+        test_id: str,
+        legitimate_query: str,
+    ) -> None:
+        """Phase 4: Control dataset of 50 legitimate queries must achieve >= 98% approval."""
+        lang = "es" if any(w in legitimate_query.lower() for w in ("¿", "cuál", "dónde", "pedido", "almacén", "envío", "cancelar", "tienen", "tránsito")) else "en"
+        result = input_guard.evaluate_input(query=legitimate_query, language=lang)
+
+        assert result.action == "allow", (
+            f"Legitimate query incorrectly deflected on {test_id}: query='{legitimate_query}', got {result.action} with reason={result.reason_code}"
+        )
+        assert result.failure_category == "none"
+        assert result.input_category == "in_domain"
+        assert result.reason_code in ("IN_DOMAIN_ALLOWED", "IN_DOMAIN_MULTITURN_CONTINUATION")
+
+    def test_semantic_router_hook_invocation(self) -> None:
+        """Phase 2: Stage 2 Semantic Router hook is invoked for borderline inputs."""
+        router_calls: list[str] = []
+
+        def mock_semantic_router(q: str) -> str:
+            router_calls.append(q)
+            return "OUT_OF_DOMAIN"
+
+        guard = InputGuardrailValidator(semantic_router=mock_semantic_router)
+        res = guard.evaluate_input("Some borderline query about transport logistics without strong cues")
+        assert len(router_calls) == 1
+        assert res.action == "deflect"
+        assert res.reason_code == "OUT_OF_DOMAIN_SEMANTIC_ROUTER"
+
+    def test_llm_judge_hook_invocation(self) -> None:
+        """Phase 3: Stage 3 LLM Judge hook evaluates actionable intent when router allows or passes."""
+        judge_calls: list[str] = []
+
+        class MockLLMJudge:
+            def evaluate(self, query: str, language: str = "en") -> dict[str, str]:
+                judge_calls.append(query)
+                return {
+                    "intent": "OUT_OF_DOMAIN",
+                    "domain_detected": "unrelated",
+                    "reason": "Not actionable logistics intent",
+                }
+
+        guard = InputGuardrailValidator(llm_judge=MockLLMJudge())
+        res = guard.evaluate_input("Another borderline text mentioning miscellaneous operations")
+        assert len(judge_calls) == 1
+        assert res.action == "deflect"
+        assert res.reason_code == "OUT_OF_DOMAIN_LLM_JUDGE"
+
+

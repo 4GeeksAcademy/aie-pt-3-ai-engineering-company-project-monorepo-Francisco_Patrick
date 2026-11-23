@@ -265,7 +265,8 @@ _PERSONAL_TASK_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
         "PERSONAL_TASK_CODING_OR_SCRIPTING",
         re.compile(
             r"(?:"
-            r"\b(?:write|generate|code|implement|debug|create|escribe|programa|genera)\b[\s\wáéíóúñ,/-]{0,30}\b(?:a\s+python\s+script|javascript\s+code|react\s+component|sql\s+query|sorting\s+algorithm|c[oó]digo\s+en\s+python|fibonacci|leetcode|html\s+page|binary\s+search)\b"
+            r"\b(?:write|generate|code|implement|debug|create|escribe|programa|genera)\b[\s\wáéíóúñ,/-]{0,35}\b(?:a\s+python\s+script|javascript\s+code|react\s+component|sql\s+query|sorting\s+algorithm|c[oó]digo\s+en\s+python|fibonacci|leetcode|html\s+page|binary\s+search|c\+\+|memory\s+leak|script|code|bug|function)\b"
+            r"|\b(?:debug\s+this|fix\s+this\s+code|help\s+me\s+code|ay[uú]dame\s+a\s+programar)\b"
             r")",
             re.IGNORECASE,
         ),
@@ -417,6 +418,65 @@ _OUT_OF_DOMAIN_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
+_COLD_CHAIN_LOGISTICS_PATTERN: re.Pattern[str] = re.compile(
+    r"(?:"
+    r"\b(?:cold[- ]chain|cadena\s+de\s+fr[ií]o|refrigerat(?:ed|ion|ing)?|refrigerad[oa]s?|refrigeraci[oó]n)\b"
+    r"|\b(?:perishable|perishables|pereceder[oa]s?|vaccines?|vacunas?|pharma(?:ceutical)?s?|farmac[eé]utic[oa]s?)\b"
+    r"|\b(?:temperature[- ]controlled|temperature\s+control|temperature\s+monitoring|control\s+de\s+temperatura|monitoreo\s+de\s+temperatura)\b"
+    r"|\b(?:dry\s+ice|hielo\s+seco|thermosensitive|termosensible|cold\s+storage)\b"
+    r"|\b(?:food\s+shipments?|env[ií]os?\s+de\s+alimentos?|meat\s+shipments?|dairy\s+shipments?)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_OPERATIONAL_LOGISTICS_ACTIONS: re.Pattern[str] = re.compile(
+    r"\b(?:"
+    r"track|tracking|status|where\s+is|locate|locating|check|checking|cancel|canceling|cancelled|cancellation"
+    r"|quote|quoting|quotation"
+    r"|return|returning|returned|refund|refunding|refunded"
+    r"|delivery|deliver|delivered|shipping|shipped|shipment|dispatch|dispatched"
+    r"|delay|delayed|lost|missing|damaged|broken|incident|incidencia"
+    r"|rastreo|rastrear|seguimiento|localizar|localizador|estado|d[oó]nde\s+est[aá]|consultar|consulta"
+    r"|cancelar|cancelaci[oó]n|anular|anulaci[oó]n|cotizar|cotizaci[oó]n"
+    r"|devolver|devoluci[oó]n|reembolso|reembolsar"
+    r"|entrega|entregar|entregado|env[ií]o|enviar|enviado|despacho|expedici[oó]n"
+    r"|retraso|retrasado|perdido|da[ñn]ado|averiado"
+    r"|(?:order|tracking|shipment|delivery)\s+(?:history|details|update|updates|summary)"
+    r"|historial\s+de\s+(?:pedidos?|env[ií]os?|tracking)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_CONCISE_ORDER_QUERY_PATTERN: re.Pattern[str] = re.compile(
+    r"^\s*(?:(?:order|pedido|tracking|env[ií]o|ticket|paquete)\s*[:#]?\s*)?#?(?:[A-Za-z]{2,5}-\d{3,10}|\d{4,10})\s*[.?!]*$",
+    re.IGNORECASE,
+)
+
+SEMANTIC_JUDGE_SYSTEM_PROMPT: str = (
+    "You are a strict domain-boundary security judge for TrackFlow, a specialized logistics and shipping platform "
+    "operating in the United States and Spain. Your task is to evaluate user queries for actionable logistics intent "
+    "versus out-of-domain topics, adversarial keyword camouflaging, or non-logistics requests.\n\n"
+    "TrackFlow In-Domain Scope:\n"
+    "- Tracking shipments, parcel deliveries, carrier status (UPS, FedEx, DHL, MRW, SEUR), dispatch times, transit delays.\n"
+    "- TrackFlow orders, SKUs, inventory availability in warehouses (Los Angeles, Zaragoza).\n"
+    "- Return policies, return windows, refund procedures, RMA requests, and SLAs for US and Spain.\n"
+    "- Delivery incident reporting (damaged goods, lost packages, failed delivery, incorrect delivery address).\n"
+    "- Cold-chain logistics, temperature-controlled shipments, perishable goods transport.\n"
+    "- Explicit operational queries referencing valid order/ticket IDs with logistics intent.\n\n"
+    "Out-of-Domain Scope (Must Deflect):\n"
+    "- General knowledge, history, philosophy, biology, recipes, trivia, politics, sports, coding, essays.\n"
+    "- Off-topic queries with superficial logistics keywords injected (e.g. asking about ancient Rome with 'ORD-12345', "
+    "or interest rates mentioning 'rates').\n"
+    "- Personal tasks, therapy, homework, entertainment.\n\n"
+    "Respond exclusively with a valid JSON object matching this schema:\n"
+    "{\n"
+    '  "intent": "IN_DOMAIN" | "OUT_OF_DOMAIN",\n'
+    '  "domain_detected": "<detected topic, e.g. logistics_tracking, ancient_history, finance, etc.>",\n'
+    '  "reason": "<concise explanation of why this is in-domain or out-of-domain>"\n'
+    "}\n"
+    "Do not include markdown fences, preambles, or explanations outside the JSON object."
+)
+
 _ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(
         r"\b(?:pedido|order|tracking|env[ií]o|shipment|paquete|package)\s*(?:n[uú]mero|number|id|#)?\s*[:=#]?\s*#?([A-Za-z]{2,5}-\d{3,10}|\d{4,10})\b",
@@ -440,11 +500,11 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:(?:our|the|this|that|assigned|delivery|shipping|preferred|which|what)\s+carriers?|carriers?\s+(?:assigned|assignment|status|delay|delays|tracking|rates?|fee|fees|service|services|delivery|deliveries|delivers|pickup|partner|partners|contract))\b"
     r"|\b(?:(?:nuestro|nuestros|el|los|un|qu[eé]|cu[aá]l)\s+transportistas?|transportistas?\s+(?:asignado|asignados|de|en|autorizado|autorizados|local|locales|entrega|reparto))\b"
     r"|\b(?:empresa\s+de\s+mensajer[ií]a|servicio\s+de\s+mensajer[ií]a|mensajero\s+de\s+entrega)\b"
-    # Identifiers
-    r"|\b(?:(?:ord|trk|inc|tf)[-_]\d+|sku[-_]?[a-z0-9]+|#\d{4,10})\b"
+    # Identifiers (excluding bare order/tracking IDs which are governed by has_order_boost)
+    r"|\b(?:(?:inc|tf)[-_]\d+|sku[-_]?[a-z0-9]+)\b"
     # Orders and tracking
     r"|\b(?:pedido|pedidos|purchase|purchases|compra|compras|tracking|track|rastreo|rastrear|seguimiento|localizador|localizar)\b"
-    r"|\b(?:(?:my|your|our|this|that|any|each)\s+orders?|(?:the|an?)\s+orders?(?!\s+of\s+(?:the\s+)?[a-z]+)|orders?\s*(?:#|id|number|n[uú]mero|num)|orders?\s+(?:status|tracking|details|item|items|history|update|updates|confirmation|summary|reference|cost|total|shipping|delivery|dispatch|placement|cancellation|return|refund|is|was|are|were|delayed|lost|shipped|delivered))\b"
+    r"|\b(?:(?:my|your|our|this|that|any|each)\s+orders?|(?:the|an?)\s+orders?(?!\s+of\s+(?:the\s+)?[a-z]+)|orders?\s+(?:status|tracking|details|item|items|history|update|updates|confirmation|summary|reference|cost|total|shipping|delivery|dispatch|placement|cancellation|return|refund|is|was|are|were|delayed|lost|shipped|delivered))\b"
     r"|\b(?:place|placing|placed|track|tracking|cancel|canceling|cancelled|cancellation|return|returning|returned|change|changing|modify|modifying|check|checking|view|viewing|find|finding|locate|locating|ship|shipping|shipped|deliver|delivery|delivered|fulfill|fulfillment|process|processing|processed|confirm|confirmation)\s+(?:[a-z]+\s+){0,3}orders?\b"
     r"|\b(?:recent|pending|past|open|new|completed|active|latest|prior|online|customer)\s+orders?\b"
     # Shipments and delivery (collocation required for transit/tránsito)
@@ -460,12 +520,17 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:return|returns|returning|returned|return\s+window|return\s+policy|return\s+label|return\s+shipping|rma)\b"
     r"|\b(?:devoluci[oó]n|devoluciones|devolver|devuelto|devuelta|devueltos|devueltas|plazo\s+de\s+devoluci[oó]n|ventana\s+de\s+devoluci[oó]n|etiqueta\s+de\s+devoluci[oó]n)\b"
     r"|\b(?:refund|refunds|refunded|reimburse|reimbursement|money\s+back|reembolso|reembolsos|reembolsar|devolver\s+el\s+dinero|abono|abonar)\b"
-    r"|\b(?:restock|restocking|reposici[oó]n|reabastecimiento|exchange|exchanges|cambio|cambios|sustituci[oó]n|reemplazo|reemplazar)\b"
+    r"|\b(?:restock|restocking|reposici[oó]n|reabastecimiento|sustituci[oó]n|reemplazo|reemplazar)\b"
+    r"|\b(?:(?:product|item|order|size|goods)\s+exchanges?|exchanges?\s+(?:policy|window|request|item|product)|(?:solicitar|pedir)\s+un\s+cambio|cambio\s+de\s+(?:producto|art[ií]culo|pedido|talla|tama[ñn]o))\b"
     r"|\b(?:sla|slas|service\s+level\s+agreement|acuerdo\s+de\s+nivel\s+de\s+servicio|warranty|garant[ií]a|garant[ií]as|pol[ií]tica|politica|pol[ií]ticas|politicas)\b"
-    # Incidents, claims, damage
-    r"|\b(?:incident|incidents|claim|claims|complaint|complaints|ticket|tickets|incidencia|incidencias|reclamo|reclamos|reclamaci[oó]n|reclamaciones|queja|quejas|dispute|disputa)\b"
+    # Incidents, claims, complaints, and tickets (collocations required to prevent polysemic bypass)
+    r"|\b(?:(?:delivery|shipping|transit|transport|package|freight|order|warehouse|cargo)\s+incidents?|incidents?\s+(?:report|reporting|status|claim|investigation|log|ticket)|(?:report|reporting|log|open)\s+(?:an?\s+)?incident|incidencias?\s+de\s+(?:entrega|env[ií]o|transporte|paquete|tr[aá]nsito|almac[eé]n)|(?:reportar|abrir|registrar)\s+(?:una?\s+)?incidencia)\b"
+    r"|\b(?:(?:shipping|delivery|cargo|package|parcel|freight|transit)\s+(?:insurance\s+)?claims?|(?:shipping|delivery|cargo|damage|loss|freight|transit)\s+claims?|claims?\s+for\s+(?:lost|damaged|broken|delayed|missing)\s+(?:package|parcel|shipment|item|order)|claims?\s+(?:process|processing|status|form|submission|filed|filing)|(?:file|filing|submit|submitting)\s+(?:a\s+)?(?:shipping|delivery|damage|loss|freight)\s+claim|reclamaci[oó]n\s+de\s+(?:env[ií]o|entrega|da[ñn]os?|p[eé]rdida|flete)|reclamaciones\s+de\s+(?:env[ií]o|entrega|da[ñn]os?|p[eé]rdida|flete)|reclamos?\s+de\s+(?:env[ií]o|entrega|da[ñn]os?|p[eé]rdida|flete)|(?:presentar|tramitar)\s+(?:una?\s+)?(?:reclamaci[oó]n|reclamo)\s+de\s+(?:env[ií]o|entrega|da[ñn]os?))\b"
+    r"|\b(?:(?:delivery|shipping|customer\s+service|service)\s+complaints?|complaints?\s+(?:regarding|about|department)|quejas?\s+sobre\s+(?:el\s+)?(?:env[ií]o|pedido|servicio|entrega))\b"
+    r"|\b(?:(?:delivery|shipping|logistics|cx|trackflow)\s+tickets?|support\s+ticket\s+(?:inc[-_]\d+|tf[-_]\d+|#\d+|\bfor\s+(?:my\s+)?(?:shipment|order|package|delivery|return|refund))|tickets?\s+(?:#|id|number|inc[-_]\d+|tf[-_]\d+)|tickets?\s+de\s+(?:soporte\s+de\s+trackflow|soporte\s+log[ií]stico|entrega|env[ií]o))\b"
+    r"|\b(?:dispute\s+(?:delivery|order|shipping)|disputa\s+de\s+(?:entrega|env[ií]o|pedido))\b"
     r"|\b(?:lost|perdido|perdida|perdidos|perdidas|extraviado|extraviada|robado|robada|stolen|missing)\b"
-    r"|\b(?:damaged|da[ñn]ado|da[ñn]ada|da[ñn]ados|da[ñn]adas|broken|roto|rota|rotos|rotas|defective|defectuoso|defectuosa|crushed|aplastado|aplastada)\b"
+    r"|\b(?:(?:damaged|broken|defective|crushed)\s+(?:package|parcel|box|item|shipment|product|goods|delivery|order|caja|paquete|env[ií]o|mercanc[ií]a|producto)|(?:package|parcel|box|item|shipment|product|goods|delivery|order|caja|paquete|env[ií]o|mercanc[ií]a|producto)\s+(?:arrived\s+)?(?:damaged|broken|defective|crushed|da[ñn]ad[oa]s?|rot[oa]s?|defectuos[oa]s?|aplastad[oa]s?)|(?:arrived|recib[ií]|lleg[oó])\s+(?:damaged|broken|defective|crushed|da[ñn]ad[oa]|rot[oa]|defectuos[oa]|aplastad[oa])|box\s+arrived\s+broken|caja\s+lleg[oó]\s+rota)\b"
     r"|\b(?:failed\s+delivery|entrega\s+fallida|fallo\s+(?:en\s+la|de)\s+entrega|wrong\s+address|direcci[oó]n\s+(?:incorrecta|err[oó]nea)|wrong\s+(?:item|product)|producto\s+(?:incorrecto|equivocado|err[oó]neo))\b"
     # Inventory, warehousing, cold-chain, network & facilities (collocations required)
     r"|\b(?:(?:our|the|this|that|your|trackflow|local|zaragoza|los\s+angeles)\s+(?:[a-z]+\s+)?warehouses?|warehouses?\s+(?:location|address|hours|pickup|operations|stock|inventory|open|closed|staff|facility|facilities)|(?:address|location|hours)\s+of\s+(?:the\s+)?(?:[a-z]+\s+)?warehouses?|warehousing\s+(?:services?|operations?|facility|facilities))\b"
@@ -477,13 +542,19 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:inventario\s+(?:actual|de\s+productos?|de\s+almac[eé]n|disponible|de\s+stock))\b"
     r"|\b(?:(?:current|available|in|out\s+of)\s+stock|stock\s+(?:levels?|availability|check|shortage|status|in\s+[a-z]+)|(?:en\s+stock|sin\s+stock|nivel\s+de\s+stock))\b"
     r"|\b(?:existencias\s+(?:disponibles|actuales|en\s+almac[eé]n)|nivel\s+de\s+existencias)\b"
-    r"|\b(?:sku|skus|storage|refrigeration|cold[- ]chain|temperature[- ]controlled|pharmaceutical|farmac[eé]utico)\b"
+    r"|\b(?:sku|skus)\b"
+    r"|\b(?:(?:cold|pallet|warehouse|freight|cargo|package|logistics|inventory|temperature[- ]controlled)\s+storage|storage\s+(?:facility|facilities|capacity|fees?|costs?|rates?|conditions?|warehouse|requirements?)|almacenamiento\s+(?:en\s+fr[ií]o|log[ií]stico|de\s+(?:paquetes|carga|palets|mercanc[ií]as?|stock)))\b"
+    r"|\b(?:refrigeration|refrigeraci[oó]n|cold[- ]chain|cadena\s+de\s+fr[ií]o|temperature[- ]controlled|temperature\s+control|temperature\s+monitoring|control\s+de\s+temperatura|monitoreo\s+de\s+temperatura|pharmaceutical|pharmaceuticals|farmac[eé]utico|farmac[eé]uticos|perishable|perishables|perecederos?|dry\s+ice|hielo\s+seco)\b"
     # Colloquial customer queries
     r"|\bwhere\s+is\s+my\b"
     r"|\bd[oó]nde\s+est[aá]\s+mi\b"
     r"|\b(?:money\s+back|recuperar\s+mi\s+dinero|devolver\s+el\s+dinero)\b"
-    # Business & contracts, operational scope
-    r"|\b(?:b2b|b2c|contract|contrato|rates|tarifas|commercial|comercial|client|cliente|3pl|operations|operaciones|operate|operar)\b"
+    # Business, freight contracts, rates, and 3PL logistics operations (collocations required)
+    r"|\b(?:(?:shipping|freight|delivery|carrier|courier|transport|transit)\s+rates?|rates?\s+(?:for\s+shipping|for\s+delivery|per\s+(?:kg|pound|pallet|mile|kilometer))|tarifas?\s+de\s+(?:env[ií]o|transporte|entrega|flete|mensajer[ií]a|paqueter[ií]a))\b"
+    r"|\b(?:(?:shipping|logistics|carrier|freight|transport|delivery|3pl)\s+contracts?|contracts?\s+with\s+(?:carriers?|ups|fedex|dhl|mrw|seur)|contratos?\s+de\s+(?:env[ií]o|transporte|log[ií]stica|flete|mensajer[ií]a))\b"
+    r"|\b(?:(?:b2b|b2c)\s+(?:logistics|shipping|customers?|clients?|portal|fulfillment|accounts?|orders?|delivery))\b"
+    r"|\b(?:3pl\s+(?:logistics|services?|partner|provider)|(?:logistics|fulfillment|warehouse|freight|shipping|delivery)\s+operations?|operaciones\s+(?:log[ií]sticas|de\s+(?:env[ií]o|transporte|almac[eé]n|entrega)))\b"
+    r"|\b(?:commercial\s+(?:shipping|carrier|logistics|freight|terms?)|(?:cliente|client)\s+(?:b2b|b2c|corporativo|log[ií]stico))\b"
     # Operational turn confirmations and rule feedback (e.g. Memory confirmations)
     r"|^\s*(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto|confirm|confirmed|approve|approved|no|nope|reject|rejected|discard|cancel)\b"
     r"|\b(?:remember|recuerda|save\s+(?:that|this|it)|guarda\s+(?:eso|esto|la\s+regla)|rule\s+for|regla\s+para)\b"
@@ -622,6 +693,15 @@ def _has_prior_support_or_clarification_context(
 class InputGuardrailValidator(InputGuardrailPort):
     """Pre-execution input guardrail enforcing immutable system authority and TrackFlow domain scope (FR-003..FR-006, AC-1..AC-7)."""
 
+    def __init__(
+        self,
+        semantic_router: Optional[Any] = None,
+        llm_judge: Optional[Any] = None,
+    ) -> None:
+        """Initialize InputGuardrailValidator with optional cascading Stage 2 router and Stage 3 LLM judge."""
+        self.semantic_router = semantic_router
+        self.llm_judge = llm_judge
+
     def evaluate_input(
         self,
         query: str,
@@ -673,6 +753,11 @@ class InputGuardrailValidator(InputGuardrailPort):
         # 3. Tier 3: Benign Out-of-Domain Intent (Weather, Geography, Trivia, General Knowledge)
         for reason_code, pattern in _OUT_OF_DOMAIN_PATTERNS:
             if pattern.search(cleaned):
+                if reason_code == "OUT_OF_DOMAIN_WEATHER":
+                    if _COLD_CHAIN_LOGISTICS_PATTERN.search(cleaned):
+                        continue
+                    if re.search(r"\btiempo\s+de\s+(?:tr[aá]nsito|entrega|env[ií]o|espera|despacho|procesamiento)\b", cleaned, re.IGNORECASE):
+                        continue
                 return GuardrailEvaluationResult(
                     layer="input_guard",
                     action="deflect",
@@ -719,10 +804,79 @@ class InputGuardrailValidator(InputGuardrailPort):
             conversation_history=conversation_history,
             context=context,
         )
+
+        has_order_pattern = any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
+        has_order_boost = False
+        if has_order_pattern:
+            # Downgrade from absolute immunity to boosted feature:
+            # 1. Concise single-turn ID submission (e.g. 'ORD-99214', '#45821')
+            # 2. Accompanied by operational logistics verbs/actions ('track ORD-99214', 'cancel order #45821')
+            # 3. Contextual support/clarification history or active session verification
+            if (
+                _CONCISE_ORDER_QUERY_PATTERN.search(cleaned)
+                or _OPERATIONAL_LOGISTICS_ACTIONS.search(cleaned)
+                or has_prior_context
+                or bool(context and context.get("session"))
+            ):
+                has_order_boost = True
+
         is_direct_in_domain = bool(
             _IN_DOMAIN_TRACKFLOW_CUE.search(cleaned)
-            or any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
+            or has_order_boost
         )
+
+        # Cascading Guardrail Architecture (Defense in Depth: Stages 2 & 3)
+        # Stage 2: Pluggable Semantic Router
+        if self.semantic_router is not None:
+            try:
+                router_fn = (
+                    self.semantic_router
+                    if callable(self.semantic_router)
+                    else getattr(self.semantic_router, "classify", None)
+                )
+                if router_fn:
+                    router_res = router_fn(cleaned)
+                    if router_res == "IN_DOMAIN":
+                        is_direct_in_domain = True
+                    elif router_res == "OUT_OF_DOMAIN":
+                        return GuardrailEvaluationResult(
+                            layer="input_guard",
+                            action="deflect",
+                            decision="deflect",
+                            failure_category="content",
+                            input_category="out_of_domain",
+                            reason_code="OUT_OF_DOMAIN_SEMANTIC_ROUTER",
+                            message=OUT_OF_DOMAIN_DEFLECTION_ES if use_es else OUT_OF_DOMAIN_DEFLECTION_EN,
+                        )
+            except Exception:
+                pass
+
+        # Stage 3: Pluggable Lightweight LLM Judge
+        if self.llm_judge is not None:
+            try:
+                judge_fn = (
+                    getattr(self.llm_judge, "evaluate", None)
+                    or (self.llm_judge if callable(self.llm_judge) else None)
+                )
+                if judge_fn:
+                    judge_res = judge_fn(cleaned, language=language)
+                    if isinstance(judge_res, dict):
+                        intent = judge_res.get("intent")
+                        if intent == "IN_DOMAIN":
+                            is_direct_in_domain = True
+                        elif intent == "OUT_OF_DOMAIN":
+                            return GuardrailEvaluationResult(
+                                layer="input_guard",
+                                action="deflect",
+                                decision="deflect",
+                                failure_category="content",
+                                input_category="out_of_domain",
+                                reason_code="OUT_OF_DOMAIN_LLM_JUDGE",
+                                message=OUT_OF_DOMAIN_DEFLECTION_ES if use_es else OUT_OF_DOMAIN_DEFLECTION_EN,
+                            )
+            except Exception:
+                pass
+
         is_multiturn_continuation = bool(
             has_prior_context
             and (
