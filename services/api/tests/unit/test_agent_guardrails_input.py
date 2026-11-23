@@ -1022,4 +1022,97 @@ class TestCascadingSemanticGuardrailAndAdversarialDeflection:
         assert isinstance(guard.semantic_router, FastIntentSemanticRouter)
 
 
+class TestGuardrailLexicalIntentDecoupling:
+    """Verify bugfix for guardrail-lexical-intent-decoupling.
+
+    Decouples lexical signal detection from final authorization decisions,
+    penalizing academic, scientific, historical, and medical/veterinary contexts
+    and requiring collocations for ambiguous terms like pallet and crate.
+    """
+
+    @pytest.mark.parametrize(
+        ("case_id", "query"),
+        [
+            ("block_a_01", "How do historians analyze ancient Egyptian burial rituals in the Valley of the Kings?"),
+            ("block_a_02", "What is the standard treatment protocol for canine parvovirus in veterinary clinics?"),
+            ("block_a_03", "Explain the chemical synthesis of benzene from acetylene in organic chemistry."),
+            ("block_a_04", "What caused the collapse of the Bronze Age civilizations in the Mediterranean?"),
+            ("block_a_05", "How do mRNA vaccines stimulate the adaptive immune system against spike proteins?"),
+            ("block_a_06", "Can you explain the historical timeline of the French Revolution between 1789 and 1799?"),
+            ("block_a_07", "What surgical techniques are used in veterinary orthopedic surgery for feline fractures?"),
+            ("block_a_08", "How does CRISPR-Cas9 perform targeted gene editing in mammalian stem cells?"),
+            ("block_a_09", "What archaeological methods determine the carbon date of prehistoric stone tools?"),
+            ("block_a_10", "What are the pathophysiological mechanisms of type 2 diabetes mellitus in adult patients?"),
+        ],
+    )
+    def test_block_a_control_academic_and_medical_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_id: str,
+        query: str,
+    ) -> None:
+        """Block A control queries without logistics keywords must deflect with 0% bypass."""
+        result = input_guard.evaluate_input(query=query)
+        assert result.action == "deflect", f"Failed deflection on {case_id}: got {result.action}"
+        assert result.input_category == "out_of_domain"
+
+    @pytest.mark.parametrize(
+        ("case_id", "query"),
+        [
+            ("block_b_01_ancient_egypt_pallet", "How did ancient Egyptians move heavy stone blocks without using a pallet during pyramid construction?"),
+            ("block_b_02_historical_shipping_claim", "In historical archives, what shipping claim documents survive from the 18th century British East India Company?"),
+            ("block_b_03_space_probe_in_transit", "When a space probe is in transit to Saturn, what scientific telemetry monitors cosmic radiation?"),
+            ("block_b_04_veterinary_soft_pallet", "Can a veterinarian diagnose inflammation of the soft pallet in dogs undergoing dental surgery?"),
+            ("block_b_05_cell_biology_pallet", "In cell biology, why do centrifuges separate organelles into a dense pallet at the bottom of the tube?"),
+            ("block_b_06_archaeology_shipping_claim", "What archaeological protocols govern an antique shipping claim for sunken Mediterranean shipwrecks?"),
+            ("block_b_07_roman_wooden_pallets", "Did Roman merchants build wooden pallets to stack amphorae in the port of Ostia Antica?"),
+            ("block_b_08_virology_in_transit", "When influenza viral particles are in transit between avian and swine hosts, what genomic mutations occur?"),
+            ("block_b_09_medieval_manuscripts_inventory", "How do university historians document the physical inventory of medieval illuminated manuscripts?"),
+            ("block_b_10_veterinary_crates_vaccines", "What is the veterinary protocol when pharmaceutical crates containing equine vaccines arrive at an animal shelter?"),
+        ],
+    )
+    def test_block_b_disguised_logistics_cues_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_id: str,
+        query: str,
+    ) -> None:
+        """Block B queries with disguised logistics cues must deflect with 0% bypass."""
+        result = input_guard.evaluate_input(query=query)
+        assert result.action == "deflect", f"Failed deflection on {case_id}: got {result.action} with reason {result.reason_code}"
+        assert result.input_category == "out_of_domain"
+
+    @pytest.mark.parametrize(
+        ("case_id", "query"),
+        [
+            ("tp_pallet_storage_la", "Do you provide warehouse pallet storage in Los Angeles?"),
+            ("tp_storage_rates_pallet", "What are your storage rates per pallet in Los Angeles?"),
+            ("tp_shipping_claim_order", "Report a shipping claim for damaged shipment ORD-88910"),
+            ("tp_package_in_transit", "Where is my package in transit?"),
+            ("tp_cold_chain_vaccine", "What is the temperature monitoring SLA for cold-chain vaccine shipments?"),
+            ("tp_track_shipment", "Where is shipment TRK-33901?"),
+            ("tp_operational_historical_shipment", "Report a shipping claim for damaged shipment ORD-88910 containing historical documents"),
+        ],
+    )
+    def test_legitimate_commercial_logistics_allowed(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_id: str,
+        query: str,
+    ) -> None:
+        """Legitimate TrackFlow commercial queries must be allowed (100% true positive rate)."""
+        result = input_guard.evaluate_input(query=query)
+        assert result.action == "allow", f"Failed allow on {case_id}: got {result.action} with reason {result.reason_code}"
+        assert result.input_category == "in_domain"
+        assert result.reason_code == "IN_DOMAIN_ALLOWED"
+
+    def test_semantic_router_deflects_disguised_block_b_queries(self) -> None:
+        """FastIntentSemanticRouter must deflect Block B queries even with surface cues."""
+        router = FastIntentSemanticRouter()
+        assert router.classify("In historical archives, what shipping claim documents survive from the 18th century British East India Company?") == "OUT_OF_DOMAIN"
+        assert router.classify("Can a veterinarian diagnose inflammation of the soft pallet in dogs undergoing dental surgery?") == "OUT_OF_DOMAIN"
+        assert router.classify("Did Roman merchants build wooden pallets to stack amphorae in the port of Ostia Antica?") == "OUT_OF_DOMAIN"
+        assert router.classify("What is the veterinary protocol when pharmaceutical crates containing equine vaccines arrive at an animal shelter?") == "OUT_OF_DOMAIN"
+
+
 

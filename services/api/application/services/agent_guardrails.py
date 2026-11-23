@@ -466,6 +466,36 @@ _OUT_OF_DOMAIN_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    (
+        "OUT_OF_DOMAIN_ACADEMIC_AND_HISTORICAL",
+        re.compile(
+            r"(?:"
+            r"\b(?:ancient\s+egypt(?:ian|ians)?|antiguo\s+egipto|egipcios?\s+antiguos?|valley\s+of\s+the\s+kings|valle\s+de\s+los\s+reyes|pyramid\s+construction|construcci[oó]n\s+de\s+(?:las\s+)?pir[aá]mides?|burial\s+rituals?|rituales?\s+funerarios?)\b"
+            r"|\b(?:bronze\s+age|edad\s+del?\s+bronce|iron\s+age|edad\s+del?\s+hierro|middle\s+ages|edad\s+media|medieval\s+history|historia\s+medieval|french\s+revolution|revoluci[oó]n\s+francesa)\b"
+            r"|\b(?:historical\s+archives?|archivos?\s+hist[oó]ricos?|historical\s+documents?|documentos?\s+hist[oó]ricos?|east\s+india\s+company|compañ[ií]a\s+(?:brit[aá]nica\s+)?de\s+las\s+indias\s+orientales)\b"
+            r"|\b(?:roman\s+merchants?|mercaderes?\s+romanos?|ostia\s+antica|amphorae|amphoras?|[aá]nforas?|sunken\s+shipwrecks?|naufragios?\s+(?:antiguos?|hundidos?)|prehistoric\s+stone\s+tools?|herramientas?\s+de\s+piedra\s+prehist[oó]ricas?)\b"
+            r"|\b(?:medieval\s+illuminated\s+manuscripts?|manuscritos?\s+medievales?|illuminated\s+manuscripts?|academic\s+dissertation|academic\s+research|investigaci[oó]n\s+acad[eé]mica|university\s+historians?|historiadores?\s+universitarios?)\b"
+            r"|\b(?:carbon\s+date|dataci[oó]n\s+por\s+radiocarbono|carbon\s+dating|prehistoric|prehist[oó]ric[oa]s?)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_MEDICAL_AND_VETERINARY",
+        re.compile(
+            r"(?:"
+            r"\b(?:veterinar(?:y|ian|ians|io|ia|ios|ias)|veterinary\s+clinics?|cl[ií]nicas?\s+veterinarias?|veterinary\s+protocol|protocolo\s+veterinario|animal\s+shelter|refugio\s+de\s+animales)\b"
+            r"|\b(?:canine\s+parvovirus|parvovirus\s+canino|feline\s+fractures?|fracturas?\s+felinas?|equine\s+vaccines?|vacunas?\s+equinas?|equine|canine|feline)\b"
+            r"|\b(?:veterinary\s+orthopedic\s+surgery|cirug[ií]a\s+ortop[eé]dica\s+veterinaria|dental\s+surgery\s+(?:in|for|on)\s+(?:dogs?|cats?|animals?)|cirug[ií]a\s+dental\s+(?:en|para)\s+(?:perros?|gatos?|animales?)|soft\s+pallet\s+in\s+dogs?|soft\s+palate\s+in\s+dogs?|paladar\s+blando\s+en\s+perros?)\b"
+            r"|\b(?:type\s+2\s+diabetes|diabetes\s+mellitus|pathophysiological|patofisiolog[ií]a|pathophysiology)\b"
+            r"|\b(?:mrna\s+vaccines?|vacunas?\s+de\s+arnm|adaptive\s+immune\s+system|sistema\s+inmune\s+adaptativo|spike\s+proteins?|prote[ií]nas?\s+spike)\b"
+            r"|\b(?:centrifuges?\s+separate\s+organelles|organelles|organelos?|centrifugaci[oó]n|cell\s+biology|biolog[ií]a\s+celular|crispr(?:-cas9)?|targeted\s+gene\s+editing|edici[oó]n\s+gen[eé]tica)\b"
+            r"|\b(?:chemical\s+synthesis\s+of\s+benzene|benzene\s+from\s+acetylene|s[ií]ntesis\s+qu[ií]mica\s+de\s+benceno|organic\s+chemistry|qu[ií]mica\s+org[aá]nica)\b"
+            r"|\b(?:avian\s+and\s+swine\s+hosts|hospedadores?\s+aviar(?:es)?|genomic\s+mutations?|mutaciones?\s+gen[oó]micas?)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 _COLD_CHAIN_LOGISTICS_PATTERN: re.Pattern[str] = re.compile(
@@ -481,7 +511,9 @@ _COLD_CHAIN_LOGISTICS_PATTERN: re.Pattern[str] = re.compile(
 
 _OPERATIONAL_LOGISTICS_ACTIONS: re.Pattern[str] = re.compile(
     r"(?:"
-    r"\b(?:track|tracking|rastreo|rastrear|seguimiento)\b"
+    r"\b(?:track|rastrear)\b(?!\s*(?:number|n[uú]mero|id|#))"
+    r"|\b(?:tracking|rastreo|seguimiento)\s+(?:status|details|update|updates|history|info|information|link|de|del|para)\b"
+    r"|\b(?:track|tracking|rastreo|rastrear|seguimiento)\s+(?:(?:my|the|this|your|our|mi|el|este|su|un)\s+)?(?:order|package|shipment|delivery|parcel|item|env[ií]o|pedido|paquete|(?:ORD|TRK|TF|INC)-\d+|#\d+)\b"
     r"|\b(?:where\s+is\s+(?:my\s+|the\s+|this\s+)?(?:order|package|shipment|delivery|parcel)|d[oó]nde\s+est[aá]\s+(?:mi\s+|el\s+|este\s+)?(?:pedido|paquete|env[ií]o|entrega))\b"
     r"|\b(?:(?:order|tracking|shipment|delivery|package|parcel|env[ií]o|pedido|paquete)\s+(?:status|details|update|updates|summary|history))\b"
     r"|\b(?:(?:status|tracking|details|update|updates|history)\s+(?:of|for|on)\s+(?:my\s+|the\s+|this\s+)?(?:order|package|shipment|delivery|parcel))\b"
@@ -592,7 +624,8 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     # Packaging and physical goods (collocation required for package/paquete/box)
     r"|\b(?:(?:my|your|our|trackflow)\s+packages?|packages?\s+(?:tracking|status|delayed|lost|missing|damaged|delivery|deliveries|shipped|arrival|label|insurance|pickup|weight|dimensions|size|dispatched|arrived)|(?:track|tracking|ship|shipping|shipped|deliver|delivery|delivered|return|returning|returned|cancel|send|receive|received|dispatch|dispatched)\s+(?:the|this|that)\s+packages?|(?:the|this|that)\s+packages?\s+(?:arrived|was\s+delivered|is\s+delayed|is\s+lost|is\s+damaged|was\s+lost))\b"
     r"|\b(?:(?:mi|mis|nuestro|nuestros)\s+paquetes?|paquetes?\s+(?:perdido|perdidos|da[ñn]ado|da[ñn]ados|retrasado|retrasados|entregado|entregados|enviado|enviados|extraviado|extraviados|roto|rotos)|(?:rastrear|rastreo|enviar|enviado|entregar|entregado|devolver|recibir|recibido|despachar)\s+(?:el|los|este|ese)\s+paquetes?|(?:el|los|este)\s+paquetes?\s+(?:lleg[oó]|fue\s+entregado|est[aá]\s+retrasado|est[aá]\s+perdido|est[aá]\s+da[ñn]ado))\b"
-    r"|\b(?:parcel|parcels|bulto|bultos|pallet|pallets|crate|crates)\b"
+    r"|\b(?:parcel|parcels|bulto|bultos)\b"
+    r"|\b(?:(?:shipping|wooden|warehouse|freight|storage|cargo|distribution)\s+(?:pallets?|crates?)|(?:pallets?|crates?)\s+(?:of\s+(?:goods|cargo|freight|shipments?|merchandise|stock|items?)|storage|shipments?|dimensions?|count|weight|stacking|handling)|(?:palets?|cajas?\s+de\s+madera)\s+(?:de\s+carga|en\s+almac[eé]n|para\s+env[ií]o|de\s+almacenamiento|de\s+mercanc[ií]as?))\b"
     r"|\b(?:(?:shipping|delivery|cardboard\s+shipping)\s+box(?:es)?|caja\s+(?:de\s+env[ií]o|da[ñn]ada|rota|aplastada)|cajas\s+(?:de\s+env[ií]o|da[ñn]adas|rotas|aplastadas)|box\s+(?:arrived|was\s+delivered|damaged|broken|crushed|delivery|shipping)|(?:crushed|damaged|broken)\s+box(?:es)?)\b"
     # Returns, refunds, policies, SLAs
     r"|\b(?:return|returns|returning|returned|return\s+window|return\s+policy|return\s+label|return\s+shipping|rma)\b"
@@ -828,13 +861,38 @@ class InputGuardrailValidator(InputGuardrailPort):
                     message=PERSONAL_TASK_REFUSAL_ES if use_es else PERSONAL_TASK_REFUSAL_EN,
                 )
 
-        # 3. Tier 3: Benign Out-of-Domain Intent (Weather, Geography, Trivia, General Knowledge)
+        # Pre-evaluate operational signals so cross-disciplinary academic/medical queries can be
+        # deflected unless an authentic operational action with order or session context is present.
+        has_prior_context = _has_prior_support_or_clarification_context(
+            conversation_history=conversation_history,
+            context=context,
+        )
+        has_order_pattern = any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
+        has_strict_operational_action = bool(
+            has_order_pattern
+            and _OPERATIONAL_LOGISTICS_ACTIONS.search(cleaned)
+            and (
+                has_prior_context
+                or bool(context and context.get("session"))
+                or bool(re.search(r"\b(?:ORD|TRK|TF|INC)-\d{3,10}\b", cleaned, re.IGNORECASE))
+            )
+        )
+
+        # 3. Tier 3: Benign Out-of-Domain Intent (Weather, Geography, Trivia, General Knowledge, Academic/Medical)
         for reason_code, pattern in _OUT_OF_DOMAIN_PATTERNS:
             if pattern.search(cleaned):
                 if reason_code == "OUT_OF_DOMAIN_WEATHER":
                     if _COLD_CHAIN_LOGISTICS_PATTERN.search(cleaned):
                         continue
                     if re.search(r"\btiempo\s+de\s+(?:tr[aá]nsito|entrega|env[ií]o|espera|despacho|procesamiento)\b", cleaned, re.IGNORECASE):
+                        continue
+                if reason_code in (
+                    "OUT_OF_DOMAIN_ACADEMIC_AND_HISTORICAL",
+                    "OUT_OF_DOMAIN_MEDICAL_AND_VETERINARY",
+                    "OUT_OF_DOMAIN_SCIENCE_AND_ENGINEERING",
+                    "OUT_OF_DOMAIN_ANTIQUITIES_AND_ARCHAEOLOGY",
+                ):
+                    if has_strict_operational_action:
                         continue
                 return GuardrailEvaluationResult(
                     layer="input_guard",
@@ -878,12 +936,6 @@ class InputGuardrailValidator(InputGuardrailPort):
                     )
 
         # 5. Tier 5: Operational In-Domain Logistics Validation (FR-005, AC-6 multi-turn continuity)
-        has_prior_context = _has_prior_support_or_clarification_context(
-            conversation_history=conversation_history,
-            context=context,
-        )
-
-        has_order_pattern = any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
         has_order_boost = False
         if has_order_pattern:
             # Downgrade from absolute immunity to boosted feature:
@@ -1015,6 +1067,15 @@ class FastIntentSemanticRouter:
         cleaned = (query or "").strip()
         if not cleaned:
             return "IN_DOMAIN"
+
+        has_order_ref = any(p.search(cleaned) for p in self._order_patterns)
+        has_op_action = bool(_OPERATIONAL_LOGISTICS_ACTIONS.search(cleaned))
+        has_strict_op = bool(
+            has_order_ref
+            and has_op_action
+            and bool(re.search(r"\b(?:ORD|TRK|TF|INC)-\d{3,10}\b", cleaned, re.IGNORECASE))
+        )
+
         for reason_code, pattern in _OUT_OF_DOMAIN_PATTERNS:
             if pattern.search(cleaned):
                 if reason_code == "OUT_OF_DOMAIN_WEATHER":
@@ -1025,6 +1086,14 @@ class FastIntentSemanticRouter:
                         cleaned,
                         re.IGNORECASE,
                     ):
+                        continue
+                if reason_code in (
+                    "OUT_OF_DOMAIN_ACADEMIC_AND_HISTORICAL",
+                    "OUT_OF_DOMAIN_MEDICAL_AND_VETERINARY",
+                    "OUT_OF_DOMAIN_SCIENCE_AND_ENGINEERING",
+                    "OUT_OF_DOMAIN_ANTIQUITIES_AND_ARCHAEOLOGY",
+                ):
+                    if has_strict_op:
                         continue
                 return "OUT_OF_DOMAIN"
         if self._in_domain_cues.search(cleaned) or any(p.search(cleaned) for p in self._order_patterns):
