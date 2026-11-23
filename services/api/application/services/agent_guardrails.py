@@ -425,6 +425,47 @@ _OUT_OF_DOMAIN_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    (
+        "OUT_OF_DOMAIN_SPACE_EXPLORATION",
+        re.compile(
+            r"(?:"
+            r"\b(?:nasa|mars|marte|lunar|moon\s+rocks?|rocas?\s+lunares?|hubble|james\s+webb|orbital\s+trajectory|orbit\s+insertion|spacecraft|cohete|cohetes|espacial|sat[eé]lites?|deep\s+space|planetary\s+exploration)\b"
+            r"|\b(?:space\s+mission|misi[oó]n\s+espacial|space\s+probe|alien\s+planet|astronavigation)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_MILITARY_AND_WARFARE",
+        re.compile(
+            r"(?:"
+            r"\b(?:nato|otan|ammunition|arsenal|arsenales|warfare|geneva\s+convention|convenci[oó]n\s+de\s+ginebra|prisioneros\s+de\s+guerra|prisoners?\s+of\s+war)\b"
+            r"|\b(?:torpedeamiento|misil|misiles|missiles?|armamento|weaponry|weapons?|military\s+ordnance|bal[ií]stica|ballistics?|naval\s+warfare|guerra\s+naval)\b"
+            r"|\b(?:military\s+logistics|log[ií]stica\s+militar|munition|municiones)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_ANTIQUITIES_AND_ARCHAEOLOGY",
+        re.compile(
+            r"(?:"
+            r"\b(?:etruscan|etrusc[oa]s?|sarc[oó]fago|sarc[oó]fagos|sarcophagus|pharaonic|fara[oó]nic[oa]s?|archaeolog|arqueolog)\b"
+            r"|\b(?:renaissance\s+masterwork|renaissance\s+masterworks|renaissance\s+art|obras?\s+renacentistas?|escultura\s+romana|cer[aá]micas?\s+etruscas?|cer[aá]micas?\s+antiguas?|ancient\s+pottery|artefactos?\s+arqueol[oó]gicos?|archaeological\s+artifacts?|art\s+heritage|patrimonio\s+art[ií]stico)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_BIOHAZARD_AND_PATHOGENS",
+        re.compile(
+            r"(?:"
+            r"\b(?:bsl-4|bsl-3|biosafety\s+level|nivel\s+de\s+bioseguridad|pathogen|pathogens|pat[oó]geno|pat[oó]genos|live\s+virus|virus\s+vivo|virus\s+pat[oó]geno)\b"
+            r"|\b(?:antiof[ií]dico|biol[oó]gico\s+peligroso|biohazard|biological\s+weapons?|armas?\s+biol[oó]gicas?|anthrax|[aá]ntrax|ebola|[eé]bola)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 _COLD_CHAIN_LOGISTICS_PATTERN: re.Pattern[str] = re.compile(
@@ -950,6 +991,45 @@ class InputGuardrailValidator(InputGuardrailPort):
             reason_code="OUT_OF_DOMAIN_DEFLECTION",
             message=OUT_OF_DOMAIN_DEFLECTION_ES if use_es else OUT_OF_DOMAIN_DEFLECTION_EN,
         )
+
+
+class FastIntentSemanticRouter:
+    """Lightweight deterministic semantic router for Layer 1 guardrails (Stage 2).
+
+    Validates whether queries matching surface logistics collocations belong to TrackFlow's
+    commercial customer experience domain vs cross-disciplinary alien domains (aerospace,
+    military ordnance, antiquities archaeology, or high-containment biohazard virology).
+    """
+
+    def __init__(self) -> None:
+        self._in_domain_cues: re.Pattern[str] = _IN_DOMAIN_TRACKFLOW_CUE
+        self._order_patterns: Tuple[re.Pattern[str], ...] = _ORDER_REFERENCE_PATTERNS
+
+    def classify(self, query: str) -> str:
+        """Classify query intent as 'IN_DOMAIN' or 'OUT_OF_DOMAIN'.
+
+        Returns 'OUT_OF_DOMAIN' if alien/non-corporate domain markers are detected,
+        'IN_DOMAIN' if valid logistics cues or order patterns are verified,
+        or 'OUT_OF_DOMAIN' if no recognizable logistics intent is present.
+        """
+        cleaned = (query or "").strip()
+        if not cleaned:
+            return "IN_DOMAIN"
+        for reason_code, pattern in _OUT_OF_DOMAIN_PATTERNS:
+            if pattern.search(cleaned):
+                if reason_code == "OUT_OF_DOMAIN_WEATHER":
+                    if _COLD_CHAIN_LOGISTICS_PATTERN.search(cleaned):
+                        continue
+                    if re.search(
+                        r"\btiempo\s+de\s+(?:tr[aá]nsito|entrega|env[ií]o|espera|despacho|procesamiento)\b",
+                        cleaned,
+                        re.IGNORECASE,
+                    ):
+                        continue
+                return "OUT_OF_DOMAIN"
+        if self._in_domain_cues.search(cleaned) or any(p.search(cleaned) for p in self._order_patterns):
+            return "IN_DOMAIN"
+        return "OUT_OF_DOMAIN"
 
 
 # --- Layer 2: Session-Scoped Order Authorization & Country-Policy Integrity ---
@@ -1663,6 +1743,7 @@ class OutputGuardrailValidator(OutputGuardrailPort):
 
 __all__ = [
     "AuthorizationGuardrailValidator",
+    "FastIntentSemanticRouter",
     "InputGuardrailValidator",
     "JAILBREAK_REFUSAL_EN",
     "JAILBREAK_REFUSAL_ES",
