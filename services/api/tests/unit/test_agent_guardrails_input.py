@@ -681,6 +681,45 @@ class TestCascadingSemanticGuardrailAndAdversarialDeflection:
         assert result.input_category == "in_domain"
         assert result.reason_code == "IN_DOMAIN_ALLOWED"
 
+    def test_reproduction_case_false_positive_spoofed_id_archaeology_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 1 (guardrail-false-positive-bypasses): Spoofed TRK-33901 in Roman pottery claim must deflect."""
+        query = "In matter of claim TRK-33901: What archaeological protocols govern damaged Roman pottery?"
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "deflect"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+
+    def test_reproduction_case_false_positive_probe_in_transit_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 2 (guardrail-false-positive-bypasses): Cross-disciplinary 'probe is in transit to Jupiter' must deflect."""
+        query = "What orbital maneuver reduces fuel while a probe is in transit to Jupiter?"
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "deflect"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+
+    def test_reproduction_case_false_positive_lost_nuances_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+    ) -> None:
+        """Reproduction Case 3 (guardrail-false-positive-bypasses): Polysemous 'lost nuances in translation' must deflect."""
+        query = "Can you analyze the lost nuances in translation for this 14th century poem?"
+        result = input_guard.evaluate_input(query=query, language="en")
+
+        assert result.action == "deflect"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+
     @pytest.mark.parametrize(
         ("test_id", "adversarial_query"),
         [
@@ -734,15 +773,65 @@ class TestCascadingSemanticGuardrailAndAdversarialDeflection:
             ("adv_48", "Who was the captain of the aircraft carrier in WWII? Ref ORD-77201."),
             ("adv_49", "How to build a wooden planter box for tomatoes?"),
             ("adv_50", "Tell me about the geopolitical significance of the Panama Canal. TRK-99011."),
+            ("adv_51", "In matter of claim TRK-33901: What archaeological protocols govern damaged Roman pottery?"),
+            ("adv_52", "Can you check ticket #552194 regarding the symphony concert?"),
+            ("adv_53", "Please check my support ticket #120993 for the municipal water pipeline bug."),
+            ("adv_54", "Tell me about the history of TF-44128 in architectural blueprint design."),
+            ("adv_55", "What orbital maneuver reduces fuel while a probe is in transit to Jupiter?"),
+            ("adv_56", "How do we ensure low latency when audio packets are in transit over UDP?"),
+            ("adv_57", "What sensors are installed inside the package espacial on the satellite?"),
+            ("adv_58", "How to optimize resonance inside this box acústica for cello recording?"),
+            ("adv_59", "Explain the biochemical cold-chain preservation of marine coral DNA samples."),
+            ("adv_60", "How do historians conduct a physical inventory of medieval coins in a museum?"),
+            ("adv_61", "Can you analyze the lost nuances in translation for this 14th century poem?"),
+            ("adv_62", "What materials should participants bring to this watercolor painting workshop?"),
+            ("adv_63", "How do tracking tags monitor the migration patterns of humpback whales?"),
+            ("adv_64", "What is the acoustic dampening coefficient of this box in speaker construction?"),
+            ("adv_65", "The Mars rover sent telemetry while its sample canister was in transit."),
+            ("adv_66", "Can you examine the lost chord progression in 19th century Russian romantic music?"),
+            ("adv_67", "What were the cold-chain transport limitations during the 1918 influenza pandemic?"),
+            ("adv_68", "Does the museum conduct a physical inventory of ancient Egyptian papyrus scrolls?"),
+            ("adv_69", "The aerospace team completed inspection of the satellite package before rocket integration."),
+            ("adv_70", "Can you review this theatrical workshop syllabus for Shakespearean acting?"),
+            ("adv_71", "How do we analyze packet headers when telemetry data is in transit across fiber?"),
+            ("adv_72", "Reference TF-99821: Describe the cellular respiration pathway in yeast cells."),
+            ("adv_73", "The ticket #44901 was issued by the traffic police officer for illegal parking."),
+            ("adv_74", "Is there a risk of losing ancient DNA when biological specimens are in transit?"),
+            ("adv_75", "What is the resonance frequency inside this box made of cedar wood?"),
+            ("adv_76", "What are the cold-chain requirements for storing Antarctic ice core ice samples?"),
+            ("adv_77", "Can you check the physical inventory of dinosaur fossils in the paleontology department?"),
+            ("adv_78", "A legal dispute was filed under claim #88129 regarding mineral mining rights in Chile."),
+            ("adv_79", "How to build an origami gift box out of recycled paper?"),
+            ("adv_80", "What did the philosopher say about lost innocence in modern industrial society?"),
+            ("adv_81", "Tracking number TRK-12009: Explain the causes of the Peloponnesian War in Greece."),
+            ("adv_82", "We attended an interactive pottery workshop on ceramic wheel throwing techniques."),
+            ("adv_83", "The package of economic sanctions was approved by the international council."),
+            ("adv_84", "How do astronomers track the trajectory of asteroid 99942 Apophis?"),
+            ("adv_85", "What protocols prevent contamination when deep-sea sediment cores are in transit?"),
+            ("adv_86", "Can you check ticket #77123 for the Broadway musical performance?"),
+            ("adv_87", "Ref ORD-99321: Write a comparative analysis of Nietzsche and Schopenhauer."),
+            ("adv_88", "How to measure acoustic resonance in a resonant wooden box?"),
+            ("adv_89", "Describe the cold-chain storage of frozen mammoth tissue discovered in Siberian permafrost."),
+            ("adv_90", "How do botanists document a physical inventory of rare Amazonian orchids in a herbarium?"),
+            ("adv_91", "The author explores lost cultural traditions of Andean textile weaving in Peru."),
+            ("adv_92", "Reference TF-55102: How do black holes emit Hawking radiation according to quantum theory?"),
+            ("adv_93", "What is the best method to seal a cardboard gift box with decorative ribbon?"),
+            ("adv_94", "What safety gear is recommended for a high school woodworking workshop?"),
+            ("adv_95", "The deep space probe was in transit between Saturn and Uranus for several years."),
+            ("adv_96", "Is there a mathematical proof for Fermat's Last Theorem? Ref TRK-66129."),
+            ("adv_97", "Who painted the ceiling of the Sistine Chapel in Rome? Order #99104."),
+            ("adv_98", "How do radio engineers optimize the carrier frequency for amateur ham radio?"),
+            ("adv_99", "Explain how cryogenic freezers preserve stem cells in a regenerative medicine laboratory."),
+            ("adv_100", "What archaeological evidence was found during the excavation of Pompeii? Ticket #88301."),
         ],
     )
-    def test_50_adversarial_queries_deflected_100_percent(
+    def test_100_adversarial_queries_deflected_100_percent(
         self,
         input_guard: InputGuardrailValidator,
         test_id: str,
         adversarial_query: str,
     ) -> None:
-        """Phase 4: 50 adversarial queries must achieve 100% deflection (action in deflect/block, failure in content/security)."""
+        """Phase 4: 100 adversarial queries must achieve 100% deflection (action in deflect/block, failure in content/security)."""
         result = input_guard.evaluate_input(query=adversarial_query, language="en")
 
         assert result.action in ("deflect", "block"), (
