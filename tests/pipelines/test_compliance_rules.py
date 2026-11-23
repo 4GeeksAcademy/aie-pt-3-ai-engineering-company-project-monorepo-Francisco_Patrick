@@ -37,10 +37,10 @@ def test_all_five_briefing_rules_registered() -> None:
 
 def test_validate_rule_currency_us_and_es() -> None:
     """Verify RULE-CURRENCY enforces USD for US and EUR for ES."""
-    passed_es, _ = validate_rule_currency("Storage rate is 16.50 EUR per pallet.", "ES")
+    passed_es, _ = validate_rule_currency("Storage rate is 16.00 EUR por m³.", "ES")
     assert passed_es is True
 
-    failed_es, msg_es = validate_rule_currency("Storage rate is $18.00 USD per pallet.", "ES")
+    failed_es, msg_es = validate_rule_currency("Storage rate is $18.00 USD por m³.", "ES")
     assert failed_es is False
     assert "RULE-CURRENCY" in msg_es
 
@@ -53,19 +53,24 @@ def test_validate_rule_currency_us_and_es() -> None:
 
 
 def test_validate_rule_sla_requires_percentage_commitment() -> None:
-    """Verify RULE-SLA checks for an explicit on-time SLA percentage."""
-    passed, _ = validate_rule_sla("TrackFlow commits to a 98.5% on-time delivery SLA.")
+    """Verify RULE-SLA checks for the canonical 90% on-time SLA percentage."""
+    passed, _ = validate_rule_sla("TrackFlow commits to a canonical 90% on-time delivery SLA.")
     assert passed is True
 
-    failed, msg = validate_rule_sla("We deliver packages very quickly across the country.")
-    assert failed is False
+    failed_uncommitted, msg = validate_rule_sla("We deliver packages very quickly across the country.")
+    assert failed_uncommitted is False
     assert "RULE-SLA" in msg
+
+    failed_non_canonical, msg_nc = validate_rule_sla("TrackFlow commits to a 98.5% on-time delivery SLA.")
+    assert failed_non_canonical is False
+    assert "RULE-SLA" in msg_nc
 
 
 def test_validate_rule_discount_tiers_requires_table_or_tiers() -> None:
-    """Verify RULE-DISCOUNT-TIERS checks for volume discount tiers."""
+    """Verify RULE-DISCOUNT-TIERS checks for volume discount tiers with Miguel Torres governance."""
     table_text = (
         "### Volume Discount Table\n"
+        "Commercial governance: Approved by Miguel Torres (Director Comercial).\n"
         "| Tier | Discount |\n"
         "|---|---|\n"
         "| 1-2500 orders | 0% |\n"
@@ -74,9 +79,15 @@ def test_validate_rule_discount_tiers_requires_table_or_tiers() -> None:
     passed, _ = validate_rule_discount_tiers(table_text)
     assert passed is True
 
-    failed, msg = validate_rule_discount_tiers("Flat pricing with no discounts available.")
-    assert failed is False
+    failed_no_table, msg = validate_rule_discount_tiers("Flat pricing with no discounts available.")
+    assert failed_no_table is False
     assert "RULE-DISCOUNT-TIERS" in msg
+
+    failed_no_governance, msg_gov = validate_rule_discount_tiers(
+        "### Volume Discount Table\n| Tier | Discount |\n|---|---|\n| 1-2500 orders | 0% |\n"
+    )
+    assert failed_no_governance is False
+    assert "RULE-DISCOUNT-TIERS" in msg_gov
 
 
 def test_validate_rule_carrier_rates_blocks_negotiated_carrier_disclosure() -> None:

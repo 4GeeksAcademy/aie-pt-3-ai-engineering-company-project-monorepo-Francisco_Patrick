@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 import pytest
 from sqlmodel import Session
 
-from application.agent.rfp_intake_pipeline import RFPIntakePipeline
+from data.pipelines.rfp_intake.rfp_intake_pipeline import RFPIntakePipeline
 from domain.rfp.entities import IntakeTicket
 from infrastructure.persistence.sqlmodel.client import get_engine, init_db
 from infrastructure.persistence.sqlmodel.rfp_repository import (
