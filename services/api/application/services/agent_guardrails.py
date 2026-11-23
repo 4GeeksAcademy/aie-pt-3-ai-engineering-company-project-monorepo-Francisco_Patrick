@@ -349,6 +349,72 @@ _OUT_OF_DOMAIN_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    (
+        "OUT_OF_DOMAIN_DINING_OR_HOSPITALITY",
+        re.compile(
+            r"(?:"
+            r"\b(?:restaurant|restaurants|cafe|cafes|cafeteria|cafeterias|bar|bars|diner|diners|bistro|pizzeria)\b"
+            r"|\b(?:restaurante|restaurantes|cafeter[ií]a|cafeter[ií]as|bar|bares|pizzer[ií]a)\b"
+            r"|\b(?:dinner|lunch|breakfast|brunch|cenar|almorzar|desayunar|cena|almuerzo|desayuno)\b"
+            r"|\b(?:dining|where\s+to\s+eat|places?\s+to\s+eat|d[oó]nde\s+comer|sitio\s+para\s+comer)\b"
+            r"|\b(?:hotel|hotels|motel|motels|hostel|hostels|hoteles)\b"
+            r"|\b(?:fast\s+food|food\s+near|comida\s+(?:cerca|r[aá]pida))\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_ENTERTAINMENT_OR_FICTION",
+        re.compile(
+            r"(?:"
+            r"\b(?:order\s+of\s+the\s+phoenix|harry\s+potter|lord\s+of\s+the\s+rings|star\s+wars)\b"
+            r"|\b(?:movie|movies|film|films|cinema|pel[ií]cula|pel[ií]culas|cine)\b"
+            r"|\b(?:actor|actors|actress|actresses|actores|actriz|actrices)\b"
+            r"|\b(?:novel|novels|novela|novelas|fiction|ficci[oó]n)\b"
+            r"|\b(?:song|songs|canci[oó]n|canciones|singer|singers|cantante|cantantes|music\s+band|album|albums)\b"
+            r"|\b(?:serie\s+de\s+televisi[oó]n|series?\s+de\s+tv|tv\s+series|tv\s+show|tv\s+shows|television\s+series|warehouse\s+13)\b"
+            r"|\b(?:andy\s+warhol|the\s+factory|bauhaus|pop\s+art|arte\s+pop|arquitectura|architectur(?:e|al)(?:\s+design)?)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_GAMING",
+        re.compile(
+            r"(?:"
+            r"\b(?:videojuego|videojuegos|video\s+games?|gameplay|playstation|xbox|nintendo|death\s+stranding)\b"
+            r"|\b(?:board\s+games?|juegos?\s+de\s+mesa|catan|ajedrez|chess|tabletop|role-playing\s+game|rpg)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_SCIENCE_AND_ENGINEERING",
+        re.compile(
+            r"(?:"
+            r"\b(?:exoplanet|exoplanets|exoplaneta|exoplanetas|astrof[ií]sica|astrophysics|astronomy|astronom[ií]a|venus)\b"
+            r"|\b(?:quantum|cu[aá]ntic[oa]|entangled\s+particles?|part[ií]culas?\s+entrelazadas?)\b"
+            r"|\b(?:radiofrecuencia|radio\s+frequency|rf\s+carrier|carrier\s+wave|onda\s+portadora|modulaci[oó]n|modulation|carrier\s+frequency|5g\b)\b"
+            r"|\b(?:aircraft\s+carrier|portaaviones|carrier\s+pigeons?|palomas?\s+(?:carrier|mensajeras?)|primera\s+guerra\s+mundial|segunda\s+guerra\s+mundial|world\s+war|wwi|wwii)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_BIOGRAPHY_OR_PERSONAL",
+        re.compile(
+            r"(?:"
+            r"\b(?:how\s+tall\s+is|cu[aá]nto\s+mide)\b"
+            r"|\b(?:how\s+old\s+is|cu[aá]ntos\s+a[ñn]os\s+tiene)\b"
+            r"|\b(?:(?:height|age)\s+of\s+(?:the\s+)?(?:[a-z0-9_-]+\s+)?(?:ceo|president|founder|director|person|[A-Z][a-z]+))\b"
+            r"|\b(?:(?:altura|edad)\s+de\s+(?:el\s+|la\s+|del\s+)?(?:[a-z0-9_-]+\s+)?(?:ceo|presidente|fundador|director|persona|[A-Z][a-z]+))\b"
+            r"|\b(?:net\s+worth\s+of|salary\s+of|patrimonio\s+de|salario\s+de|sueldo\s+de)\b"
+            r"|\b(?:who\s+is\s+the\s+ceo\s+of|qui[eé]n\s+es\s+el\s+ceo\s+de|ceo\s+(?:of|de))\b"
+            r"|\b(?:biography\s+of|biograf[ií]a\s+de|who\s+is\s+(?:the\s+)?founder\s+of|fundador\s+de)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 _ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -369,17 +435,27 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"(?:"
     # Brand and personas
     r"\b(?:trackflow|valentina\s+cruz|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|cx\s+team|customer\s+experience)\b"
-    # Couriers and carriers
-    r"|\b(?:ups|fedex|dhl|mrw|seur|usps|carrier|carriers|transportista|transportistas|mensajer[ií]a|mensajero)\b"
+    # Couriers and carriers (collocation required for polysemic 'carrier' and 'transportista')
+    r"|\b(?:ups|fedex|dhl|mrw|seur|usps)\b"
+    r"|\b(?:(?:our|the|this|that|assigned|delivery|shipping|preferred|which|what)\s+carriers?|carriers?\s+(?:assigned|assignment|status|delay|delays|tracking|rates?|fee|fees|service|services|delivery|deliveries|delivers|pickup|partner|partners|contract))\b"
+    r"|\b(?:(?:nuestro|nuestros|el|los|un|qu[eé]|cu[aá]l)\s+transportistas?|transportistas?\s+(?:asignado|asignados|de|en|autorizado|autorizados|local|locales|entrega|reparto))\b"
+    r"|\b(?:empresa\s+de\s+mensajer[ií]a|servicio\s+de\s+mensajer[ií]a|mensajero\s+de\s+entrega)\b"
     # Identifiers
     r"|\b(?:(?:ord|trk|inc|tf)[-_]\d+|sku[-_]?[a-z0-9]+|#\d{4,10})\b"
     # Orders and tracking
-    r"|\b(?:order|orders|pedido|pedidos|purchase|purchases|compra|compras|tracking|track|rastreo|rastrear|seguimiento|localizador|localizar)\b"
-    # Shipments and delivery
-    r"|\b(?:shipment|shipments|shipping|ship|shipped|dispatch|dispatched|expedici[oó]n|expediciones|despacho|despachos|transit|in\s+transit|tr[aá]nsito|en\s+tr[aá]nsito)\b"
+    r"|\b(?:pedido|pedidos|purchase|purchases|compra|compras|tracking|track|rastreo|rastrear|seguimiento|localizador|localizar)\b"
+    r"|\b(?:(?:my|your|our|this|that|any|each)\s+orders?|(?:the|an?)\s+orders?(?!\s+of\s+(?:the\s+)?[a-z]+)|orders?\s*(?:#|id|number|n[uú]mero|num)|orders?\s+(?:status|tracking|details|item|items|history|update|updates|confirmation|summary|reference|cost|total|shipping|delivery|dispatch|placement|cancellation|return|refund|is|was|are|were|delayed|lost|shipped|delivered))\b"
+    r"|\b(?:place|placing|placed|track|tracking|cancel|canceling|cancelled|cancellation|return|returning|returned|change|changing|modify|modifying|check|checking|view|viewing|find|finding|locate|locating|ship|shipping|shipped|deliver|delivery|delivered|fulfill|fulfillment|process|processing|processed|confirm|confirmation)\s+(?:[a-z]+\s+){0,3}orders?\b"
+    r"|\b(?:recent|pending|past|open|new|completed|active|latest|prior|online|customer)\s+orders?\b"
+    # Shipments and delivery (collocation required for transit/tránsito)
+    r"|\b(?:shipment|shipments|shipping|ship|shipped|dispatch|dispatched|expedici[oó]n|expediciones|despacho|despachos)\b"
+    r"|\b(?:(?:in|en)\s+transit|(?:in|en)\s+tr[aá]nsito|transit\s+(?:time|times|delay|delays|status|hub|facility)|tiempo\s+de\s+tr[aá]nsito|tr[aá]nsito\s+del?\s+(?:env[ií]o|paquete|pedido))\b"
     r"|\b(?:delivery|deliveries|deliver|delivered|entrega|entregas|entregar|entregado|entregada|entregados|entregadas)\b"
-    # Packaging and physical goods
-    r"|\b(?:package|packages|paquete|paquetes|parcel|parcels|bulto|bultos|box|boxes|caja|cajas|pallet|pallets|crate|crates)\b"
+    # Packaging and physical goods (collocation required for package/paquete)
+    r"|\b(?:(?:my|your|our|the|this|that|trackflow)\s+packages?|packages?\s+(?:tracking|status|delayed|lost|missing|damaged|delivery|deliveries|shipped|arrival|label|insurance|pickup|weight|dimensions|size))\b"
+    r"|\b(?:(?:mi|mis|nuestro|nuestros|el|los|su|sus)\s+paquetes?|paquetes?\s+(?:perdido|perdidos|da[ñn]ado|da[ñn]ados|retrasado|retrasados|entregado|entregados|enviado|enviados|extraviado|extraviados|roto|rotos))\b"
+    r"|\b(?:parcel|parcels|bulto|bultos|pallet|pallets|crate|crates)\b"
+    r"|\b(?:(?:my|your|our|the|this|that)\s+box(?:es)?|caja\s+(?:de\s+env[ií]o|da[ñn]ada|rota)|cajas\s+(?:de\s+env[ií]o|da[ñn]adas|rotas))\b"
     # Returns, refunds, policies, SLAs
     r"|\b(?:return|returns|returning|returned|return\s+window|return\s+policy|return\s+label|return\s+shipping|rma)\b"
     r"|\b(?:devoluci[oó]n|devoluciones|devolver|devuelto|devuelta|devueltos|devueltas|plazo\s+de\s+devoluci[oó]n|ventana\s+de\s+devoluci[oó]n|etiqueta\s+de\s+devoluci[oó]n)\b"
@@ -391,8 +467,16 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:lost|perdido|perdida|perdidos|perdidas|extraviado|extraviada|robado|robada|stolen|missing)\b"
     r"|\b(?:damaged|da[ñn]ado|da[ñn]ada|da[ñn]ados|da[ñn]adas|broken|roto|rota|rotos|rotas|defective|defectuoso|defectuosa|crushed|aplastado|aplastada)\b"
     r"|\b(?:failed\s+delivery|entrega\s+fallida|fallo\s+(?:en\s+la|de)\s+entrega|wrong\s+address|direcci[oó]n\s+(?:incorrecta|err[oó]nea)|wrong\s+(?:item|product)|producto\s+(?:incorrecto|equivocado|err[oó]neo))\b"
-    # Inventory, warehousing, cold-chain, network & facilities
-    r"|\b(?:inventory|inventario|stock|existencias|warehouse|warehousing|almac[eé]n|almacenes|almacenamiento|fulfillment|centro\s+log[ií]stico|centro\s+de\s+distribuci[oó]n|facility|facilities|instalaci[oó]n|instalaciones|coverage|cobertura|distribution\s+center)\b"
+    # Inventory, warehousing, cold-chain, network & facilities (collocations required)
+    r"|\b(?:(?:our|the|this|that|your|trackflow|local|zaragoza|los\s+angeles)\s+(?:[a-z]+\s+)?warehouses?|warehouses?\s+(?:location|address|hours|pickup|operations|stock|inventory|open|closed|staff|facility|facilities)|(?:address|location|hours)\s+of\s+(?:the\s+)?(?:[a-z]+\s+)?warehouses?|warehousing\s+(?:services?|operations?|facility|facilities))\b"
+    r"|\b(?:almac[eé]n\s+(?:central|de|en|zaragoza|los\s+[aá]ngeles|abierto|cerrado|log[ií]stico)|almacenes\s+(?:centrales|de|en|zaragoza|los\s+[aá]ngeles)|(?:nuestro|nuestros|este|estos|el|los|su|sus|al|del)\s+(?:[a-zñáéíóú]+\s+)?almac[eé]n(?:es)?|almacenamiento\s+log[ií]stico)\b"
+    r"|\b(?:fulfillment|centro\s+log[ií]stico|centro\s+de\s+distribuci[oó]n|distribution\s+center)\b"
+    r"|\b(?:(?:our|the|this|that|trackflow)\s+facilit(?:y|ies)|facilit(?:y|ies)\s+(?:location|address|hours|operations)|instalaci[oó]n\s+log[ií]stica|instalaciones\s+log[ií]sticas)\b"
+    r"|\b(?:coverage|cobertura)\b"
+    r"|\b(?:(?:trackflow|warehouse|product|item|sku|unit|units|current|available|catalog|physical)\s+inventory|inventory\s+(?:level|levels|count|status|management|audit|check|availability|shortage))\b"
+    r"|\b(?:inventario\s+(?:actual|de\s+productos?|de\s+almac[eé]n|disponible|de\s+stock))\b"
+    r"|\b(?:(?:current|available|in|out\s+of)\s+stock|stock\s+(?:levels?|availability|check|shortage|status|in\s+[a-z]+)|(?:en\s+stock|sin\s+stock|nivel\s+de\s+stock))\b"
+    r"|\b(?:existencias\s+(?:disponibles|actuales|en\s+almac[eé]n)|nivel\s+de\s+existencias)\b"
     r"|\b(?:sku|skus|storage|refrigeration|cold[- ]chain|temperature[- ]controlled|pharmaceutical|farmac[eé]utico)\b"
     # Colloquial customer queries
     r"|\bwhere\s+is\s+my\b"

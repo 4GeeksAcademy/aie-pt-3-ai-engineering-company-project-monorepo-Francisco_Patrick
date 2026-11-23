@@ -188,6 +188,10 @@ class TestPersonalTaskRefusalAndCasualTriviaRedirection:
             "SLA delivery in Los Angeles",
             "Devolución en Zaragoza",
             "Warehouse stock in California",
+            "When was my FedEx order shipped?",
+            "What is the address of the Los Angeles warehouse?",
+            "I want to check the status of my order #45821.",
+            "How does FedEx handle lost packages?",
             "Yes",
             "No",
         ],
@@ -252,6 +256,23 @@ class TestPersonalTaskRefusalAndCasualTriviaRedirection:
             ("capital_of_california_en", "capital of California", "en"),
             ("weather_in_los_angeles_es", "tiempo en Los Ángeles", "es"),
             ("capital_of_california_es", "capital de California", "es"),
+            ("fedex_ceo_height_en", "how tall is the FedEx CEO?", "en"),
+            (
+                "order_of_the_phoenix_meaning_en",
+                "what is the meaning of the Order of the Phoenix?",
+                "en",
+            ),
+            (
+                "closest_restaurant_to_warehouse_en",
+                "which restaurant is closest to the warehouse?",
+                "en",
+            ),
+            ("fedex_ceo_height_es", "¿cuánto mide el CEO de FedEx?", "es"),
+            (
+                "closest_restaurant_to_warehouse_es",
+                "¿qué restaurante queda más cerca del almacén?",
+                "es",
+            ),
         ],
     )
     def test_out_of_domain_queries_are_deflected_with_neutral_message(
@@ -410,4 +431,201 @@ def test_guardrails_type_annotations_evaluate_cleanly() -> None:
     hints_method = get_type_hints(InputGuardrailValidator.evaluate_input)
     assert "conversation_history" in hints_method
     assert "context" in hints_method
+
+
+class TestPolysemicKeywordGuardrailRobustness:
+    """Verify bugfix guardrail-polysemic-keyword-bypass.
+
+    Out-of-domain queries containing polysemic logistics keywords (warehouse, carrier,
+    transit, package, inventory) must be deflected at Layer 1, while genuine customer
+    support queries with operational collocations continue to be allowed.
+    """
+
+    @pytest.mark.parametrize(
+        ("case_label", "query", "language"),
+        [
+            (
+                "repro_case_1_warehouse_13_tv_series",
+                "En la serie de televisión Warehouse 13, ¿qué poderes tiene el artefacto de Nikola Tesla?",
+                "es",
+            ),
+            (
+                "repro_case_2_astrophysics_transit",
+                "En astrofísica, ¿cómo se detectan exoplanetas observando el tránsito de una estrella?",
+                "es",
+            ),
+            (
+                "repro_case_3_carrier_pigeons_wwi",
+                "¿Cómo se entrenaban las palomas carrier en la Primera Guerra Mundial para enviar mensajes?",
+                "es",
+            ),
+            (
+                "repro_case_4_death_stranding_package",
+                "En el videojuego Death Stranding, ¿cuál es el peso máximo que Sam Porter puede cargar en un paquete?",
+                "es",
+            ),
+            (
+                "repro_case_5_catan_inventory",
+                "En el juego de mesa Catan, ¿cuántas cartas de materia prima componen el inventario total del banco?",
+                "es",
+            ),
+            (
+                "andy_warhol_factory_warehouse",
+                "How did Andy Warhol utilize his warehouse studio, The Factory, for pop art screen printing?",
+                "en",
+            ),
+            (
+                "bauhaus_warehouse_design",
+                "Explain the architectural principles of Bauhaus warehouse design in modern industrial aesthetics.",
+                "en",
+            ),
+            (
+                "rf_carrier_wave_telecom",
+                "What are the mathematical equations governing RF carrier wave frequency modulation in telecommunications?",
+                "en",
+            ),
+            (
+                "quantum_particles_in_transit",
+                "In quantum mechanics, how do entangled particles behave while in transit across spatial separations?",
+                "en",
+            ),
+            (
+                "5g_carrier_frequency",
+                "What is the carrier frequency used in standard 5G telecom broadcast towers?",
+                "en",
+            ),
+            (
+                "exoplanet_transit_variations",
+                "Explain how exoplanet transit timing variations are measured by space telescopes.",
+                "en",
+            ),
+            (
+                "aircraft_carrier_naval_history",
+                "In military naval history, how did the aircraft carrier revolutionize naval combat in WWII?",
+                "en",
+            ),
+            (
+                "tabletop_inventory_weight_limits",
+                "In tabletop role-playing games, how do players manage their character inventory weight limits?",
+                "en",
+            ),
+            (
+                "transit_of_venus_astronomy",
+                "Can you explain the transit of Venus across the Sun in historical astronomy?",
+                "en",
+            ),
+            (
+                "warehouse_13_set_design",
+                "In television series history, what was the warehouse set used for in the show Warehouse 13?",
+                "en",
+            ),
+        ],
+    )
+    def test_polysemic_out_of_domain_queries_are_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_label: str,
+        query: str,
+        language: str,
+    ) -> None:
+        """Adversarial and cross-disciplinary queries with polysemic keywords must deflect at Layer 1."""
+        result = input_guard.evaluate_input(query=query, language=language)
+
+        assert result.layer == "input_guard", f"Failed layer on {case_label}"
+        assert result.action == "deflect", (
+            f"Failed deflect action on {case_label}: got {result.action} with {result.reason_code}"
+        )
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+        assert result.message is not None
+        assert "TrackFlow" in result.message
+
+    @pytest.mark.parametrize(
+        ("case_label", "query", "language"),
+        [
+            (
+                "legitimate_warehouse_address",
+                "What is the address of the Los Angeles warehouse?",
+                "en",
+            ),
+            (
+                "legitimate_warehouse_hours",
+                "Is the warehouse open on Saturdays?",
+                "en",
+            ),
+            (
+                "legitimate_warehouse_pickup_zaragoza",
+                "¿Puedo recoger un pedido en el almacén de Zaragoza?",
+                "es",
+            ),
+            (
+                "legitimate_carrier_delivery_query",
+                "Which carrier is handling my delivery?",
+                "en",
+            ),
+            (
+                "legitimate_carrier_assignment_query",
+                "What carrier should I assign for rural shipments in Zaragoza?",
+                "en",
+            ),
+            (
+                "legitimate_transportista_es",
+                "¿Qué transportista entregará mi pedido?",
+                "es",
+            ),
+            (
+                "legitimate_package_in_transit",
+                "Why is my package in transit for over 5 days?",
+                "en",
+            ),
+            (
+                "legitimate_transito_zaragoza",
+                "El envío lleva tres días en tránsito hacia Zaragoza",
+                "es",
+            ),
+            (
+                "legitimate_where_is_package_en",
+                "Where is my package?",
+                "en",
+            ),
+            (
+                "legitimate_where_is_package_es",
+                "¿Dónde está mi paquete?",
+                "es",
+            ),
+            (
+                "legitimate_stock_sku_query",
+                "How many units of SKU TF-100 are currently in stock?",
+                "en",
+            ),
+            (
+                "legitimate_inventory_levels_query",
+                "Can you check current inventory levels for Zaragoza?",
+                "en",
+            ),
+            (
+                "legitimate_inventario_disponible_query",
+                "¿Tienen inventario disponible del producto en Los Ángeles?",
+                "es",
+            ),
+        ],
+    )
+    def test_legitimate_logistics_collocations_remain_allowed(
+        self,
+        input_guard: InputGuardrailValidator,
+        case_label: str,
+        query: str,
+        language: str,
+    ) -> None:
+        """Legitimate operational customer queries containing polysemic terms must be allowed."""
+        result = input_guard.evaluate_input(query=query, language=language)
+
+        assert result.action == "allow", (
+            f"Failed allow action on {case_label}: got {result.action} with {result.reason_code}"
+        )
+        assert result.failure_category == "none"
+        assert result.input_category == "in_domain"
+        assert result.reason_code == "IN_DOMAIN_ALLOWED"
+
 
