@@ -3,7 +3,7 @@
 from uuid import uuid4
 import pytest
 
-from application.agent.rfp_department_workers import (
+from data.pipelines.rfp_intake.rfp_department_workers import (
     LastMileWorker,
     ReverseWorker,
     WarehouseWorker,

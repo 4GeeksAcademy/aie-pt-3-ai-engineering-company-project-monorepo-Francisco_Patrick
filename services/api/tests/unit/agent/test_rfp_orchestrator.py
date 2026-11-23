@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from application.agent.rfp_orchestrator_agent import RFPOrchestratorAgent
+from data.pipelines.rfp_intake.rfp_orchestrator_agent import RFPOrchestratorAgent
 from infrastructure.adapters.pdf_to_markdown_adapter import PdfToMarkdownAdapter
 
 REPO_ROOT = Path(__file__).resolve().parents[5]

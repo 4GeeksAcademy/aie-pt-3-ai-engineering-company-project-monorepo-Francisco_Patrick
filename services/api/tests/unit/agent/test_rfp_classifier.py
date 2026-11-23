@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from application.agent.rfp_classifier_agent import RFPClassifierAgent
+from data.pipelines.rfp_intake.rfp_classifier_agent import RFPClassifierAgent
 from domain.rfp.ports import DocumentConverterPort
 from infrastructure.adapters.pdf_to_markdown_adapter import PdfToMarkdownAdapter
 

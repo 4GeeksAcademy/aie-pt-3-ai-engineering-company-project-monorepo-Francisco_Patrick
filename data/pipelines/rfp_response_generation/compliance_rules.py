@@ -57,11 +57,11 @@ BRIEFING_COMPLIANCE_RULES: Dict[RuleId, ComplianceRuleDefinition] = {
     ),
     "RULE-SLA": ComplianceRuleDefinition(
         rule_id="RULE-SLA",
-        description="On-time delivery SLA (%) committed in proposal.",
+        description="On-time delivery SLA (canonical 90%) committed in proposal.",
         severity="CRITICAL",
         failure_message=(
-            "Violates RULE-SLA: Proposal must explicitly state the committed on-time "
-            "delivery / operational SLA percentage (e.g., 98.5% on-time SLA)."
+            "Violates RULE-SLA: Proposal must explicitly state the committed canonical 90% on-time "
+            "delivery / operational SLA percentage per contractual standards (trackflow-sla-delivery)."
         ),
     ),
     "RULE-RETURNS-TIME": ComplianceRuleDefinition(
@@ -75,11 +75,12 @@ BRIEFING_COMPLIANCE_RULES: Dict[RuleId, ComplianceRuleDefinition] = {
     ),
     "RULE-DISCOUNT-TIERS": ComplianceRuleDefinition(
         rule_id="RULE-DISCOUNT-TIERS",
-        description="Volume discount table included.",
+        description="Volume discount table included with Miguel Torres commercial governance.",
         severity="CRITICAL",
         failure_message=(
             "Violates RULE-DISCOUNT-TIERS: Proposal must include a volume discount table "
-            "or tiered volume discount breakdown."
+            "or tiered volume discount breakdown explicitly conditioned on commercial approval "
+            "by Miguel Torres (Director Comercial)."
         ),
     ),
     "RULE-CARRIER-RATES": ComplianceRuleDefinition(
@@ -140,9 +141,9 @@ def validate_rule_currency(draft_text: str, client_country: str) -> Tuple[bool, 
 
 
 def validate_rule_sla(draft_text: str) -> Tuple[bool, str]:
-    """Verify RULE-SLA: On-time delivery / operational SLA (%) committed in proposal."""
+    """Verify RULE-SLA: Contractual canonical 90% on-time delivery / operational SLA committed in proposal."""
     text = draft_text or ""
-    # Look for SLA mention alongside a percentage commitment (e.g., 98.5%, 99%, etc.)
+    # Look for SLA mention alongside a canonical 90% percentage commitment
     has_sla_keyword = bool(
         re.search(
             r"\bsla\b|entrega a tiempo|on[-\s]?time|cumplimiento|nivel de servicio",
@@ -150,9 +151,9 @@ def validate_rule_sla(draft_text: str) -> Tuple[bool, str]:
             re.IGNORECASE,
         )
     )
-    has_percentage = bool(re.search(r"\b9\d(?:[.,]\d+)?\s*%", text))
+    has_canonical_90 = bool(re.search(r"\b90(?:[.,]0+)?\s*%", text))
 
-    if not (has_sla_keyword and has_percentage):
+    if not (has_sla_keyword and has_canonical_90):
         return (
             False,
             BRIEFING_COMPLIANCE_RULES["RULE-SLA"].failure_message,
@@ -217,7 +218,7 @@ def validate_rule_returns_time(draft_text: str) -> Tuple[bool, str]:
 
 
 def validate_rule_discount_tiers(draft_text: str) -> Tuple[bool, str]:
-    """Verify RULE-DISCOUNT-TIERS: Volume discount table or tier breakdown included."""
+    """Verify RULE-DISCOUNT-TIERS: Volume discount table included with Miguel Torres governance."""
     text = draft_text or ""
     lower = text.lower()
 
@@ -237,10 +238,11 @@ def validate_rule_discount_tiers(draft_text: str) -> Tuple[bool, str]:
     # Check for markdown table pipes or multiple percentage tier rows
     has_table_or_tiers = ("|" in text and "%" in text) or (
         len(re.findall(r"\b\d{1,2}\s*%", text)) >= 2
-        and any(t in lower for t in ["tier", "tramo", "volumen", "volume", "pedidos", "orders", "pallets"])
+        and any(t in lower for t in ["tier", "tramo", "volumen", "volume", "pedidos", "orders", "pallets", "m³", "m3"])
     )
+    has_governance = "miguel torres" in lower
 
-    if not (has_discount_term and has_table_or_tiers):
+    if not (has_discount_term and has_table_or_tiers and has_governance):
         return (
             False,
             BRIEFING_COMPLIANCE_RULES["RULE-DISCOUNT-TIERS"].failure_message,
@@ -274,7 +276,17 @@ def validate_rule_carrier_rates(draft_text: str) -> Tuple[bool, str]:
             context_window = lower[context_start : match.end() + 20]
             if any(
                 neg in context_window
-                for neg in ["no revel", "nunca revel", "sin revel", "never reveal", "do not disclose", "not reveal"]
+                for neg in [
+                    "no revel",
+                    "nunca revel",
+                    "sin revel",
+                    "never reveal",
+                    "do not disclose",
+                    "not reveal",
+                    "without revealing",
+                    "without disclosure",
+                    "confidential",
+                ]
             ):
                 continue
             return (

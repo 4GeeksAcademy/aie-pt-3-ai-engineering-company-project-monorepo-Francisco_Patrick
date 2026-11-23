@@ -52,3 +52,80 @@ from tests.pipelines.test_rfp_iteration_cap import (  # noqa: E402, F401
     test_iteration_cap_exhaustion_escalates_to_needs_human_review_in_db,
     test_success_scenario_persists_approved_sections_and_part3_handoff_in_db,
 )
+
+
+def test_pipeline_executes_departments_concurrently() -> None:
+    """Verify RFPResponseGenerationPipeline executes active departments in parallel using ThreadPoolExecutor."""
+    import threading
+    import time
+    from uuid import uuid4
+    from data.pipelines.rfp_intake.rfp_generator_agents import (
+        BaseDepartmentGeneratorAgent,
+        LastMileGeneratorAgent,
+        WarehouseGeneratorAgent,
+    )
+    from data.pipelines.rfp_response_generation.pipeline import RFPResponseGenerationPipeline
+
+    executed_threads = set()
+
+    class _TrackingWarehouseAgent(BaseDepartmentGeneratorAgent):
+        department_id = "warehouse"  # type: ignore[assignment]
+        department_name = "Warehouse Operations"
+        responsible_person = "Ana Whitfield"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._base = WarehouseGeneratorAgent()
+
+        def generate(self, rfp_metadata, section_context, feedback_for_generator=None, iteration=1) -> str:
+            executed_threads.add(threading.current_thread().ident)
+            time.sleep(0.05)
+            return self._base.generate(rfp_metadata, section_context, feedback_for_generator, iteration)
+
+    class _TrackingLastMileAgent(BaseDepartmentGeneratorAgent):
+        department_id = "lastmile"  # type: ignore[assignment]
+        department_name = "Last Mile and Carrier Management"
+        responsible_person = "Carlos Vega"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._base = LastMileGeneratorAgent()
+
+        def generate(self, rfp_metadata, section_context, feedback_for_generator=None, iteration=1) -> str:
+            executed_threads.add(threading.current_thread().ident)
+            time.sleep(0.05)
+            return self._base.generate(rfp_metadata, section_context, feedback_for_generator, iteration)
+
+    pipeline = RFPResponseGenerationPipeline(
+        generators={
+            "warehouse": _TrackingWarehouseAgent(),
+            "lastmile": _TrackingLastMileAgent(),
+        }
+    )
+
+    handoff = pipeline.execute_from_handoff(
+        ticket_id=uuid4(),
+        rfp_metadata={
+            "client_name": "Luna Cosmetics",
+            "client_country": "US",
+            "currency": "USD",
+            "monthly_volume": 5000,
+            "departments_needed": ["warehouse", "lastmile"],
+        },
+        department_sections={
+            "warehouse": {
+                "department_id": "warehouse",
+                "key_aspects": {"warehouse_location_preference": "Los Ángeles"},
+                "open_questions": [],
+            },
+            "lastmile": {
+                "department_id": "lastmile",
+                "key_aspects": {"carrier_strategy": "TrackFlow Network"},
+                "open_questions": [],
+            },
+        },
+    )
+
+    assert handoff.overall_status == "passed"
+    # Verification that multiple threads executed concurrently
+    assert len(executed_threads) >= 2

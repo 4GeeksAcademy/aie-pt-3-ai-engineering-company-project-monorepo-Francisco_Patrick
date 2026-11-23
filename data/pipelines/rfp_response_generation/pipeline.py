@@ -10,11 +10,13 @@ Coordinates:
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
 from pathlib import Path
 import sys
+import threading
 from typing import Any, Callable, Dict, List, Literal, Optional
 from uuid import UUID, uuid4
 
@@ -25,7 +27,7 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import (  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     BaseDepartmentGeneratorAgent,
     KnowledgeRetrievalHelper,
     get_department_generator_agent,
@@ -122,6 +124,7 @@ class RFPResponseGenerationPipeline:
         self.knowledge_helper = knowledge_helper or KnowledgeRetrievalHelper()
         self.generators: Dict[str, BaseDepartmentGeneratorAgent] = generators or {}
         self.max_attempts = min(max_attempts, 3)
+        self._repo_lock = threading.Lock()
 
     def _get_generator(
         self, department_id: DepartmentIdLiteral
@@ -161,14 +164,15 @@ class RFPResponseGenerationPipeline:
             current_iteration = attempt
 
             if self.repository is not None:
-                self.repository.update_department_section_draft(
-                    ticket_id=ticket_id,
-                    department_id=department_id,
-                    draft_content=draft_content or None,
-                    iteration=attempt,
-                    status="drafting",
-                    evaluation_result=None,
-                )
+                with self._repo_lock:
+                    self.repository.update_department_section_draft(
+                        ticket_id=ticket_id,
+                        department_id=department_id,
+                        draft_content=draft_content or None,
+                        iteration=attempt,
+                        status="drafting",
+                        evaluation_result=None,
+                    )
 
             # 1. Generate or revise draft ( passing feedback on attempt > 1 )
             draft_content = generator.generate(
@@ -179,14 +183,15 @@ class RFPResponseGenerationPipeline:
             )
 
             if self.repository is not None:
-                self.repository.update_department_section_draft(
-                    ticket_id=ticket_id,
-                    department_id=department_id,
-                    draft_content=draft_content,
-                    iteration=attempt,
-                    status="under_evaluation",
-                    evaluation_result=None,
-                )
+                with self._repo_lock:
+                    self.repository.update_department_section_draft(
+                        ticket_id=ticket_id,
+                        department_id=department_id,
+                        draft_content=draft_content,
+                        iteration=attempt,
+                        status="under_evaluation",
+                        evaluation_result=None,
+                    )
 
             # 2. Evaluate draft across Readability, Relevance, and Compliance in parallel
             eval_result = self.evaluator.evaluate(
@@ -203,40 +208,43 @@ class RFPResponseGenerationPipeline:
             if eval_result.overall_pass:
                 final_status = "passed"
                 if self.repository is not None:
-                    self.repository.update_department_section_draft(
-                        ticket_id=ticket_id,
-                        department_id=department_id,
-                        draft_content=draft_content,
-                        iteration=attempt,
-                        status="passed",
-                        evaluation_result=eval_result,
-                    )
+                    with self._repo_lock:
+                        self.repository.update_department_section_draft(
+                            ticket_id=ticket_id,
+                            department_id=department_id,
+                            draft_content=draft_content,
+                            iteration=attempt,
+                            status="passed",
+                            evaluation_result=eval_result,
+                        )
                 break
 
             # Failed evaluation on this attempt
             if attempt < self.max_attempts:
                 feedback = eval_result.feedback_for_generator
                 if self.repository is not None:
-                    self.repository.update_department_section_draft(
-                        ticket_id=ticket_id,
-                        department_id=department_id,
-                        draft_content=draft_content,
-                        iteration=attempt,
-                        status="drafting",
-                        evaluation_result=eval_result,
-                    )
+                    with self._repo_lock:
+                        self.repository.update_department_section_draft(
+                            ticket_id=ticket_id,
+                            department_id=department_id,
+                            draft_content=draft_content,
+                            iteration=attempt,
+                            status="drafting",
+                            evaluation_result=eval_result,
+                        )
             else:
                 # Exhausted iteration cap -> escalate to needs_human_review
                 final_status = "needs_human_review"
                 if self.repository is not None:
-                    self.repository.update_department_section_draft(
-                        ticket_id=ticket_id,
-                        department_id=department_id,
-                        draft_content=draft_content,
-                        iteration=attempt,
-                        status="needs_human_review",
-                        evaluation_result=eval_result,
-                    )
+                    with self._repo_lock:
+                        self.repository.update_department_section_draft(
+                            ticket_id=ticket_id,
+                            department_id=department_id,
+                            draft_content=draft_content,
+                            iteration=attempt,
+                            status="needs_human_review",
+                            evaluation_result=eval_result,
+                        )
 
         assert latest_eval is not None
         return DepartmentLoopOutcome(
@@ -273,19 +281,40 @@ class RFPResponseGenerationPipeline:
                 self.repository.save_ticket(ticket)
 
         outcomes: Dict[str, DepartmentLoopOutcome] = {}
-        for dept_id in active_departments:
-            sec_ctx = department_sections.get(dept_id) or {
-                "department_id": dept_id,
-                "key_aspects": {},
-                "open_questions": [],
-                "policy_warnings": [],
-            }
-            outcomes[dept_id] = self.run_department_loop(
-                ticket_id=ticket_id,
-                department_id=dept_id,
-                rfp_metadata=rfp_metadata,
-                section_context=sec_ctx,
-            )
+        if len(active_departments) > 1:
+            with ThreadPoolExecutor(max_workers=len(active_departments)) as executor:
+                future_to_dept = {
+                    executor.submit(
+                        self.run_department_loop,
+                        ticket_id=ticket_id,
+                        department_id=dept_id,
+                        rfp_metadata=rfp_metadata,
+                        section_context=department_sections.get(dept_id) or {
+                            "department_id": dept_id,
+                            "key_aspects": {},
+                            "open_questions": [],
+                            "policy_warnings": [],
+                        },
+                    ): dept_id
+                    for dept_id in active_departments
+                }
+                for future in future_to_dept:
+                    dept_id = future_to_dept[future]
+                    outcomes[dept_id] = future.result()
+        else:
+            for dept_id in active_departments:
+                sec_ctx = department_sections.get(dept_id) or {
+                    "department_id": dept_id,
+                    "key_aspects": {},
+                    "open_questions": [],
+                    "policy_warnings": [],
+                }
+                outcomes[dept_id] = self.run_department_loop(
+                    ticket_id=ticket_id,
+                    department_id=dept_id,
+                    rfp_metadata=rfp_metadata,
+                    section_context=sec_ctx,
+                )
 
         part3_payload = compile_part3_handoff_payload(
             ticket_id=ticket_id,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, List
 import pytest
 
-from application.agent.rfp_generator_agents import (
+from data.pipelines.rfp_intake.rfp_generator_agents import (
     KnowledgeRetrievalHelper,
     format_currency_amount,
     resolve_currency_for_country,
@@ -38,7 +38,7 @@ def test_knowledge_retrieval_graceful_fallback_when_unconfigured() -> None:
     assert res["fallback_used"] is True
     assert res["source"] == "briefing_fallback"
     assert len(res["snippets"]) == 1
-    assert "99.2%" in res["snippets"][0]
+    assert "90%" in res["snippets"][0]
 
 
 def test_knowledge_retrieval_graceful_fallback_when_qdrant_raises() -> None:

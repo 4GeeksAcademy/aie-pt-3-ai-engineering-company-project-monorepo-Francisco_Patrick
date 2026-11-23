@@ -14,8 +14,9 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import (  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     BaseDepartmentGeneratorAgent,
+    LastMileGeneratorAgent,
     ReverseLogisticsGeneratorAgent,
     WarehouseGeneratorAgent,
 )
@@ -116,3 +117,77 @@ def test_feedback_loop_revises_failing_draft_and_passes_on_iteration_2() -> None
     assert correcting_reverse.received_feedback[0] is None
     assert correcting_reverse.received_feedback[1] is not None
     assert "RULE-RETURNS-TIME" in correcting_reverse.received_feedback[1]
+
+
+def test_real_generators_actively_consume_feedback_on_revision() -> None:
+    """Verify real generator agents actively incorporate evaluator feedback into revision drafts (iteration > 1)."""
+    rfp_metadata = {
+        "client_name": "ModaViva, S.L.",
+        "client_country": "ES",
+        "currency": "EUR",
+        "monthly_volume": 3500,
+        "departments_needed": ["warehouse", "lastmile", "reverse"],
+    }
+
+    # Test Warehouse generator active feedback incorporation
+    wh_agent = WarehouseGeneratorAgent()
+    wh_draft_revised = wh_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context={
+            "department_id": "warehouse",
+            "key_aspects": {
+                "warehouse_location_preference": "Zaragoza",
+                "pallet_storage_required": None,
+                "sku_count": 450,
+            },
+            "open_questions": [],
+        },
+        feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing.",
+        iteration=2,
+    )
+    assert "Revision Note (Attempt 2)" in wh_draft_revised
+    assert "90%" in wh_draft_revised
+    assert "16.00 EUR por m³" in wh_draft_revised
+    assert "Miguel Torres" in wh_draft_revised
+    assert "Pendiente" in wh_draft_revised
+
+    # Test Last Mile generator active feedback incorporation
+    lm_agent = LastMileGeneratorAgent()
+    lm_draft_revised = lm_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context={
+            "department_id": "lastmile",
+            "key_aspects": {
+                "carrier_strategy": "TrackFlow Network",
+                "geographic_scope": "Domestic ES",
+            },
+            "open_questions": [],
+        },
+        feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing.",
+        iteration=2,
+    )
+    assert "Revision Note (Attempt 2)" in lm_draft_revised
+    assert "90%" in lm_draft_revised
+    assert "Miguel Torres" in lm_draft_revised
+
+    # Test Reverse Logistics generator active feedback incorporation
+    rev_agent = ReverseLogisticsGeneratorAgent()
+    rev_draft_revised = rev_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context={
+            "department_id": "reverse",
+            "key_aspects": {
+                "return_window_days": 30,
+                "estimated_return_rate": 0.15,
+                "inspection_required": True,
+                "disposition_flow": ["reventa", "reacondicionamiento", "descarte"],
+            },
+            "open_questions": [],
+        },
+        feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-RETURNS-TIME: returns promised under 48h.",
+        iteration=2,
+    )
+    assert "Revision Note (Attempt 2)" in rev_draft_revised
+    assert "48 to 72 hours" in rev_draft_revised
+    assert "90%" in rev_draft_revised
+    assert "Miguel Torres" in rev_draft_revised

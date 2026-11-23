@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, use } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import type {
   IntakeTicketDetailResponseDTO,
@@ -18,8 +18,8 @@ import { FinalDocumentViewer } from '../../../components/rfp/FinalDocumentViewer
  * Page props interface matching Next.js App Router dynamic route parameters.
  */
 export interface RFPDetailPageProps {
-  /** Promise containing dynamic route route params. */
-  params: Promise<{ id: string }>;
+  /** Dynamic route route params. */
+  params: { id: string };
 }
 
 /**
@@ -30,8 +30,7 @@ export interface RFPDetailPageProps {
  * @returns JSX Element rendering the ticket detail page.
  */
 export default function RFPDetailPage({ params }: RFPDetailPageProps): React.ReactElement {
-  const resolvedParams = use(params);
-  const ticketId = resolvedParams.id;
+  const ticketId = params.id;
 
   const [ticket, setTicket] = useState<IntakeTicketDetailResponseDTO | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);

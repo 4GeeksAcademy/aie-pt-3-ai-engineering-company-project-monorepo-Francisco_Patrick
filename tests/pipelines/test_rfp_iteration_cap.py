@@ -16,7 +16,7 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import (  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     BaseDepartmentGeneratorAgent,
     WarehouseGeneratorAgent,
 )
@@ -60,9 +60,10 @@ class _AlwaysNonCompliantReverseGenerator(BaseDepartmentGeneratorAgent):
             "We offer a 30 days return window for an estimated return rate of 15.0% "
             "with manual quality inspection and disposition flow: reventa, reacondicionamiento, descarte.\n"
             "We promise same-day return processing in 24 hours from receipt.\n"
-            "TrackFlow commits to a 99.0% on-time SLA.\n"
+            "TrackFlow commits to a canonical 90% on-time SLA.\n"
             "Inspection rate: 2.40 EUR per unit.\n\n"
             "### Volume Discount Table\n"
+            "Commercial governance: Pre-aprobado por Miguel Torres.\n"
             "| Volume Tier | Discount |\n"
             "|---|---|\n"
             "| 1-2500 orders | 0% |\n"

@@ -13,7 +13,7 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import WarehouseGeneratorAgent  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import WarehouseGeneratorAgent  # noqa: E402
 from data.pipelines.rfp_response_generation.evaluator import (  # noqa: E402
     DepartmentSectionEvaluator,
     evaluate_readability,

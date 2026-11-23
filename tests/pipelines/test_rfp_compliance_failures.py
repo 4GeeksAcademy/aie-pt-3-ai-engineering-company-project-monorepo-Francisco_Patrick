@@ -24,10 +24,11 @@ def test_compliance_failure_fixture_returns_turnaround_under_48_hours() -> None:
     TrackFlow supports a 30 days return window for an estimated return rate of 18.0%.
     Every item undergoes manual quality inspection and disposition flow: reventa, reacondicionamiento, descarte.
     We promise ultra-fast return processing in 24 hours from receipt at our Zaragoza hub.
-    TrackFlow commits to a 99.0% on-time delivery and returns SLA.
+    TrackFlow commits to a canonical 90% on-time delivery and returns SLA.
     Inspection rate: 2.40 EUR per unit.
 
     ### Volume Discount Table
+    Commercial governance: Pre-aprobado por Miguel Torres.
     | Volume Tier | Discount |
     |---|---|
     | 1 - 2,500 orders | 0% |

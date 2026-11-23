@@ -12,7 +12,7 @@ if str(API_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from application.agent.rfp_generator_agents import (  # noqa: E402
+from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     LastMileGeneratorAgent,
     ReverseLogisticsGeneratorAgent,
     WarehouseGeneratorAgent,
@@ -52,7 +52,10 @@ def test_warehouse_generator_modaviva_spain_eur_draft() -> None:
     assert "450" in draft
     assert "EUR" in draft
     assert "USD" not in draft
-    assert "99.2%" in draft
+    assert "90%" in draft
+    assert "16.00 EUR por m³" in draft
+    assert "Miguel Torres" in draft
+    assert "Pendiente" in draft
     assert "Volume Discount" in draft
     assert "Open Questions" in draft
 
@@ -85,7 +88,8 @@ def test_lastmile_generator_luna_cosmetics_us_usd_draft() -> None:
     assert "Domestic US" in draft
     assert "USD" in draft
     assert "EUR" not in draft
-    assert "98.5%" in draft
+    assert "90%" in draft
+    assert "Miguel Torres" in draft
     assert "Volume Discount" in draft
 
 
@@ -114,7 +118,8 @@ def test_reverse_generator_enforces_48h_minimum_turnaround() -> None:
     assert "Sofía Ramos" in draft
     assert "48 to 72 hours" in draft
     assert "EUR" in draft
-    assert "99.0%" in draft
+    assert "90%" in draft
+    assert "Miguel Torres" in draft
     assert "30 days" in draft
 
 

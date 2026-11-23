@@ -23,29 +23,29 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
     "warehouse": {
         "department_name": "Warehouse Operations",
         "responsible_person": "Ana Whitfield",
-        "on_time_sla_pct": "99.2%",
+        "on_time_sla_pct": "90%",
         "standard_onboarding_weeks": "2 to 3 weeks",
         "rates": {
             "USD": {
-                "pallet_monthly": "$18.00 USD",
-                "sku_pick_pack": "$1.25 USD",
+                "storage_m3_monthly": "$18.00 USD por m³",
                 "onboarding_fee": "$1,500.00 USD",
             },
             "EUR": {
-                "pallet_monthly": "16.50 EUR",
-                "sku_pick_pack": "1.10 EUR",
+                "storage_m3_monthly": "16.00 EUR por m³",
                 "onboarding_fee": "1,350.00 EUR",
             },
         },
         "policy_note": (
-            "TrackFlow Warehouse commits to a 99.2% on-time SLA. "
+            "TrackFlow Warehouse commits to a canonical 90% on-time delivery SLA per contractual standards. "
+            "Storage pricing is calculated based on volume occupied in cubic meters (m³), not per unit or pallet count. "
+            "First 30 days are free of storage charges. "
             "Restock and return checks take 48 to 72 hours."
         ),
     },
     "lastmile": {
         "department_name": "Last Mile and Carrier Management",
         "responsible_person": "Carlos Vega",
-        "on_time_sla_pct": "98.5%",
+        "on_time_sla_pct": "90%",
         "rates": {
             "USD": {
                 "standard_parcel": "$6.40 USD",
@@ -57,14 +57,14 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
             },
         },
         "policy_note": (
-            "TrackFlow Last Mile commits to a 98.5% on-time SLA. "
+            "TrackFlow Last Mile commits to a canonical 90% on-time delivery SLA per contractual standards. "
             "We quote final client prices only."
         ),
     },
     "reverse": {
         "department_name": "Reverse Logistics",
         "responsible_person": "Sofía Ramos",
-        "on_time_sla_pct": "99.0%",
+        "on_time_sla_pct": "90%",
         "minimum_turnaround_hours": "48 to 72 hours",
         "rates": {
             "USD": {
@@ -78,7 +78,8 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
         },
         "policy_note": (
             "TrackFlow Reverse checks each return item within 48 to 72 hours. "
-            "We meet a 99.0% on-time SLA."
+            "Returns processing is never promised under 48 hours. "
+            "We meet the canonical 90% on-time SLA."
         ),
     },
 }
@@ -99,16 +100,19 @@ def format_currency_amount(amount: float, client_country: str) -> str:
 
 
 def build_volume_discount_table(currency: Literal["USD", "EUR"]) -> str:
-    """Generate the mandatory volume discount table (§5 RULE-DISCOUNT-TIERS) in the target currency."""
+    """Generate the mandatory volume discount table (§5 RULE-DISCOUNT-TIERS) governed by Miguel Torres."""
     unit_symbol = "$" if currency == "USD" else "€"
     return (
         "### Volume Discount Table (Tabla de Descuentos por Volumen)\n\n"
-        "| Monthly Volume Tier | Volume Discount (%) | Effective Rate Adjustment |\n"
-        "|---|---|---|\n"
-        f"| Tier 1: 1 - 2,500 orders/month | 0% (Standard Base Rate in {currency}) | Base {unit_symbol} schedule ({currency}) |\n"
-        f"| Tier 2: 2,501 - 7,500 orders/month | 5% volume discount | -5% on all {currency} unit rates |\n"
-        f"| Tier 3: 7,501 - 15,000 orders/month | 10% volume discount | -10% on all {currency} unit rates |\n"
-        f"| Tier 4: 15,001+ orders/month | 15% volume discount | -15% on all {currency} unit rates |\n"
+        "Gobernanza comercial: Cualquier tarifa preferencial o descuento por volumen "
+        "(especialmente para volúmenes > 50 m³) requiere aprobación obligatoria y expresa de "
+        "Miguel Torres (Director Comercial).\n\n"
+        "| Monthly Volume Tier | Volume Discount (%) | Effective Rate Adjustment | Commercial Governance Approval |\n"
+        "|---|---|---|---|\n"
+        f"| Tier 1: 1 - 2,500 orders/month | 0% (Standard Base Rate in {currency}) | Base schedule ({currency}) | Pre-aprobado por Miguel Torres |\n"
+        f"| Tier 2: 2,501 - 7,500 orders/month | 5% volume discount | -5% on all {currency} unit rates | Pendiente de aprobación comercial por Miguel Torres |\n"
+        f"| Tier 3: 7,501 - 15,000 orders/month | 10% volume discount | -10% on all {currency} unit rates | Pendiente de aprobación comercial por Miguel Torres |\n"
+        f"| Tier 4: 15,001+ orders/month | 15% volume discount | -15% on all {currency} unit rates | Pendiente de aprobación comercial por Miguel Torres |\n"
     )
 
 
@@ -229,16 +233,16 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
         special_handling = key_aspects.get("special_handling") or []
         onboarding_complexity = key_aspects.get("onboarding_complexity") or "Baja"
 
-        pallet_desc = (
-            f"We reserve space for {pallet_req} pallet slots."
-            if pallet_req is not None
-            else "We scale pallet space once you confirm the exact pallet count (see open questions)."
-        )
-        sku_desc = (
-            f"Our team tracks {sku_count} SKU items in stock."
-            if sku_count is not None
-            else "We slot your full SKU list once you share the final SKU count."
-        )
+        if pallet_req is not None:
+            pallet_desc = f"We allocate storage capacity for {pallet_req} pallet positions calculated by occupied volume in m³."
+        else:
+            pallet_desc = "Capacidad adicional de almacenamiento: Pendiente de confirmación según volumen en m³."
+
+        if sku_count is not None:
+            sku_desc = f"Our team tracks {sku_count} SKU inventory references."
+        else:
+            sku_desc = "SKU catalog: Pendiente de confirmación de referencias."
+
         handling_desc = (
             ", ".join(str(h) for h in special_handling)
             if special_handling
@@ -248,6 +252,12 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             f"{monthly_volume} orders per month"
             if monthly_volume is not None
             else "your monthly order flow"
+        )
+
+        storage_rate_label = (
+            "16.00 EUR por m³ al mes (Zaragoza)"
+            if currency == "EUR"
+            else "$18.00 USD por m³ al mes (Los Ángeles)"
         )
 
         lines: List[str] = [
@@ -262,13 +272,13 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             "### 2. Onboarding Plan and Service SLA",
             f"Your onboarding level is {onboarding_complexity}. "
             f"Setup takes {standards['standard_onboarding_weeks']}. "
-            f"We commit to a {standards['on_time_sla_pct']} on-time delivery SLA for all orders. "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA for all orders per contractual standards. "
             "Restock and return checks take 48 to 72 hours.",
             "",
             f"### 3. Warehouse Rates ({currency})",
-            f"All prices use {currency} as final client rates:",
-            f"- Pallet Storage Rate: {rates['pallet_monthly']} per pallet",
-            f"- SKU Pick and Pack Rate: {rates['sku_pick_pack']} per unit",
+            f"All prices use {currency} as final client rates based on occupied volume in m³:",
+            f"- Storage Rate: {storage_rate_label} (first 30 days free grace period; >180 days pays 150% long-term storage fee)",
+            f"- Additional capacity and handling: Pendiente de confirmación según volumen en m³",
             f"- Setup Fee: {rates['onboarding_fee']} one time",
             "",
             build_volume_discount_table(currency),
@@ -289,7 +299,7 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             lines.append("### 4. Open Questions")
             lines.append("We will confirm these open questions during onboarding.")
             for idx, q in enumerate(open_questions, start=1):
-                lines.append(f"- Question {idx}: Pending client check on SKU and pallet details.")
+                lines.append(f"- Question {idx}: {q} (Pending client check on SKU and volume details).")
 
         if kb_context.get("snippets"):
             lines.append("")
@@ -299,9 +309,11 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"We fixed all points. All rates use {currency}. "
-                f"We meet the {standards['on_time_sla_pct']} on-time SLA. "
-                "Turnaround is 48 to 72 hours."
+                f"Applied active corrections based on evaluator feedback:\n"
+                f"- Enforced canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual policy.\n"
+                f"- Aligned storage pricing strictly to {storage_rate_label} based on occupied volume in m³.\n"
+                f"- Marked all unconfirmed capacity and custom operations as 'Pendiente de confirmación según volumen en m³'.\n"
+                f"- Enforced volume discount table governance under Miguel Torres (Director Comercial)."
             )
 
         return "\n".join(lines)
@@ -370,7 +382,7 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
             "",
             "### 2. On-Time Delivery SLA",
             f"{sla_target_desc} "
-            f"We commit to a {standards['on_time_sla_pct']} on-time delivery SLA. "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual standards. "
             "Return parcels take 48 to 72 hours to process.",
             "",
             f"### 3. Final Client Shipping Rates ({currency})",
@@ -405,8 +417,10 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"We fixed all points. All shipping rates use {currency}. "
-                f"We meet the {standards['on_time_sla_pct']} on-time delivery SLA."
+                f"Applied active corrections based on evaluator feedback:\n"
+                f"- Enforced canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual standards.\n"
+                f"- Quoted final client shipping rates strictly in {currency} without disclosing internal carrier tariffs.\n"
+                f"- Incorporated volume discount table under Miguel Torres commercial governance."
             )
 
         return "\n".join(lines)
@@ -474,8 +488,8 @@ class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
             "",
             "### 2. Turnaround Time (48 to 72 Hours) and SLA",
             f"Led by {self.responsible_person}, return turnaround takes {standards['minimum_turnaround_hours']}. "
-            "We never promise returns under 48 hours. "
-            f"We commit to a {standards['on_time_sla_pct']} on-time SLA.",
+            "TrackFlow strictly enforces a minimum turnaround of 48 hours; we never promise returns under 48 hours. "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time SLA per contractual standards.",
             "",
             f"### 3. Returns Rates ({currency})",
             f"All return fees use {currency} as final client prices:",
@@ -509,8 +523,11 @@ class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"We fixed all points. Turnaround is 48 to 72 hours. "
-                f"All rates use {currency}. We meet the {standards['on_time_sla_pct']} on-time SLA."
+                f"Applied active corrections based on evaluator feedback:\n"
+                f"- Strictly enforced minimum turnaround of 48 to 72 hours per TrackFlow policy (eliminating any sub-48h promises).\n"
+                f"- Committed to canonical {standards['on_time_sla_pct']} on-time delivery and returns SLA per contractual standards.\n"
+                f"- Quoted return processing rates strictly in {currency} and marked unconfirmed volumes as 'Pendiente'.\n"
+                f"- Incorporated volume discount table under Miguel Torres commercial governance."
             )
 
         return "\n".join(lines)
