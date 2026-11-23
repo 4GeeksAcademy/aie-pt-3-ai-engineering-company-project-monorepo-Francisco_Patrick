@@ -438,9 +438,11 @@ def intake_node(
     )
 
     # 1. Layer 1 & Layer 2 Guardrail Evaluation BEFORE resolving pending memory proposals (FR-001, FR-003..FR-008)
+    conversation_history = state.get("conversation_history") or state.get("messages")
     input_eval = resolved_input_guard.evaluate_input(
         query=sanitized_query,
         language=language,
+        conversation_history=conversation_history,
     )
     if observability is not None:
         ev = observability.record_evaluation(
@@ -487,12 +489,12 @@ def intake_node(
 
     is_guardrail_block = active_block_eval is not None
     casual_redirect_required = bool(
-        not is_guardrail_block and input_eval.action == "redirect"
+        not is_guardrail_block and input_eval.action in ("redirect", "deflect", "clarify")
     )
     guardrail_action = (
         "block"
         if is_guardrail_block
-        else ("redirect" if casual_redirect_required else "allow")
+        else (input_eval.action if casual_redirect_required else "allow")
     )
     guardrail_failure_category = (
         active_block_eval.failure_category
@@ -1400,7 +1402,7 @@ def generation_node(
     should_suppress_memory_proposal = bool(
         is_output_blocked
         or casual_redirect_required
-        or guardrail_action in ("block", "redirect")
+        or guardrail_action in ("block", "redirect", "deflect", "clarify")
     )
     if should_suppress_memory_proposal:
         memory_proposal = None

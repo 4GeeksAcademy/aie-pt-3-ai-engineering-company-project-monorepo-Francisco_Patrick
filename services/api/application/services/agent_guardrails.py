@@ -83,6 +83,20 @@ PERSONAL_TASK_REFUSAL_ES = (
     "o dirección incorrecta). ¿En qué puedo ayudarte hoy con tus envíos o devoluciones en TrackFlow?"
 )
 
+OUT_OF_DOMAIN_DEFLECTION_EN = (
+    "I can only assist with TrackFlow logistics operations, including shipment tracking, "
+    "United States and Spain return policies and SLAs, and delivery incidents. "
+    "I cannot answer questions about general topics such as weather, geography, or trivia. "
+    "How can I help you with your TrackFlow order or shipment today?"
+)
+
+OUT_OF_DOMAIN_DEFLECTION_ES = (
+    "Solo puedo ayudarte con operaciones logísticas de TrackFlow, incluyendo el seguimiento "
+    "de envíos, políticas de devolución y SLAs para Estados Unidos y España, e incidencias de entrega. "
+    "No puedo responder a consultas sobre temas generales como el clima, geografía o datos de interés general. "
+    "¿En qué puedo ayudarte hoy con respecto a un pedido o envío de TrackFlow?"
+)
+
 MANDATORY_TRIVIA_REDIRECT_SUFFIX_EN = (
     "At TrackFlow, we apply these logistics workflows directly across our United States (Los Angeles) "
     "and Spain (Zaragoza) operations—would you like help checking an authorized shipment tracking "
@@ -94,6 +108,22 @@ MANDATORY_TRIVIA_REDIRECT_SUFFIX_ES = (
     "Estados Unidos (Los Ángeles) y España (Zaragoza): ¿puedo ayudarte a consultar el tracking de "
     "un pedido autorizado, revisar nuestras políticas de devolución y SLAs por país, o gestionar "
     "una incidencia de entrega?"
+)
+
+CLARIFY_SUPPORT_PROMPT_EN = (
+    "Hello! I am TrackFlow's Customer Experience (CX) support assistant. "
+    "I'm here to help with your authorized shipment tracking, return policies and SLAs "
+    "(United States and Spain), and delivery incidents. Could you please provide your order or "
+    "tracking number, or let me know what issue you are experiencing? "
+    f"{MANDATORY_TRIVIA_REDIRECT_SUFFIX_EN}"
+)
+
+CLARIFY_SUPPORT_PROMPT_ES = (
+    "¡Hola! Soy el asistente de soporte de Customer Experience (CX) de TrackFlow. "
+    "Estoy a tu disposición para ayudarte con el seguimiento de tus pedidos, políticas de devolución "
+    "y SLAs (Estados Unidos y España) o gestión de incidencias de entrega. ¿Podrías indicarme tu número "
+    "de pedido, tracking ID o detallarme en qué puedo asistirte? "
+    f"{MANDATORY_TRIVIA_REDIRECT_SUFFIX_ES}"
 )
 
 SAFE_OUTPUT_FALLBACK_EN = (
@@ -111,7 +141,7 @@ SAFE_OUTPUT_FALLBACK_ES = (
 )
 
 _SPANISH_INDICATOR_PATTERN = re.compile(
-    r"(?:[áéíóúñ¿¡]|\b(?:hola|qué|que|cómo|como|dame|olvídate|olvidate|ayúdame|ayudame|ensayo|"
+    r"(?:[áéíóúñ¿¡]|\b(?:hola|qué|que|cómo|como|dame|olvídate|olvidate|ayúdame|ayudame|ayuda|necesito|puedo|hablar|agente|clima|tiempo|ensayo|"
     r"pedido|política|politica|devoluciones|españa|espana|ángeles|angeles|logística|logistica|"
     r"inversa|ignora|instrucciones|reglas|almacén|almacen|tarifas)\b)",
     re.IGNORECASE,
@@ -249,6 +279,18 @@ _PERSONAL_TASK_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
+_GENERIC_SUPPORT_PATTERN: re.Pattern[str] = re.compile(
+    r"^\s*¡?¿?\s*"
+    r"(?:(?:hello|hi(?:\s+there)?|hey(?:\s+there)?|good\s+(?:morning|afternoon|evening)|¡?hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)\s*[,!?.:;]*\s*)?"
+    r"(?:"
+    r"(?:i\s+(?:need|want)\s+help|help\s+me|can\s+you\s+help\s+me|i\s+need\s+assistance|need\s+help|please\s+help(?:\s+me)?)"
+    r"|(?:can\s+i\s+(?:talk|speak)\s+to\s+(?:a\s+)?(?:support\s+)?(?:agent|representative|human)|talk\s+to\s+(?:an?\s+)?agent|speak\s+with\s+(?:an?\s+)?agent|human\s+agent|customer\s+support(?:\s+agent)?)"
+    r"|(?:(?:necesito|quiero|solicito)\s+ayuda|ay[uú]dame|ayuda(?:\s+por\s+favor)?|me\s+puedes\s+ayudar|puedes\s+ayudarme|necesito\s+asistencia|atenci[oó]n\s+al\s+cliente)"
+    r"|(?:(?:quiero|puedo|deseo|necesito)\s+hablar\s+con\s+un\s+agente|hablar\s+con\s+un\s+agente|agente\s+humano|conectar\s+con\s+un\s+agente|un\s+representante)"
+    r")\s*[!?.,]*\s*$",
+    re.IGNORECASE,
+)
+
 _CASUAL_TRIVIA_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     (
         "GENERAL_LOGISTICS_TRIVIA",
@@ -273,6 +315,38 @@ _CASUAL_TRIVIA_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    (
+        "GENERIC_SUPPORT_INQUIRY",
+        _GENERIC_SUPPORT_PATTERN,
+    ),
+)
+
+_OUT_OF_DOMAIN_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
+    (
+        "OUT_OF_DOMAIN_WEATHER",
+        re.compile(
+            r"(?:"
+            r"\b(?:weather|forecast|temperature|humidity|precipitation|clima|pron[oó]stico|temperatura)\b"
+            r"|\b(?:qu[eé]\s+tiempo\s+hace|el\s+tiempo\s+en|tiempo\s+(?:en|para|de)\s+[a-zñáéíóú]+)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "OUT_OF_DOMAIN_GEOGRAPHY_OR_TRIVIA",
+        re.compile(
+            r"(?:"
+            r"\b(?:capital\s+(?:of|de)|capital\s+city|ciudad\s+capital)\b"
+            r"|\b(?:population\s+(?:of|in)|poblaci[oó]n\s+(?:de|en)|habitantes\s+de)\b"
+            r"|\b(?:mayor\s+of|alcalde\s+de|governor\s+of|gobernador\s+de|president\s+of|presidente\s+de)\b"
+            r"|\b(?:who\s+is\s+the\s+(?:president|mayor|governor|king|queen|prime\s+minister)|qui[eé]n\s+es\s+el\s+(?:presidente|alcalde|rey|gobernador|primer\s+ministro))\b"
+            r"|\b(?:photosynthesis|fotos[ií]ntesis)\b"
+            r"|\b(?:distance\s+(?:between|to|from)|distancia\s+(?:entre|de|desde|a)|how\s+far\s+is|a\s+qu[eé]\s+distancia\s+est[aá])\b"
+            r"|\b(?:tell\s+(?:me\s+)?a\s+joke|cu[eé]ntame\s+un\s+chiste)\b"
+            r")",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 _ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -284,12 +358,15 @@ _ORDER_REFERENCE_PATTERNS: Tuple[re.Pattern[str], ...] = (
     re.compile(r"\b((?:ORD|TRK)-\d{3,10})\b", re.IGNORECASE),
 )
 
+_LOCATION_FACILITY_CUES: re.Pattern[str] = re.compile(
+    r"\b(?:zaragoza|los\s+[aá]ngeles|madrid|california|united\s+states|estados\s+unidos|españa|espana)\b",
+    re.IGNORECASE,
+)
+
 _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"(?:"
     # Brand and personas
     r"\b(?:trackflow|valentina\s+cruz|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|cx\s+team|customer\s+experience)\b"
-    # Facilities and locations
-    r"|\b(?:zaragoza|los\s+[aá]ngeles|madrid|california|united\s+states|estados\s+unidos|españa|espana)\b"
     # Couriers and carriers
     r"|\b(?:ups|fedex|dhl|mrw|seur|usps|carrier|carriers|transportista|transportistas|mensajer[ií]a|mensajero)\b"
     # Identifiers
@@ -312,15 +389,15 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:lost|perdido|perdida|perdidos|perdidas|extraviado|extraviada|robado|robada|stolen|missing)\b"
     r"|\b(?:damaged|da[ñn]ado|da[ñn]ada|da[ñn]ados|da[ñn]adas|broken|roto|rota|rotos|rotas|defective|defectuoso|defectuosa|crushed|aplastado|aplastada)\b"
     r"|\b(?:failed\s+delivery|entrega\s+fallida|fallo\s+(?:en\s+la|de)\s+entrega|wrong\s+address|direcci[oó]n\s+(?:incorrecta|err[oó]nea)|wrong\s+(?:item|product)|producto\s+(?:incorrecto|equivocado|err[oó]neo))\b"
-    # Inventory, warehousing, cold-chain
-    r"|\b(?:inventory|inventario|stock|existencias|warehouse|warehousing|almac[eé]n|almacenes|almacenamiento|fulfillment|centro\s+log[ií]stico|centro\s+de\s+distribuci[oó]n)\b"
+    # Inventory, warehousing, cold-chain, network & facilities
+    r"|\b(?:inventory|inventario|stock|existencias|warehouse|warehousing|almac[eé]n|almacenes|almacenamiento|fulfillment|centro\s+log[ií]stico|centro\s+de\s+distribuci[oó]n|facility|facilities|instalaci[oó]n|instalaciones|coverage|cobertura|distribution\s+center)\b"
     r"|\b(?:sku|skus|storage|refrigeration|cold[- ]chain|temperature[- ]controlled|pharmaceutical|farmac[eé]utico)\b"
     # Colloquial customer queries
     r"|\bwhere\s+is\s+my\b"
     r"|\bd[oó]nde\s+est[aá]\s+mi\b"
     r"|\b(?:money\s+back|recuperar\s+mi\s+dinero|devolver\s+el\s+dinero)\b"
-    # Business & contracts
-    r"|\b(?:b2b|b2c|contract|contrato|rates|tarifas|commercial|comercial|client|cliente|3pl)\b"
+    # Business & contracts, operational scope
+    r"|\b(?:b2b|b2c|contract|contrato|rates|tarifas|commercial|comercial|client|cliente|3pl|operations|operaciones|operate|operar)\b"
     # Operational turn confirmations and rule feedback (e.g. Memory confirmations)
     r"|^\s*(?:yes|yeah|yep|s[ií]|claro|por\s+supuesto|confirm|confirmed|approve|approved|no|nope|reject|rejected|discard|cancel)\b"
     r"|\b(?:remember|recuerda|save\s+(?:that|this|it)|guarda\s+(?:eso|esto|la\s+regla)|rule\s+for|regla\s+para)\b"
@@ -362,6 +439,23 @@ def build_casual_trivia_response(query: str, language: str = "en") -> str:
             f"carrier routing, and returns for client brands. {MANDATORY_TRIVIA_REDIRECT_SUFFIX_EN}"
         )
 
+    if _GENERIC_SUPPORT_PATTERN.search(query or ""):
+        if use_es:
+            return (
+                "¡Hola! Soy el asistente de soporte de Customer Experience (CX) de TrackFlow. "
+                "Estoy a tu disposición para ayudarte con el seguimiento de tus pedidos, políticas de devolución "
+                "y SLAs (Estados Unidos y España) o gestión de incidencias de entrega. ¿Podrías indicarme tu número "
+                "de pedido, tracking ID o detallarme en qué puedo asistirte? "
+                f"{MANDATORY_TRIVIA_REDIRECT_SUFFIX_ES}"
+            )
+        return (
+            "Hello! I am TrackFlow's Customer Experience (CX) support assistant. "
+            "I'm here to help with your authorized shipment tracking, return policies and SLAs "
+            "(United States and Spain), and delivery incidents. Could you please provide your order or "
+            "tracking number, or let me know what issue you are experiencing? "
+            f"{MANDATORY_TRIVIA_REDIRECT_SUFFIX_EN}"
+        )
+
     if use_es:
         return (
             "¡Hola! Soy el asistente de soporte de Customer Experience (CX) de TrackFlow. "
@@ -373,20 +467,90 @@ def build_casual_trivia_response(query: str, language: str = "en") -> str:
     )
 
 
+_ELLIPTICAL_CONTINUATION_PATTERN = re.compile(
+    r"^\s*(?:"
+    r"(?:con|para|sobre|en|de|del|a|el|la|los|las|mi|mis)\b"
+    r"|(?:with|for|about|in|to|the|my)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _has_prior_support_or_clarification_context(
+    conversation_history: Optional[Sequence[Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Detect whether conversation history or caller context indicates an active support or clarification dialogue (AC-6)."""
+    if context:
+        if context.get("prior_action") in ("clarify", "redirect", "needs_context"):
+            return True
+        if context.get("needs_context") or context.get("is_clarification"):
+            return True
+        if context.get("conversation_history"):
+            conversation_history = context.get("conversation_history")
+
+    if not conversation_history:
+        return False
+
+    for item in reversed(list(conversation_history)):
+        text = ""
+        role = ""
+        if isinstance(item, dict):
+            text = str(item.get("content") or item.get("text") or item.get("message") or "")
+            role = str(item.get("role") or "")
+        elif isinstance(item, (tuple, list)) and len(item) >= 2:
+            role = str(item[0])
+            text = str(item[1])
+        elif hasattr(item, "content"):
+            text = str(getattr(item, "content", ""))
+            role = str(getattr(item, "role", ""))
+        elif isinstance(item, str):
+            text = item
+
+        if role == "assistant" or not role:
+            if any(
+                cue in text.lower()
+                for cue in [
+                    "tracking",
+                    "pedido",
+                    "order",
+                    "asist",
+                    "help",
+                    "incidenc",
+                    "devoluci",
+                    "return",
+                    "número",
+                    "number",
+                    "paquete",
+                    "package",
+                ]
+            ):
+                return True
+        if role == "user" or not role:
+            if _GENERIC_SUPPORT_PATTERN.search(text) or _IN_DOMAIN_LOGISTICS_CUES.search(text):
+                return True
+
+    return False
+
+
 class InputGuardrailValidator(InputGuardrailPort):
-    """Pre-execution input guardrail enforcing immutable system authority and TrackFlow domain scope (FR-003..FR-006)."""
+    """Pre-execution input guardrail enforcing immutable system authority and TrackFlow domain scope (FR-003..FR-006, AC-1..AC-7)."""
 
     def evaluate_input(
         self,
         query: str,
         language: str = "en",
+        conversation_history: Optional[Sequence[Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
     ) -> GuardrailEvaluationResult:
-        """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
+        """Evaluate user query against security (jailbreak) and content (scope) guardrails with multi-turn continuity."""
         cleaned = (query or "").strip()
         if not cleaned:
             return GuardrailEvaluationResult(
                 layer="input_guard",
                 action="allow",
+                decision="allow",
                 failure_category="none",
                 input_category="in_domain",
                 reason_code="IN_DOMAIN_ALLOWED",
@@ -394,68 +558,120 @@ class InputGuardrailValidator(InputGuardrailPort):
             )
         use_es = _is_spanish(cleaned, language)
 
-        # 1. Strict Security Precedence: Anti-Jailbreak & Instruction Override
+        # 1. Tier 1: Strict Security Precedence (Anti-Jailbreak & Instruction Override)
         for reason_code, pattern in _JAILBREAK_PATTERNS:
             if pattern.search(cleaned):
                 return GuardrailEvaluationResult(
                     layer="input_guard",
                     action="block",
+                    decision="block",
                     failure_category="security",
                     input_category="jailbreak_attempt",
                     reason_code=reason_code,
                     message=JAILBREAK_REFUSAL_ES if use_es else JAILBREAK_REFUSAL_EN,
                 )
 
-        # 2. Content Guardrail: Prohibited Personal Tasks (Essays, Homework, Coding, Therapy)
+        # 2. Tier 2: Explicitly Restricted Personal Tasks (Essays, Homework, Coding, Therapy)
         for reason_code, pattern in _PERSONAL_TASK_PATTERNS:
             if pattern.search(cleaned):
                 return GuardrailEvaluationResult(
                     layer="input_guard",
                     action="block",
+                    decision="block",
                     failure_category="content",
                     input_category="personal_task",
                     reason_code=reason_code,
                     message=PERSONAL_TASK_REFUSAL_ES if use_es else PERSONAL_TASK_REFUSAL_EN,
                 )
 
-        # 3. Content Guardrail: Permitted Casual Small Talk / General Logistics Trivia with Mandatory Redirect
-        for reason_code, pattern in _CASUAL_TRIVIA_PATTERNS:
+        # 3. Tier 3: Benign Out-of-Domain Intent (Weather, Geography, Trivia, General Knowledge)
+        for reason_code, pattern in _OUT_OF_DOMAIN_PATTERNS:
             if pattern.search(cleaned):
-                # If the user asks about reverse logistics without specific TrackFlow policy rules,
-                # classify as casual_trivia so it receives a brief answer + mandatory TrackFlow redirect.
-                if reason_code == "BRIEF_SMALL_TALK" or "trackflow" not in cleaned.lower():
+                return GuardrailEvaluationResult(
+                    layer="input_guard",
+                    action="deflect",
+                    decision="deflect",
+                    failure_category="content",
+                    input_category="out_of_domain",
+                    reason_code=reason_code,
+                    message=OUT_OF_DOMAIN_DEFLECTION_ES if use_es else OUT_OF_DOMAIN_DEFLECTION_EN,
+                )
+
+        # 4. Tier 4: Ambiguous / Generic Support Inquiries Prompting for Context
+        if _GENERIC_SUPPORT_PATTERN.search(cleaned):
+            return GuardrailEvaluationResult(
+                layer="input_guard",
+                action="clarify",
+                decision="clarify",
+                failure_category="content",
+                input_category="needs_context",
+                reason_code="GENERIC_SUPPORT_CLARIFICATION",
+                message=CLARIFY_SUPPORT_PROMPT_ES if use_es else CLARIFY_SUPPORT_PROMPT_EN,
+            )
+
+        # Permitted Casual Small Talk / General Logistics Trivia with Mandatory Redirect
+        for reason_code, pattern in _CASUAL_TRIVIA_PATTERNS:
+            if reason_code == "GENERIC_SUPPORT_INQUIRY":
+                continue
+            if pattern.search(cleaned):
+                if (
+                    reason_code == "BRIEF_SMALL_TALK"
+                    or "trackflow" not in cleaned.lower()
+                ):
                     return GuardrailEvaluationResult(
                         layer="input_guard",
                         action="redirect",
+                        decision="redirect",
                         failure_category="content",
                         input_category="casual_trivia",
                         reason_code="CASUAL_TRIVIA_MANDATORY_REDIRECT",
                         message=build_casual_trivia_response(cleaned, language=language),
                     )
 
-        # 4. In-Domain Logistics Validation (FR-005)
-        is_in_domain = bool(
+        # 5. Tier 5: Operational In-Domain Logistics Validation (FR-005, AC-6 multi-turn continuity)
+        has_prior_context = _has_prior_support_or_clarification_context(
+            conversation_history=conversation_history,
+            context=context,
+        )
+        is_direct_in_domain = bool(
             _IN_DOMAIN_TRACKFLOW_CUE.search(cleaned)
             or any(pattern.search(cleaned) for pattern in _ORDER_REFERENCE_PATTERNS)
         )
-        if is_in_domain:
+        is_multiturn_continuation = bool(
+            has_prior_context
+            and (
+                is_direct_in_domain
+                or bool(_LOCATION_FACILITY_CUES.search(cleaned))
+                or bool(_ELLIPTICAL_CONTINUATION_PATTERN.search(cleaned))
+                or len(cleaned) <= 120
+            )
+        )
+
+        if is_direct_in_domain or is_multiturn_continuation:
+            reason = (
+                "IN_DOMAIN_MULTITURN_CONTINUATION"
+                if is_multiturn_continuation and not is_direct_in_domain
+                else "IN_DOMAIN_ALLOWED"
+            )
             return GuardrailEvaluationResult(
                 layer="input_guard",
                 action="allow",
+                decision="allow",
                 failure_category="none",
                 input_category="in_domain",
-                reason_code="IN_DOMAIN_ALLOWED",
+                reason_code=reason,
                 message=None,
             )
 
-        # 5. Out-of-Domain Content Block (FR-005)
+        # Unclassified Out-of-Domain Query: Neutral Deflection (AC-1, AC-4)
         return GuardrailEvaluationResult(
             layer="input_guard",
-            action="block",
+            action="deflect",
+            decision="deflect",
             failure_category="content",
-            input_category="personal_task",
-            reason_code="OUT_OF_DOMAIN_TASK",
-            message=PERSONAL_TASK_REFUSAL_ES if use_es else PERSONAL_TASK_REFUSAL_EN,
+            input_category="out_of_domain",
+            reason_code="OUT_OF_DOMAIN_DEFLECTION",
+            message=OUT_OF_DOMAIN_DEFLECTION_ES if use_es else OUT_OF_DOMAIN_DEFLECTION_EN,
         )
 
 

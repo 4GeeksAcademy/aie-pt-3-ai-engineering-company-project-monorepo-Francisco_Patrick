@@ -310,8 +310,10 @@ class InputGuardrailPort(ABC):
         self,
         query: str,
         language: str = "en",
+        conversation_history: Optional[Sequence[Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> GuardrailEvaluationResult:
-        """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
+        """Evaluate user query against security (jailbreak) and content (scope) guardrails with conversational continuity support."""
 
 
 class AuthorizationGuardrailPort(ABC):
