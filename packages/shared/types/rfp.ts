@@ -471,7 +471,7 @@ export interface IntakeTicketAcceptedResponseDTO {
  * Summary view of an RFP intake ticket for list views.
  */
 export interface IntakeTicketSummaryDTO {
-  /** Ticket UUID. */
+  /** Ticket UUID or canonical identifier. */
   ticket_id: string;
   /** Human-readable ticket number. */
   ticket_number: string;
@@ -487,6 +487,67 @@ export interface IntakeTicketSummaryDTO {
   created_at: string;
   /** UTC ISO last update timestamp. */
   updated_at: string;
+  /** Associated RFP reference identifier (e.g. "rfp_0071"). */
+  rfp_id?: string | null;
+  /** Prospective client operating country ("US" | "ES") if available. */
+  client_country?: ClientCountry | null;
+  /** Requested logistics services if available. */
+  services_requested?: string[];
+  /** Client-side indicator flagging a ticket that arrived live via SSE. */
+  isNewRealtimeArrival?: boolean;
+}
+
+/**
+ * Real-time SSE connection lifecycle status for the backoffice dashboard.
+ */
+export type SSEConnectionStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "unauthorized";
+
+/**
+ * Canonical flat JSON payload carried in the SSE `data:` line for `event: rfp_ticket_created`.
+ * Matches `docs/real-time-notification/trackflow-BRIEFING.es.md` §2-§3.
+ */
+export interface RFPTicketCreatedEventDTO {
+  /** Unique ticket identifier (e.g. "tkt_0225" or UUID). */
+  ticket_id: string;
+  /** Linked RFP identifier (e.g. "rfp_0071"). */
+  rfp_id: string;
+  /** Prospective client organization name. */
+  client_name: string;
+  /** Client operating country ("US" | "ES"). */
+  client_country: ClientCountry;
+  /** Requested TrackFlow logistics services (e.g. ["warehouse", "lastmile"]). */
+  services_requested: DepartmentId[];
+  /** Initial ticket status at notification time ("analyzing"). */
+  status: "analyzing";
+  /** UTC ISO-8601 timestamp when the ticket was registered. */
+  created_at: string;
+}
+
+/**
+ * Request payload for deterministic non-LLM RFP ticket registration (`POST /api/v1/rfp/tickets`).
+ */
+export interface CreateRFPTicketRequestDTO {
+  /** Optional custom ticket identifier (e.g. "tkt_0225" or UUID). */
+  ticket_id?: string | null;
+  /** Optional custom RFP reference identifier (e.g. "rfp_0071"). */
+  rfp_id?: string | null;
+  /** Prospective client organization name. */
+  client_name: string;
+  /** Client operating country ("US" | "ES"). */
+  client_country: ClientCountry;
+  /** Requested logistics services. */
+  services_requested: DepartmentId[];
+  /** Optional monthly order volume. */
+  monthly_volume?: number | null;
+  /** Optional submission deadline. */
+  deadline?: string | null;
+  /** Optional budget range expectation. */
+  budget_range?: string | null;
 }
 
 /**

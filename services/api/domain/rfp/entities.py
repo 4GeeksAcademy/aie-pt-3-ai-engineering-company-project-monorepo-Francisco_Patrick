@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import json
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID, uuid4
 
@@ -421,3 +422,50 @@ class IntakeTicket:
     def mark_done(self) -> None:
         """Alias for mark_terminado()."""
         self.mark_terminado()
+
+
+@dataclass(frozen=True)
+class RFPTicketCreatedEvent:
+    """Canonical real-time notification payload emitted when a new RFP ticket enters analyzing status.
+
+    Matches `docs/real-time-notification/trackflow-BRIEFING.es.md` §2 and §3.
+    """
+
+    ticket_id: str
+    rfp_id: str
+    client_name: str
+    client_country: Literal["US", "ES"]
+    services_requested: List[str]
+    status: Literal["analyzing"] = "analyzing"
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+
+    def to_flat_dict(self) -> Dict[str, Any]:
+        """Serialize to the flat JSON dictionary required for the SSE `data:` line (FR-003)."""
+        return {
+            "ticket_id": self.ticket_id,
+            "rfp_id": self.rfp_id,
+            "client_name": self.client_name,
+            "client_country": self.client_country,
+            "services_requested": list(self.services_requested),
+            "status": "analyzing",
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class SSEEnvelope:
+    """Sequenced Server-Sent Events (SSE) envelope stored in the bounded server ring buffer."""
+
+    event_id: int
+    event_name: str
+    ticket_id: str
+    payload: RFPTicketCreatedEvent
+    emitted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_sse_frame(self) -> str:
+        """Format as a W3C Server-Sent Events wire frame (`id:`, `event:`, flat JSON `data:`)."""
+        compact_json = json.dumps(self.payload.to_flat_dict(), ensure_ascii=False)
+        return f"id: {self.event_id}\nevent: {self.event_name}\ndata: {compact_json}\n\n"
+

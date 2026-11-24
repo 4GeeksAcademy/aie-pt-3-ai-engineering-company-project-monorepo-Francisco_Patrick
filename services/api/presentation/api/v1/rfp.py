@@ -3,37 +3,59 @@
 Conforms strictly to OpenAPI specification in `specs/031-rfp-intake/contracts/rfp-intake-api.yaml`.
 """
 
+import asyncio
 from datetime import datetime, timezone
 import os
 from pathlib import Path
-from typing import List, Optional
-from uuid import UUID, uuid4
+from typing import AsyncGenerator, List, Optional
+from uuid import UUID, uuid5, uuid4, NAMESPACE_OID
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
+    Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from data.pipelines.rfp_intake import run_rfp_pipeline_background
+from data.pipelines.rfp_intake.rfp_approval_service import (
+    BranchNotInterruptedError,
+    ResumeValidationError,
+    RFPApprovalService,
+)
 from data.pipelines.rfp_intake.rfp_response_service import (
     RFPResponseGenerationService,
     run_rfp_response_generation_background,
 )
-from domain.rfp.entities import DepartmentSection, IntakeTicket, TicketStatus
-from domain.rfp.ports import IntakeTicketRepositoryPort
+from domain.models import User
+from domain.rfp.entities import (
+    DepartmentSection,
+    IntakeTicket,
+    ReadabilityScores,
+    RFPMetadata,
+    RFPTicketCreatedEvent,
+    TicketStatus,
+)
+from domain.rfp.ports import IntakeTicketRepositoryPort, RFPNotificationBroadcasterPort
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
-from presentation.dependencies import get_sqlmodel_session_dep
+from presentation.dependencies import (
+    get_current_user,
+    get_rfp_notification_broadcaster_dep,
+    get_sqlmodel_session_dep,
+)
 from presentation.schemas.rfp import (
     ArbitrationLogListResponse,
     ArbitrationLogResponse,
     ComplianceEvaluationSchema,
+    CreateRFPTicketRequest,
     DepartmentSectionResponse,
     ErrorResponse,
     EvaluationResultSchema,
@@ -53,6 +75,7 @@ from presentation.schemas.rfp import (
     ResumeDecisionRequest,
     ResumeDecisionResponse,
     RFPMetadataResponse,
+    RFPTicketCreatedEventSchema,
 )
 
 router = APIRouter(tags=["RFP Intake"])
@@ -193,6 +216,197 @@ async def upload_rfp_document(
     )
 
 
+@router.post(
+    "/tickets",
+    response_model=RFPTicketCreatedEventSchema,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new RFP ticket in analyzing status and broadcast rfp_ticket_created (No LLM)",
+    responses={
+        201: {"model": RFPTicketCreatedEventSchema},
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
+)
+def create_rfp_ticket_and_notify(
+    payload: CreateRFPTicketRequest,
+    _current_user: User = Depends(get_current_user),
+    repository: IntakeTicketRepositoryPort = Depends(get_rfp_repository),
+    broadcaster: RFPNotificationBroadcasterPort = Depends(
+        get_rfp_notification_broadcaster_dep
+    ),
+) -> RFPTicketCreatedEventSchema:
+    """Persist a new RFP ticket with initial status analyzing and emit rfp_ticket_created via SSE.
+
+    Operates strictly in the persistence and real-time notification layers with zero LLM calls.
+    """
+    now = datetime.now(timezone.utc)
+    created_at_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    raw_ticket_id = (payload.ticket_id or "").strip()
+    if raw_ticket_id:
+        try:
+            internal_uuid = UUID(raw_ticket_id)
+        except ValueError:
+            internal_uuid = uuid5(NAMESPACE_OID, f"rfp_ticket:{raw_ticket_id}")
+        canonical_ticket_id = raw_ticket_id
+    else:
+        internal_uuid = uuid4()
+        canonical_ticket_id = f"tkt_{str(internal_uuid.int)[:4]}"
+
+    canonical_rfp_id = (payload.rfp_id or "").strip() or f"rfp_{str(internal_uuid.int)[4:8]}"
+
+    # Store canonical display identifiers inside ticket_number / raw_pdf_path so GET /tickets can round-trip them
+    ticket = IntakeTicket(
+        id=internal_uuid,
+        ticket_number=canonical_rfp_id,
+        status=TicketStatus.ANALIZANDO,
+        raw_pdf_path=f"sse://{canonical_ticket_id}",
+        raw_pdf_filename=f"{canonical_rfp_id}.pdf",
+        file_size_bytes=0,
+        created_at=now,
+        updated_at=now,
+    )
+    repository.save_ticket(ticket)
+
+    currency = "USD" if payload.client_country == "US" else "EUR"
+    metadata = RFPMetadata(
+        id=uuid4(),
+        ticket_id=internal_uuid,
+        client_name=payload.client_name,
+        client_country=payload.client_country,
+        currency=currency,
+        services_requested=list(payload.services_requested),
+        monthly_volume=payload.monthly_volume,
+        deadline=payload.deadline,
+        budget_range=payload.budget_range,
+        departments_needed=list(payload.services_requested),
+        unsupported_services=[],
+        readability_scores=ReadabilityScores(
+            flesch_reading_ease=65.0,
+            flesch_kincaid_grade=8.0,
+            reading_level_label="Standard",
+            word_count=0,
+            sentence_count=0,
+        ),
+        created_at=now,
+    )
+    repository.save_metadata(metadata)
+
+    event = RFPTicketCreatedEvent(
+        ticket_id=canonical_ticket_id,
+        rfp_id=canonical_rfp_id,
+        client_name=payload.client_name,
+        client_country=payload.client_country,
+        services_requested=list(payload.services_requested),
+        status="analyzing",
+        created_at=created_at_iso,
+    )
+    broadcaster.publish_ticket_created(event)
+
+    return RFPTicketCreatedEventSchema(
+        ticket_id=event.ticket_id,
+        rfp_id=event.rfp_id,
+        client_name=event.client_name,
+        client_country=event.client_country,
+        services_requested=list(payload.services_requested),
+        status="analyzing",
+        created_at=event.created_at,
+    )
+
+
+async def _rfp_sse_event_generator(
+    request: Request,
+    broadcaster: RFPNotificationBroadcasterPort,
+    last_event_id: Optional[str],
+    heartbeat_interval: float,
+    max_events: Optional[int],
+) -> AsyncGenerator[str, None]:
+    """Yield W3C Server-Sent Events frames (missed-event replay, live events, and `: keep-alive` comments)."""
+    queue = broadcaster.subscribe()
+    yielded_count = 0
+    try:
+        missed_envelopes = broadcaster.get_missed_events(last_event_id)
+        for envelope in missed_envelopes:
+            yield envelope.to_sse_frame()
+            yielded_count += 1
+            if max_events is not None and yielded_count >= max_events:
+                return
+
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                envelope = await asyncio.wait_for(
+                    queue.get(), timeout=heartbeat_interval
+                )
+                yield envelope.to_sse_frame()
+                yielded_count += 1
+            except asyncio.TimeoutError:
+                yield broadcaster.format_keep_alive()
+                yielded_count += 1
+
+            if max_events is not None and yielded_count >= max_events:
+                break
+    finally:
+        broadcaster.unsubscribe(queue)
+
+
+@router.get(
+    "/notifications/stream",
+    summary="Subscribe to Real-Time RFP Ticket Notifications (SSE)",
+    responses={
+        200: {
+            "description": "Active Server-Sent Events stream (text/event-stream)",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+    },
+)
+@router.get(
+    "/events",
+    summary="Compatibility Alias for Real-Time RFP Ticket Notifications (SSE)",
+    responses={
+        200: {
+            "description": "Active Server-Sent Events stream (text/event-stream)",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+        401: {"model": ErrorResponse},
+        403: {"model": ErrorResponse},
+    },
+)
+async def stream_rfp_notifications(
+    request: Request,
+    _current_user: User = Depends(get_current_user),
+    broadcaster: RFPNotificationBroadcasterPort = Depends(
+        get_rfp_notification_broadcaster_dep
+    ),
+    last_event_id_header: Optional[str] = Header(default=None, alias="Last-Event-ID"),
+    last_event_id_query: Optional[str] = Query(default=None, alias="last_event_id"),
+    heartbeat_interval: float = Query(default=15.0, ge=0.05, le=60.0),
+    max_events: Optional[int] = Query(default=None, ge=1),
+) -> StreamingResponse:
+    """Establish an authenticated Server-Sent Events (`text/event-stream`) connection for RFP ticket arrivals."""
+    effective_last_event_id = last_event_id_header or last_event_id_query
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(
+        _rfp_sse_event_generator(
+            request=request,
+            broadcaster=broadcaster,
+            last_event_id=effective_last_event_id,
+            heartbeat_interval=heartbeat_interval,
+            max_events=max_events,
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
 @router.get(
     "/tickets",
     response_model=IntakeTicketListResponse,
@@ -207,8 +421,13 @@ def list_rfp_tickets(
     """Retrieve paginated list of recent intake tickets."""
     st = None
     if status_filter:
+        normalized_filter = (
+            TicketStatus.ANALIZANDO.value
+            if status_filter == "analyzing"
+            else status_filter
+        )
         try:
-            st = TicketStatus(status_filter)
+            st = TicketStatus(normalized_filter)
         except ValueError:
             pass
 
@@ -218,9 +437,12 @@ def list_rfp_tickets(
     items = []
     for t in tickets:
         meta = repository.get_metadata(t.id)
+        display_ticket_id: UUID | str = t.id
+        if t.raw_pdf_path and t.raw_pdf_path.startswith("sse://"):
+            display_ticket_id = t.raw_pdf_path.removeprefix("sse://")
         items.append(
             IntakeTicketSummary(
-                ticket_id=t.id,
+                ticket_id=display_ticket_id,
                 ticket_number=t.ticket_number,
                 status=t.status.value,
                 raw_pdf_filename=t.raw_pdf_filename,
@@ -228,6 +450,9 @@ def list_rfp_tickets(
                 rejection_reason=t.rejection_reason,
                 created_at=t.created_at,
                 updated_at=t.updated_at,
+                rfp_id=t.ticket_number,
+                client_country=meta.client_country if meta else None,
+                services_requested=list(meta.services_requested) if meta else [],
             )
         )
 

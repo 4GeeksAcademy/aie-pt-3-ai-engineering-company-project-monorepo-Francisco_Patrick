@@ -1,6 +1,7 @@
 """Domain ports (interfaces) for RFP Intake, Proposal Generation & Analysis."""
 
 from abc import ABC, abstractmethod
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -15,6 +16,8 @@ from domain.rfp.entities import (
     Part3HandoffPayload,
     ReadabilityScores,
     RFPMetadata,
+    RFPTicketCreatedEvent,
+    SSEEnvelope,
     TicketStatus,
 )
 
@@ -161,3 +164,40 @@ class ReadabilityCalculatorPort(ABC):
     def calculate_scores(self, text: str) -> ReadabilityScores:
         """Compute readability ease, grade level, and text statistics."""
         pass
+
+
+class RFPNotificationBroadcasterPort(ABC):
+    """Port for broadcasting real-time RFP ticket notifications to connected SSE subscribers."""
+
+    @abstractmethod
+    def subscribe(self) -> asyncio.Queue[SSEEnvelope]:
+        """Register a new SSE client subscriber and return its dedicated async queue."""
+        pass
+
+    @abstractmethod
+    def unsubscribe(self, queue: asyncio.Queue[SSEEnvelope]) -> None:
+        """Remove a disconnected SSE client subscriber queue cleanly."""
+        pass
+
+    @abstractmethod
+    def publish_ticket_created(
+        self, event: RFPTicketCreatedEvent
+    ) -> Optional[SSEEnvelope]:
+        """Publish an `rfp_ticket_created` event to the replay buffer and all active subscribers.
+
+        Returns the created `SSEEnvelope`, or `None` if `event.ticket_id` was already broadcast.
+        """
+        pass
+
+    @abstractmethod
+    def get_missed_events(
+        self, last_event_id: Optional[str | int]
+    ) -> List[SSEEnvelope]:
+        """Return buffered SSE envelopes with `event_id > int(last_event_id)` for reconnection replay."""
+        pass
+
+    @abstractmethod
+    def format_keep_alive(self) -> str:
+        """Return a W3C SSE comment heartbeat frame (`: keep-alive\\n\\n`)."""
+        pass
+

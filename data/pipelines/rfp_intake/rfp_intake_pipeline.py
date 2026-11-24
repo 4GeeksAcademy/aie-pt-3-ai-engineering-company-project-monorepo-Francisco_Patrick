@@ -23,11 +23,16 @@ from domain.rfp.entities import (
     IntakeTicket,
     ReadabilityScores,
     RFPMetadata,
+    RFPTicketCreatedEvent,
     TicketStatus,
 )
 from domain.rfp.exceptions import DocumentParseError
+from domain.rfp.ports import RFPNotificationBroadcasterPort
 from infrastructure.adapters.pdf_to_markdown_adapter import PdfToMarkdownAdapter
 from infrastructure.adapters.textstat_readability import TextstatReadabilityAdapter
+from infrastructure.messaging.rfp_notification_broadcaster import (
+    get_rfp_notification_broadcaster_singleton,
+)
 from infrastructure.persistence.sqlmodel.client import get_engine
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
 
@@ -70,7 +75,11 @@ def create_initial_state(ticket_id: UUID, pdf_path: str) -> RFPState:
 class RFPIntakePipeline:
     """Encapsulates the compiled LangGraph workflow for proposal intake."""
 
-    def __init__(self, repository: Optional[SQLModelIntakeTicketRepository] = None) -> None:
+    def __init__(
+        self,
+        repository: Optional[SQLModelIntakeTicketRepository] = None,
+        broadcaster: Optional[RFPNotificationBroadcasterPort] = None,
+    ) -> None:
         self.converter = PdfToMarkdownAdapter()
         self.readability = TextstatReadabilityAdapter()
         self.classifier = RFPClassifierAgent()
@@ -80,6 +89,7 @@ class RFPIntakePipeline:
         self.reverse_worker = ReverseWorker()
         self.synthesizer = RFPSynthesizerAgent()
         self.repository = repository
+        self.broadcaster = broadcaster or get_rfp_notification_broadcaster_singleton()
         self.graph = self._build_graph()
 
     def _build_graph(self) -> Any:
@@ -176,6 +186,37 @@ class RFPIntakePipeline:
 
         if self.repository:
             self.repository.save_metadata(metadata_entity)
+
+        # Emit real-time rfp_ticket_created SSE notification once classified as a valid RFP with metadata in analyzing state
+        ticket_record = self.repository.get_ticket(tid) if self.repository else None
+        rfp_id_str = (
+            ticket_record.ticket_number
+            if ticket_record and ticket_record.ticket_number
+            else f"rfp_{str(tid.int)[:4]}"
+        )
+        created_at_dt = (
+            ticket_record.created_at
+            if ticket_record and isinstance(ticket_record.created_at, datetime)
+            else datetime.now(timezone.utc)
+        )
+        created_at_iso = created_at_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        services_list = (
+            list(extracted.services_requested)
+            if extracted.services_requested
+            else list(extracted.departments_needed)
+        )
+        if self.broadcaster:
+            self.broadcaster.publish_ticket_created(
+                RFPTicketCreatedEvent(
+                    ticket_id=str(tid),
+                    rfp_id=rfp_id_str,
+                    client_name=extracted.client_name,
+                    client_country=extracted.client_country,
+                    services_requested=services_list or ["warehouse"],
+                    status="analyzing",
+                    created_at=created_at_iso,
+                )
+            )
 
         return {
             "metadata": {
