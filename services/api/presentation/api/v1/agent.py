@@ -15,7 +15,9 @@ import re
 import uuid
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
+    HTTPException,
     Query,
     WebSocket,
     WebSocketDisconnect,
@@ -59,6 +61,7 @@ from presentation.dependencies import (
     get_support_agent_service,
     get_user_service_dep,
 )
+from presentation.schemas.security_audit import HumanApprovalGateResponse
 from presentation.schemas.agent import (
     AgentHealthResponseSchema,
     AgentQueryRequestSchema,
@@ -1118,4 +1121,84 @@ async def support_agent_websocket_endpoint(
                 thread_id=thread_id,
                 reason="client_disconnect",
             )
+
+
+# ---------------------------------------------------------------------------
+# Human-In-The-Loop (HITL) Action Review Endpoints (FR-004, FR-007)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/actions/review",
+    response_model=List[HumanApprovalGateResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List actions pending human-in-the-loop operational review",
+)
+async def list_pending_agent_action_reviews(
+    limit: int = Query(50, ge=1, le=100),
+    policy_service: Any = Depends(
+        lambda: __import__("application.services.agent_action_policies", fromlist=["get_agent_action_policies_service"]).get_agent_action_policies_service()
+    ),
+) -> List[HumanApprovalGateResponse]:
+    """Retrieve all high-impact or irreversible agent actions waiting for operational review."""
+    pending = await run_in_threadpool(policy_service.list_pending_reviews, limit)
+    return [
+        HumanApprovalGateResponse(
+            request_id=r.request_id,
+            action_type=r.action_type,
+            entity_id=r.entity_id,
+            requested_by_session=r.requested_by_session,
+            payload_snapshot=r.payload_snapshot,
+            requested_amount_eur=r.requested_amount_eur,
+            status=r.status,
+            reviewer_id=r.reviewer_id,
+            decision_notes=r.decision_notes,
+            created_at=r.created_at.isoformat(),
+            reviewed_at=r.reviewed_at.isoformat() if r.reviewed_at else None,
+        )
+        for r in pending
+    ]
+
+
+@router.post(
+    "/actions/review/{request_id}",
+    response_model=HumanApprovalGateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Approve or reject a queued agent action with reviewer notes",
+)
+async def review_agent_action(
+    request_id: str,
+    decision_req: Any = Body(...),
+    policy_service: Any = Depends(
+        lambda: __import__("application.services.agent_action_policies", fromlist=["get_agent_action_policies_service"]).get_agent_action_policies_service()
+    ),
+) -> HumanApprovalGateResponse:
+    """Submit human supervisor decision on a queued agent action."""
+    try:
+        updated = await run_in_threadpool(
+            policy_service.review_pending_request,
+            request_id=request_id,
+            reviewer_id=decision_req.get("reviewer_id", "supervisor"),
+            approved=bool(decision_req.get("approved", False)),
+            decision_notes=decision_req.get("decision_notes"),
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Review request '{request_id}' not found.",
+        )
+
+    return HumanApprovalGateResponse(
+        request_id=updated.request_id,
+        action_type=updated.action_type,
+        entity_id=updated.entity_id,
+        requested_by_session=updated.requested_by_session,
+        payload_snapshot=updated.payload_snapshot,
+        requested_amount_eur=updated.requested_amount_eur,
+        status=updated.status,
+        reviewer_id=updated.reviewer_id,
+        decision_notes=updated.decision_notes,
+        created_at=updated.created_at.isoformat(),
+        reviewed_at=updated.reviewed_at.isoformat() if updated.reviewed_at else None,
+    )
+
 

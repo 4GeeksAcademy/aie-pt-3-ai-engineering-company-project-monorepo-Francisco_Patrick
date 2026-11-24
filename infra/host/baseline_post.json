@@ -1,0 +1,90 @@
+{
+  "profile_id": "HOST-BASE-POST-001",
+  "captured_at": "2026-11-25T01:00:00Z",
+  "phase": "POST_REMEDIATION",
+  "ssh_config": {
+    "permit_root_login": false,
+    "password_authentication": false,
+    "max_auth_tries": 3,
+    "port": 22,
+    "is_compliant": true
+  },
+  "operational_user": "trackflow-ops",
+  "active_users": [
+    "root",
+    "trackflow-ops"
+  ],
+  "listening_ports": [
+    {
+      "port": 22,
+      "protocol": "tcp",
+      "process": "sshd",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 80,
+      "protocol": "tcp",
+      "process": "caddy",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 443,
+      "protocol": "tcp",
+      "process": "caddy",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 8000,
+      "protocol": "tcp",
+      "process": "uvicorn",
+      "bind_address": "127.0.0.1",
+      "is_allowed_public": false
+    },
+    {
+      "port": 6379,
+      "protocol": "tcp",
+      "process": "redis-server",
+      "bind_address": "127.0.0.1",
+      "is_allowed_public": false
+    }
+  ],
+  "firewall_rules": [
+    {
+      "direction": "IN",
+      "port": 22,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 80,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 443,
+      "action": "ALLOW",
+      "is_active": true
+    }
+  ],
+  "filesystem_permissions": [
+    {
+      "path": "services/api/.env",
+      "expected_mode": "0600",
+      "actual_mode": "0600",
+      "owner": "trackflow-ops",
+      "is_compliant": true
+    },
+    {
+      "path": "/etc/ssh/sshd_config",
+      "expected_mode": "0600",
+      "actual_mode": "0600",
+      "owner": "root",
+      "is_compliant": true
+    }
+  ]
+}

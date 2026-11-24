@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.io/schemas/agent-guardrail-hitl.schema.json",
+  "title": "AgentGuardrailHITLContract",
+  "description": "API and tool boundary contract for autonomous agent actions and Human-In-The-Loop authorization gates.",
+  "type": "object",
+  "required": [
+    "action_type",
+    "session_context",
+    "parameters"
+  ],
+  "properties": {
+    "action_type": {
+      "type": "string",
+      "enum": [
+        "RETURN_APPROVAL",
+        "CARRIER_REASSIGNMENT",
+        "ORDER_LOOKUP",
+        "BRAND_METRIC_QUERY"
+      ]
+    },
+    "session_context": {
+      "type": "object",
+      "required": ["customer_id", "authenticated_orders"],
+      "properties": {
+        "customer_id": { "type": "string" },
+        "brand_id": { "type": "string" },
+        "authenticated_orders": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "country": { "type": "string", "enum": ["US", "ES"] }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "required": ["entity_id"],
+      "properties": {
+        "entity_id": { "type": "string" },
+        "refund_amount_eur": { "type": "number", "minimum": 0 },
+        "target_carrier": { "type": "string" },
+        "shipment_status": { "type": "string" },
+        "return_reason": { "type": "string" }
+      }
+    },
+    "evaluation_result": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "AUTONOMOUSLY_APPROVED",
+            "PENDING_HUMAN_APPROVAL",
+            "BLOCKED_SECURITY_VIOLATION",
+            "REFUSED_OUT_OF_SCOPE"
+          ]
+        },
+        "reason_code": { "type": "string" },
+        "threshold_eur": { "type": "number" },
+        "human_review_queue_id": { "type": "string" }
+      }
+    }
+  }
+}

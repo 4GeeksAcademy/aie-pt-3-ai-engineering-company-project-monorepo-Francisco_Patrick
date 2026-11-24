@@ -1408,6 +1408,75 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
             metadata={"referenced_orders": referenced_orders},
         )
 
+    def validate_tool_call_authorization(
+        self,
+        session_context: Optional[AuthenticatedSessionContext],
+        tool_name: str,
+        parameters: Dict[str, Any],
+        language: str = "en",
+    ) -> GuardrailEvaluationResult:
+        """Validate operational tool execution parameters against session boundaries (FR-007, OWASP A01)."""
+        use_es = language.lower().startswith("es")
+        # 1. Order ownership authorization check
+        order_id = parameters.get("order_id") or parameters.get("entity_id")
+        if order_id is not None:
+            clean_oid = str(order_id).lstrip("#").strip()
+            if session_context is None:
+                msg = (
+                    f"Acceso denegado: no se puede ejecutar la herramienta '{tool_name}' sin sesión autenticada."
+                    if use_es
+                    else f"Access denied: cannot execute tool '{tool_name}' without an authenticated session."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="unauthorized_order",
+                    reason_code="MISSING_SESSION_AUTHORIZATION",
+                    message=msg,
+                )
+            if not session_context.is_order_authorized(clean_oid):
+                msg = (
+                    f"Acceso denegado: el pedido #{clean_oid} no pertenece a tu sesión autenticada."
+                    if use_es
+                    else f"Access denied: order #{clean_oid} is not authorized for your session."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="unauthorized_order",
+                    reason_code="ORDER_NOT_IN_AUTHENTICATED_SESSION",
+                    message=msg,
+                )
+
+        # 2. Cross-brand metric isolation check
+        brand_id = parameters.get("brand_id")
+        if brand_id and session_context:
+            session_brand = getattr(session_context, "brand_id", None)
+            if session_brand and session_brand != brand_id:
+                msg = (
+                    f"Acceso denegado a métricas de la marca '{brand_id}'."
+                    if use_es
+                    else f"Access denied to metrics for brand '{brand_id}'."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="unauthorized_order",
+                    reason_code="CROSS_BRAND_METRIC_ACCESS_DENIED",
+                    message=msg,
+                )
+
+        return GuardrailEvaluationResult(
+            layer="authorization_guard",
+            action="allow",
+            failure_category="none",
+            reason_code="TOOL_AUTHORIZATION_VERIFIED",
+        )
+
+
 
 # --- Layer 3: Two-Tier External RAG & Tool Context Sanitizer ---
 _EXTERNAL_INJECTION_SENTENCE_PATTERN = re.compile(

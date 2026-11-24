@@ -519,6 +519,56 @@ class AgentChatEventBrokerPort(ABC):
         """Cancel any active tasks and clear all thread channels and sequence counters (for test isolation)."""
 
 
+class SecurityAuditRepositoryPort(ABC):
+    """Port interface for querying and persisting OWASP Top 10 security audit findings."""
+
+    @abstractmethod
+    def get_audit_matrix(self) -> Dict[str, Any]:
+        """Retrieve the compiled tri-track OWASP audit matrix JSON structure."""
+
+    @abstractmethod
+    def get_finding(self, finding_id: str) -> Optional[Any]:
+        """Retrieve a security finding by its unique ID (e.g. SEC-BK-001)."""
+
+    @abstractmethod
+    def list_findings(
+        self,
+        component: Optional[str] = None,
+        severity: Optional[str] = None,
+    ) -> List[Any]:
+        """List findings filtered by component or severity."""
+
+    @abstractmethod
+    def record_finding(self, finding: Any) -> None:
+        """Record or update a security finding in the audit registry."""
+
+
+class HumanApprovalQueuePort(ABC):
+    """Port interface for managing the human-in-the-loop operational review queue."""
+
+    @abstractmethod
+    def submit_request(self, record: Any) -> Any:
+        """Submit an irreversible or high-impact action to the review queue."""
+
+    @abstractmethod
+    def get_request(self, request_id: str) -> Optional[Any]:
+        """Retrieve a queued approval record by its request identifier."""
+
+    @abstractmethod
+    def list_pending(self, limit: int = 50) -> List[Any]:
+        """List requests pending human operational review."""
+
+    @abstractmethod
+    def review_request(
+        self,
+        request_id: str,
+        reviewer_id: str,
+        approved: bool,
+        decision_notes: Optional[str] = None,
+    ) -> Any:
+        """Record human operational decision on a queued request."""
+
+
 __all__ = [
     "AgentChatEventBrokerPort",
     "AgentChatThreadRepositoryPort",
@@ -526,11 +576,13 @@ __all__ = [
     "AuthorizationGuardrailPort",
     "ContextSanitizerPort",
     "GuardrailObservabilityPort",
+    "HumanApprovalQueuePort",
     "InputGuardrailPort",
     "InventoryStockToolPort",
     "MemoryAuditLogRepositoryPort",
     "MemoryGuardrailPort",
     "OutputGuardrailPort",
+    "SecurityAuditRepositoryPort",
     "SupportAgentServicePort",
     "SupportTicketToolPort",
     "TraceRegistryPort",

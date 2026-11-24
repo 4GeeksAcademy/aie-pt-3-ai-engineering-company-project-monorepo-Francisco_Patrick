@@ -205,3 +205,46 @@ class TestCountryResolutionAndPolicySeparation:
         assert result.failure_category == "none"
         assert result.reason_code == "AUTHORIZATION_AND_POLICY_VERIFIED"
         assert result.resolved_country == "ES"
+
+    def test_cross_customer_order_refusal(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify tool execution with unauthorized order #45821 is blocked fail-closed."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="lookup_order",
+            parameters={"order_id": "45821"},
+            language="es",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "ORDER_NOT_IN_AUTHENTICATED_SESSION"
+        assert "#45821" in result.message
+
+    def test_cross_brand_metric_isolation(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+    ) -> None:
+        """Verify cross-brand query is refused when session brand does not match parameters."""
+        session = AuthenticatedSessionContext(
+            session_id="sess_brand_a",
+            customer_id="cust_b2b_a",
+            customer_segment="B2B",
+            primary_operating_country="ES",
+            authorized_order_ids=("ORD-001",),
+        )
+        # Monkey-patch brand_id onto session context
+        object.__setattr__(session, "brand_id", "brand_nike_es")
+
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=session,
+            tool_name="get_brand_metrics",
+            parameters={"brand_id": "brand_adidas_es"},
+            language="en",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "CROSS_BRAND_METRIC_ACCESS_DENIED"
+

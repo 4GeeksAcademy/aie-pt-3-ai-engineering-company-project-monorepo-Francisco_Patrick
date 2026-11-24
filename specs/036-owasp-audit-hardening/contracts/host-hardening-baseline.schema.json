@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.io/schemas/host-hardening-baseline.schema.json",
+  "title": "HostHardeningBaseline",
+  "description": "Schema for baseline and post-remediation host server infrastructure security verification.",
+  "type": "object",
+  "required": [
+    "profile_id",
+    "captured_at",
+    "phase",
+    "ssh_config",
+    "operational_user",
+    "listening_ports",
+    "firewall_rules",
+    "filesystem_permissions"
+  ],
+  "properties": {
+    "profile_id": { "type": "string" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "phase": {
+      "type": "string",
+      "enum": ["PRE_REMEDIATION", "POST_REMEDIATION"]
+    },
+    "ssh_config": {
+      "type": "object",
+      "required": ["permit_root_login", "password_authentication", "max_auth_tries", "is_compliant"],
+      "properties": {
+        "permit_root_login": { "type": "boolean" },
+        "password_authentication": { "type": "boolean" },
+        "max_auth_tries": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "port": { "type": "integer", "default": 22 },
+        "is_compliant": { "type": "boolean" }
+      }
+    },
+    "operational_user": { "type": "string" },
+    "active_users": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "listening_ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["port", "protocol", "process", "is_allowed_public"],
+        "properties": {
+          "port": { "type": "integer" },
+          "protocol": { "type": "string", "enum": ["tcp", "udp"] },
+          "process": { "type": "string" },
+          "bind_address": { "type": "string" },
+          "is_allowed_public": { "type": "boolean" }
+        }
+      }
+    },
+    "firewall_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["direction", "port", "action", "is_active"],
+        "properties": {
+          "direction": { "type": "string", "enum": ["IN", "OUT"] },
+          "port": { "type": "integer" },
+          "action": { "type": "string", "enum": ["ALLOW", "DENY", "DROP"] },
+          "is_active": { "type": "boolean" }
+        }
+      }
+    },
+    "filesystem_permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "expected_mode", "actual_mode", "owner", "is_compliant"],
+        "properties": {
+          "path": { "type": "string" },
+          "expected_mode": { "type": "string" },
+          "actual_mode": { "type": "string" },
+          "owner": { "type": "string" },
+          "is_compliant": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

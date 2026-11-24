@@ -1,0 +1,102 @@
+{
+  "profile_id": "HOST-BASE-PRE-001",
+  "captured_at": "2026-11-25T00:00:00Z",
+  "phase": "PRE_REMEDIATION",
+  "ssh_config": {
+    "permit_root_login": true,
+    "password_authentication": true,
+    "max_auth_tries": 6,
+    "port": 22,
+    "is_compliant": false
+  },
+  "operational_user": "root",
+  "active_users": [
+    "root",
+    "ubuntu"
+  ],
+  "listening_ports": [
+    {
+      "port": 22,
+      "protocol": "tcp",
+      "process": "sshd",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 80,
+      "protocol": "tcp",
+      "process": "caddy",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 443,
+      "protocol": "tcp",
+      "process": "caddy",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 8000,
+      "protocol": "tcp",
+      "process": "uvicorn",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 6379,
+      "protocol": "tcp",
+      "process": "redis-server",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    }
+  ],
+  "firewall_rules": [
+    {
+      "direction": "IN",
+      "port": 22,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 80,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 443,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 8000,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 6379,
+      "action": "ALLOW",
+      "is_active": true
+    }
+  ],
+  "filesystem_permissions": [
+    {
+      "path": "services/api/.env",
+      "expected_mode": "0600",
+      "actual_mode": "0644",
+      "owner": "root",
+      "is_compliant": false
+    },
+    {
+      "path": "/etc/ssh/sshd_config",
+      "expected_mode": "0600",
+      "actual_mode": "0644",
+      "owner": "root",
+      "is_compliant": false
+    }
+  ]
+}

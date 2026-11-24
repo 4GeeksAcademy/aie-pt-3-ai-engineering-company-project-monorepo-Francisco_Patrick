@@ -34,6 +34,7 @@ from presentation.api.v1 import (  # noqa: E402
     memory,
     profiles,
     rfp,
+    security_audit,
     suppliers,
     tasks,
     telemetry,
@@ -60,6 +61,7 @@ ROUTE_TABLE: List[Tuple[APIRouter, str, str]] = [
     (memory.router, f"{API_V1_PREFIX}/memory", "/memory"),
     (memory.router, f"{API_V1_PREFIX}/agent/memory", "/agent/memory"),
     (rfp.router, f"{API_V1_PREFIX}/rfp", "/rfp"),
+    (security_audit.router, f"{API_V1_PREFIX}/security-audit", "/security-audit"),
 ]
 
 
@@ -90,9 +92,20 @@ def create_app() -> FastAPI:
         application.include_router(router, prefix=v1_prefix)
         application.include_router(router, prefix=legacy_prefix)
 
+    # Configure hardened, explicit CORS origins (A05 Security Misconfiguration remediation)
+    cors_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+    if cors_origins_env and cors_origins_env != "*":
+        allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+    else:
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "https://app.trackflow.io",
+        ]
+
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # For dev purposes
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

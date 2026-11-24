@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.io/schemas/owasp-audit-matrix.schema.json",
+  "title": "OWASPAuditMatrix",
+  "description": "Validation schema for the TrackFlow tri-track OWASP Top 10 security audit matrix across backend, frontend, and agentic workflows.",
+  "type": "object",
+  "required": [
+    "audit_metadata",
+    "scope_records",
+    "findings"
+  ],
+  "properties": {
+    "audit_metadata": {
+      "type": "object",
+      "required": ["audit_date", "evaluator", "commit_hash", "branch", "regulatory_frameworks"],
+      "properties": {
+        "audit_date": { "type": "string", "format": "date-time" },
+        "evaluator": { "type": "string" },
+        "commit_hash": { "type": "string" },
+        "branch": { "type": "string" },
+        "regulatory_frameworks": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["GDPR_EU", "CCPA_CPRA_US"] }
+        }
+      }
+    },
+    "scope_records": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["service_id", "service_name", "repository_path", "data_classification", "engineering_owner"],
+        "properties": {
+          "service_id": { "type": "string" },
+          "service_name": { "type": "string" },
+          "repository_path": { "type": "string" },
+          "data_classification": {
+            "type": "string",
+            "enum": ["RESTRICTED_PII", "CONFIDENTIAL_B2B", "INTERNAL_OPERATIONAL", "PUBLIC"]
+          },
+          "engineering_owner": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "component",
+          "category",
+          "title",
+          "location",
+          "severity",
+          "applicability",
+          "verification_status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SEC-(BK|FE|AG|HST)-[0-9]{3}$"
+          },
+          "component": {
+            "type": "string",
+            "enum": ["BACKEND", "FRONTEND", "AGENTIC", "HOST"]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "A01_BROKEN_ACCESS_CONTROL",
+              "A02_CRYPTOGRAPHIC_FAILURES",
+              "A03_INJECTION",
+              "A04_INSECURE_DESIGN",
+              "A05_SECURITY_MISCONFIGURATION",
+              "A06_VULNERABLE_COMPONENTS",
+              "A07_AUTH_FAILURES",
+              "A08_INTEGRITY_FAILURES",
+              "A09_LOGGING_MONITORING_FAILURES",
+              "A10_SSRF"
+            ]
+          },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "location": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
+          },
+          "applicability": {
+            "type": "string",
+            "enum": ["APPLIES", "DOES_NOT_APPLY"]
+          },
+          "gdpr_implications": { "type": "boolean" },
+          "ccpa_implications": { "type": "boolean" },
+          "remediation_plan": { "type": "string" },
+          "verification_status": {
+            "type": "string",
+            "enum": ["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED"]
+          },
+          "verification_proof": { "type": "string" }
+        }
+      }
+    }
+  }
+}
