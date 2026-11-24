@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+from application.services.agent_guardrails import _is_spanish
 from domain.knowledge.entities import RetrievedContext
 
 
@@ -38,6 +39,12 @@ class BusinessGuardrailValidator:
         "always go through and receive formal approval from Commercial Director Miguel Torres "
         "— an account manager cannot offer or approve storage discounts independently on their own."
     )
+    VOLUME_DISCOUNT_CLAUSE_ES = (
+        "Los clientes con más de 50 metros cúbicos de volumen medio mensual pueden negociar "
+        "una tarifa de almacenamiento preferencial; sin embargo, cualquier negociación de "
+        "descuento debe contar siempre con la aprobación formal del Director Comercial Miguel Torres "
+        "— un Account Manager no puede ofrecer ni aprobar descuentos de almacenamiento por su cuenta."
+    )
 
     PEAK_SEASON_SLA_CLAUSE = (
         "Important SLA Guardrail: TrackFlow does not guarantee standard delivery SLAs "
@@ -46,11 +53,23 @@ class BusinessGuardrailValidator:
         "delivery timelines may extend by up to an additional 40%, and this extension must "
         "be communicated proactively to clients in advance."
     )
+    PEAK_SEASON_SLA_CLAUSE_ES = (
+        "Aviso importante de SLA: TrackFlow no garantiza los SLAs estándar de entrega "
+        "(incluido el compromiso mensual del 90% de entregas a tiempo) durante fechas pico "
+        "de alta demanda declaradas (Black Friday, Navidad y Rebajas de Enero en España). "
+        "Durante estos periodos pico, los plazos de entrega pueden extenderse hasta un 40% "
+        "adicional, lo cual debe comunicarse proactivamente a los clientes con antelación."
+    )
 
     INTERNATIONAL_RETURNS_CLAUSE = (
         "International returns (items purchased in one country and returned in another) are "
         "not covered by the standard automated returns pipeline and require manual handling "
         "and coordination by Sofía Ramos's team (Returns Manager / Reverse Logistics)."
+    )
+    INTERNATIONAL_RETURNS_CLAUSE_ES = (
+        "Las devoluciones internacionales (artículos comprados en un país y devueltos en otro) "
+        "no están cubiertas por el flujo automatizado estándar de devoluciones y requieren "
+        "gestión y coordinación manual por parte del equipo de Sofía Ramos (Returns Manager / Logística Inversa)."
     )
 
     CARRIER_OVERRIDE_CLAUSE = (
@@ -59,12 +78,19 @@ class BusinessGuardrailValidator:
         "manually choose or override the carrier except for an exception formally approved by "
         "Carlos Vega (Head of Carrier Operations)."
     )
+    CARRIER_OVERRIDE_CLAUSE_ES = (
+        "La selección de transportista para cada envío la determina automáticamente el sistema "
+        "de enrutamiento según destino, peso, tipo de producto y urgencia; un Account Manager "
+        "no elige ni modifica manualmente el transportista salvo excepción aprobada formalmente "
+        "por Carlos Vega (Head of Carrier Operations)."
+    )
 
     def evaluate(
         self,
         query: str,
         answer: str,
         contexts: List[RetrievedContext],
+        language: str = "en",
     ) -> List[GuardrailCheckResult]:
         """Evaluate which business guardrails apply to the query/context and whether the answer complies.
 
@@ -72,10 +98,12 @@ class BusinessGuardrailValidator:
             query: User's natural language question.
             answer: Candidate synthesized answer string.
             contexts: Retrieved context chunks.
+            language: Target language code ('en' or 'es').
 
         Returns:
             List of GuardrailCheckResult objects for all 4 corporate guardrails.
         """
+        use_es = _is_spanish(query, language)
         combined_input = self._build_trigger_surface(query, contexts)
         lowered_answer = answer.lower()
 
@@ -88,7 +116,7 @@ class BusinessGuardrailValidator:
             or (
                 "miguel torres" in lowered_answer
                 and "50" in lowered_answer
-                and ("cannot" in lowered_answer or "not " in lowered_answer)
+                and ("cannot" in lowered_answer or "not " in lowered_answer or "no puede" in lowered_answer)
             )
         )
         results.append(
@@ -96,7 +124,7 @@ class BusinessGuardrailValidator:
                 rule_id="storage_volume_discount_miguel_torres",
                 triggered=vol_triggered,
                 compliant=vol_compliant,
-                remediation_clause=self.VOLUME_DISCOUNT_CLAUSE,
+                remediation_clause=self.VOLUME_DISCOUNT_CLAUSE_ES if use_es else self.VOLUME_DISCOUNT_CLAUSE,
             )
         )
 
@@ -106,8 +134,8 @@ class BusinessGuardrailValidator:
             not peak_triggered
             or (
                 "40%" in lowered_answer
-                and ("not guarantee" in lowered_answer or "not guaranteed" in lowered_answer)
-                and "advance" in lowered_answer
+                and ("not guarantee" in lowered_answer or "not guaranteed" in lowered_answer or "no garantiza" in lowered_answer)
+                and ("advance" in lowered_answer or "antelación" in lowered_answer or "antelacion" in lowered_answer)
             )
         )
         results.append(
@@ -115,7 +143,7 @@ class BusinessGuardrailValidator:
                 rule_id="peak_season_sla_extension",
                 triggered=peak_triggered,
                 compliant=peak_compliant,
-                remediation_clause=self.PEAK_SEASON_SLA_CLAUSE,
+                remediation_clause=self.PEAK_SEASON_SLA_CLAUSE_ES if use_es else self.PEAK_SEASON_SLA_CLAUSE,
             )
         )
 
@@ -133,7 +161,7 @@ class BusinessGuardrailValidator:
                 rule_id="international_returns_sofia_ramos",
                 triggered=intl_return_triggered,
                 compliant=intl_return_compliant,
-                remediation_clause=self.INTERNATIONAL_RETURNS_CLAUSE,
+                remediation_clause=self.INTERNATIONAL_RETURNS_CLAUSE_ES if use_es else self.INTERNATIONAL_RETURNS_CLAUSE,
             )
         )
 
@@ -143,7 +171,7 @@ class BusinessGuardrailValidator:
             not carrier_triggered
             or (
                 "carlos vega" in lowered_answer
-                and ("system" in lowered_answer or "automat" in lowered_answer)
+                and ("system" in lowered_answer or "sistema" in lowered_answer or "automat" in lowered_answer or "automát" in lowered_answer)
             )
         )
         results.append(
@@ -151,7 +179,7 @@ class BusinessGuardrailValidator:
                 rule_id="carrier_override_carlos_vega",
                 triggered=carrier_triggered,
                 compliant=carrier_compliant,
-                remediation_clause=self.CARRIER_OVERRIDE_CLAUSE,
+                remediation_clause=self.CARRIER_OVERRIDE_CLAUSE_ES if use_es else self.CARRIER_OVERRIDE_CLAUSE,
             )
         )
 
@@ -162,6 +190,7 @@ class BusinessGuardrailValidator:
         query: str,
         answer: str,
         contexts: List[RetrievedContext],
+        language: str = "en",
     ) -> str:
         """Enforce all triggered corporate guardrails on the candidate answer.
 
@@ -173,11 +202,12 @@ class BusinessGuardrailValidator:
             query: User's natural language inquiry.
             answer: Candidate answer text.
             contexts: Retrieved context chunks.
+            language: Target language code ('en' or 'es').
 
         Returns:
             Guardrail-compliant answer string.
         """
-        checks = self.evaluate(query=query, answer=answer, contexts=contexts)
+        checks = self.evaluate(query=query, answer=answer, contexts=contexts, language=language)
         enforced_answer = answer.strip()
 
         for check in checks:

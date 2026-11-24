@@ -143,18 +143,41 @@ SAFE_OUTPUT_FALLBACK_ES = (
 )
 
 _SPANISH_INDICATOR_PATTERN = re.compile(
-    r"(?:[áéíóúñ¿¡]|\b(?:hola|qué|que|cómo|como|dame|olvídate|olvidate|ayúdame|ayudame|ayuda|necesito|puedo|hablar|agente|clima|tiempo|ensayo|"
-    r"pedido|política|politica|devoluciones|españa|espana|ángeles|angeles|logística|logistica|"
-    r"inversa|ignora|instrucciones|reglas|almacén|almacen|tarifas)\b)",
+    r"(?:[áéíóúñ¿¡]|\b(?:hola|buenos|buenas|qué|que|cómo|como|cuál|cual|cuáles|cuales|cuánto|cuanto|"
+    r"dame|olvídate|olvidate|ayúdame|ayudame|ayuda|necesito|puedo|quiero|hablar|agente|clima|tiempo|ensayo|"
+    r"pedido|envío|envio|paquete|política|politica|devolución|devolucion|devoluciones|españa|espana|"
+    r"ángeles|angeles|zaragoza|logística|logistica|inversa|ignora|ignores|instrucciones|reglas|"
+    r"almacén|almacen|almacenamiento|tarifas|transportista|transportistas|incidencia|reclamación|reclamacion)\b)",
+    re.IGNORECASE,
+)
+
+_ENGLISH_INDICATOR_PATTERN = re.compile(
+    r"\b(?:what|where|when|how|which|who|why|please|can\s+you|could\s+you|would\s+you|tell\s+me|"
+    r"ignore|disregard|suppose|imagine|explain|write|shipping|delivery|return|returns|order|shipment|"
+    r"package|carrier|warehouse|weather|history|movie|script|packets|protocols)\b",
     re.IGNORECASE,
 )
 
 
 def _is_spanish(query: str, language: str = "en") -> bool:
-    """Detect whether the response should be formatted in Spanish."""
-    if (language or "").strip().lower().startswith("es"):
-        return True
-    return bool(_SPANISH_INDICATOR_PATTERN.search(query or ""))
+    """Detect whether the response should be formatted in Spanish.
+
+    Prioritizes explicit language cues in `query` so English queries in an `[ES|es]`
+    session receive English responses, and Spanish queries in an `[EN|en]` session
+    receive Spanish responses, falling back to `language` when the query is neutral.
+    """
+    text = (query or "").strip()
+    if text:
+        has_es = bool(_SPANISH_INDICATOR_PATTERN.search(text))
+        has_en = bool(_ENGLISH_INDICATOR_PATTERN.search(text))
+        if has_es and not has_en:
+            return True
+        if has_en and not has_es:
+            return False
+        if has_es and has_en:
+            if re.search(r"[áéíóúñ¿¡]", text):
+                return True
+    return (language or "").strip().lower().startswith("es")
 
 
 def build_hardened_system_prompt(
@@ -207,7 +230,8 @@ _JAILBREAK_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
         "DIRECT_INSTRUCTION_OVERRIDE",
         re.compile(
             r"(?:"
-            r"\b(?:ignore|disregard|forget|bypass|override|skip|drop|cancel)\b[\s\w,/-]{0,40}\b(?:previous|prior|all|above|your|system|internal|trackflow|safety|security)\b[\s\w,/-]{0,25}\b(?:instructions?|rules?|prompts?|guidelines?|constraints?|directives?|restrictions?|guardrails?|filters?)\b"
+            r"\b(?:ignore|ignoring|disregard|forget|bypass|bypassing|override|overriding|skip|drop|cancel)\b[\s\w,/-]{0,45}\b(?:previous|prior|all|above|your|the|any|system|internal|trackflow|safety|security|privacy|confidentiality)\b[\s\w,/-]{0,30}\b(?:instructions?|rules?|prompts?|guidelines?|constraints?|directives?|restrictions?|guardrails?|filters?|checks?|controls?|policies|policy)\b"
+            r"|\b(?:ignore|disregard|forget|bypass|override|skip)\s+(?:the\s+|your\s+|all\s+)?(?:instructions?|rules?|restrictions?|guardrails?|filters?|privacy\s+restrictions?|security\s+controls?|authorization\s+checks?)\b"
             r"|\b(?:act|behave|respond|operate)\s+as\s+(?:an?\s+)?(?:assistant|ai|chatbot|agent|persona)\s+(?:with\s+no\s+rules|without\s+(?:any\s+)?(?:rules|restrictions|limits|guardrails|boundaries))\b"
             r"|\bno\s+rules\s+mode\b"
             r")",
@@ -218,9 +242,10 @@ _JAILBREAK_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
         "BILINGUAL_INSTRUCTION_OVERRIDE",
         re.compile(
             r"(?:"
-            r"\b(?:ignora|olvida|omite|desactiva|anula|elimina|salta(?:te)?)\b[\s\wáéíóúñ,/-]{0,40}\b(?:tus|las|todas|anteriores|previas|del\s+sistema)\b[\s\wáéíóúñ,/-]{0,25}\b(?:instrucciones|reglas|restricciones|directrices|normas|pol[ií]ticas|guardrails|filtros)\b"
-            r"|\b(?:act[uú]a|comp[oó]rtate|responde)\s+como\s+(?:un\s+)?(?:asistente|chatbot|ia|agente)\s+(?:libre\s+)?sin\s+(?:reglas|restricciones|l[ií]mites|normas)\b"
-            r"|\bolv[ií]date\s+de\s+tus\s+(?:reglas|instrucciones|restricciones)\b"
+            r"\b(?:ignora|ignores|ignorar|olvida|olvides|olvidar|omite|omitas|omitir|desactiva|desactives|desactivar|anula|anules|anular|elimina|elimines|salta(?:te)?|saltes|deja\s+de\s+lado|dejes\s+de\s+lado)\b[\s\wáéíóúñ,/-]{0,45}\b(?:tus|las|los|todas|todos|cualquier|anteriores|previas|del\s+sistema|de\s+privacidad|de\s+seguridad|de\s+trackflow)?\b[\s\wáéíóúñ,/-]{0,30}\b(?:instrucciones|reglas|restricciones|directrices|normas|pol[ií]ticas|guardrails|filtros|controles|l[ií]mites)\b"
+            r"|\b(?:act[uú]a|act[uú]es|comp[oó]rtate|comp[oó]rtes|responde|respondas)\s+como\s+(?:un\s+)?(?:asistente|chatbot|ia|agente)\s+(?:libre\s+)?sin\s+(?:reglas|restricciones|l[ií]mites|normas|filtros)\b"
+            r"|\bolv[ií]date\s+de\s+(?:tus|las)\s+(?:reglas|instrucciones|restricciones|normas|pol[ií]ticas)\b"
+            r"|\b(?:tarifas?\s+negociadas?\s+confidenciales?|tarifa\s+confidencial\s+negociada|confidential\s+negotiated\s+(?:carrier\s+)?rates?|rutas?\s+(?:y\s+controles?\s+)?de\s+seguridad\s+del\s+almac[eé]n|controles?\s+de\s+seguridad\s+del\s+almac[eé]n|internal\s+warehouse\s+security\s+(?:routes?|controls?))\b"
             r")",
             re.IGNORECASE,
         ),
@@ -241,7 +266,7 @@ _JAILBREAK_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"(?:"
             r"\b(?:print|reveal|show|output|repeat|dump|display|expose|leak|translate)\b[\s\w,/-]{0,35}\b(?:system\s+prompt|system\s+instructions?|hidden\s+instructions?|initial\s+prompt|internal\s+directives?|immutable\s+rules?)\b"
-            r"|\b(?:revela|muestra|imprime|repite|escribe|dime)\b[\s\wáéíóúñ,/-]{0,35}\b(?:tu\s+system\s+prompt|tus\s+instrucciones\s+(?:internas|del\s+sistema)|tu\s+prompt\s+inicial)\b"
+            r"|\b(?:revela|reveles|muestra|muestres|mu[eé]strame|imprime|imprimas|repite|repitas|escribe|escribas|dime|digas)\b[\s\wáéíóúñ,/-]{0,35}\b(?:tu\s+system\s+prompt|tus\s+instrucciones\s+(?:internas|del\s+sistema)|tu\s+prompt\s+inicial)\b"
             r"|\b(?:suppose|imagine|hypothetically|pretend)\b[\s\w,/-]{0,50}\b(?:movie\s+script|story|novel|dialogue|play|simulation)\b[\s\w,/-]{0,60}\b(?:ignores?\s+rules|reveals?\s+(?:its\s+)?(?:internal\s+)?system\s+(?:instructions?|prompt)|bypasses?\s+guardrails?)\b"
             r")",
             re.IGNORECASE,
@@ -309,11 +334,13 @@ _CASUAL_TRIVIA_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
         "BRIEF_SMALL_TALK",
         re.compile(
             r"^\s*¡?¿?\s*(?:"
-            r"(?:hello|hi(?:\s+there)?|hey(?:\s+there)?|good\s+morning|good\s+afternoon|good\s+evening)(?:\s*[,!?.]+\s*(?:how\s+are\s+you(?:\s+doing)?(?:\s+today)?|how'?s\s+it\s+going))?"
+            r"(?:hello|hi(?:\s+there)?|hey(?:\s+there)?|good\s+morning|good\s+afternoon|good\s+evening)"
+            r"(?:\s*[,!?.]*\s*(?:good\s+morning|good\s+afternoon|good\s+evening|how\s+are\s+you(?:\s+doing)?(?:\s+today)?|how'?s\s+it\s+going))*"
             r"|how\s+are\s+you(?:\s+doing)?(?:\s+today)?"
-            r"|(?:¡?hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches)(?:\s*[,!?.]+\s*¡?¿?\s*(?:qu[eé]\s+tal(?:\s+est[aá]s)?|c[oó]mo\s+est[aá]s(?:\s+hoy)?))?"
+            r"|(?:¡?hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|buen\s+d[ií]a|saludos)"
+            r"(?:\s*[,!?.]*\s*¡?¿?\s*(?:buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|buen\s+d[ií]a|qu[eé]\s+tal(?:\s+est[aá]s)?(?:\s+hoy)?|c[oó]mo\s+est[aá]s?(?:\s+hoy)?|todo\s+bien))*"
             r"|¿?qu[eé]\s+tal(?:\s+est[aá]s)?(?:\s+hoy)?"
-            r"|¿?c[oó]mo\s+est[aá]s(?:\s+hoy)?"
+            r"|¿?c[oó]mo\s+est[aá]s?(?:\s+hoy)?"
             r")\s*[!?.,]*\s*$",
             re.IGNORECASE,
         ),
@@ -521,8 +548,9 @@ _OPERATIONAL_LOGISTICS_ACTIONS: re.Pattern[str] = re.compile(
     r"|\b(?:tracking|rastreo|seguimiento)\s+(?:status|details|update|updates|history|info|information|link|de|del|para)\b"
     r"|\b(?:track|tracking|rastreo|rastrear|seguimiento)\s+(?:(?:my|the|this|your|our|mi|el|este|su|un)\s+)?(?:order|package|shipment|delivery|parcel|item|env[ií]o|pedido|paquete|(?:ORD|TRK|TF|INC)-\d+|#\d+)\b"
     r"|\b(?:where\s+is\s+(?:my\s+|the\s+|this\s+)?(?:order|package|shipment|delivery|parcel)|d[oó]nde\s+est[aá]\s+(?:mi\s+|el\s+|este\s+)?(?:pedido|paquete|env[ií]o|entrega))\b"
-    r"|\b(?:(?:order|tracking|shipment|delivery|package|parcel|env[ií]o|pedido|paquete)\s+(?:status|details|update|updates|summary|history))\b"
-    r"|\b(?:(?:status|tracking|details|update|updates|history)\s+(?:of|for|on)\s+(?:my\s+|the\s+|this\s+)?(?:order|package|shipment|delivery|parcel))\b"
+    r"|\b(?:(?:order|tracking|shipment|delivery|package|parcel|ticket|incident|env[ií]o|pedido|paquete|incidencia)\s+(?:status|details|update|updates|summary|history))\b"
+    r"|\b(?:(?:status|tracking|details|update|updates|history)\s+(?:of|for|on)\s+(?:my\s+|the\s+|this\s+)?(?:order|package|shipment|delivery|parcel|ticket|incident))\b"
+    r"|\b(?:ticket|incident|incidencia)\s+(?:INC-[A-Za-z0-9_-]+|inc_[A-Za-z0-9_-]+|TICKET-[A-Za-z0-9_-]+)\b"
     r"|\b(?:estado\s+(?:del?|de\s+mi|de\s+este)\s+(?:pedido|env[ií]o|paquete|entrega)|historial\s+de\s+(?:pedidos?|env[ií]os?|tracking))\b"
     r"|\b(?:cancel|canceling|cancelled|cancellation|cancelar|cancelaci[oó]n|anular|anulaci[oó]n)\s+(?:my\s+|the\s+|this\s+)?(?:order|shipment|delivery|pedido|env[ií]o|paquete)\b"
     r"|\b(?:return|returning|returned|devolver|devoluci[oó]n|refund|refunding|refunded|reembolso|reembolsar)\s+(?:my\s+|the\s+|this\s+)?(?:order|item|package|shipment|parcel|pedido|paquete|art[ií]culo|env[ií]o)\b"
@@ -611,9 +639,9 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"\b(?:trackflow|valentina\s+cruz|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|cx\s+team|customer\s+experience)\b"
     # Couriers and carriers (collocation required for polysemic 'carrier' and 'transportista')
     r"|\b(?:ups|fedex|dhl|mrw|seur|usps)\b"
-    r"|\b(?:(?:our|the|this|that|assigned|delivery|shipping|preferred|which|what)\s+carriers?|carriers?\s+(?:assigned|assignment|status|delay|delays|tracking|rates?|fee|fees|service|services|delivery|deliveries|delivers|pickup|partner|partners|contract))\b"
-    r"|\b(?:(?:nuestro|nuestros|el|los|un|qu[eé]|cu[aá]l)\s+transportistas?|transportistas?\s+(?:asignado|asignados|de|en|autorizado|autorizados|local|locales|entrega|reparto))\b"
-    r"|\b(?:empresa\s+de\s+mensajer[ií]a|servicio\s+de\s+mensajer[ií]a|mensajero\s+de\s+entrega)\b"
+    r"|\b(?:(?:our|the|this|that|assigned|delivery|shipping|preferred|which|what)\s+carriers?|carriers?\s+(?:assigned|assignment|status|delay|delays|tracking|rates?|fee|fees|service|services|delivery|deliveries|delivers|pickup|partner|partners|contract|operate|operating|in\s+los\s+angeles|in\s+zaragoza|in\s+spain|in\s+california))\b"
+    r"|\b(?:(?:nuestro|nuestros|el|los|un|qu[eé]|cu[aá]l|cu[aá]les)\s+transportistas?|transportistas?\s+(?:asignado|asignados|de|en|para|que\s+operan|trabaj[aá]is|trabajan|operan|autorizado|autorizados|local|locales|entrega|reparto|zaragoza|arag[oó]n|los\s+[aá]ngeles|espa[ñn]a))\b"
+    r"|\b(?:empresa\s+de\s+mensajer[ií]a|servicio\s+de\s+mensajer[ií]a|mensajero\s+de\s+entrega|reparto\s+en\s+(?:zaragoza|arag[oó]n|madrid|los\s+[aá]ngeles))\b"
     # Identifiers (excluding bare order/tracking IDs which are governed by has_order_boost)
     r"|\b(?:sku[-_]?[a-z0-9]+)\b"
     # Orders and tracking (collocation required for tracking/track to prevent polysemic leaks)
@@ -626,8 +654,9 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:recent|pending|past|open|new|completed|active|latest|prior|online|customer)\s+orders?\b"
     # Shipments and delivery (collocation required for transit/tránsito)
     r"|\b(?:shipment|shipments|shipping|ship|shipped|dispatch|dispatched|expedici[oó]n|expediciones|despacho|despachos)\b"
+    r"|\b(?:env[ií]os?\s+(?:est[aá]ndar|express|urgentes?|internacionales?|nacionales?|dom[eé]sticos?|a\s+domicilio|en\s+zaragoza|en\s+madrid|en\s+los\s+[aá]ngeles|en\s+espa[ñn]a)|(?:standard|express|international|domestic)\s+(?:shipping|delivery|shipments?|deliveries)|est[aá]ndar\s+(?:vs\.?|versus|o|y)\s+express|corredor\s+zaragoza[\s-]+madrid|tiempos?\s+de\s+(?:env[ií]o|entrega|tr[aá]nsito|reparto)|plazos?\s+de\s+(?:env[ií]o|entrega|devoluci[oó]n)|cu[aá]nto\s+tarda(?:n)?\s+(?:el\s+|los\s+|un\s+)?(?:env[ií]o|entrega|pedido|paquete))\b"
     r"|\b(?:(?:package|packages|parcel|parcels|shipment|shipments|delivery|deliveries|order|orders|cargo|freight|goods|item|items|paquete|paquetes|env[ií]o|env[ií]os|pedido|pedidos|mercanc[ií]a|mercanc[ií]as|bulto|bultos)\s+(?:(?:is|are|was|were|still|currently|ahora|est[aá]|est[aá]n)\s+)?(?:in\s+transit|en\s+tr[aá]nsito)|(?:in\s+transit|en\s+tr[aá]nsito)\s+(?:for\s+\d+|desde\s+hace\s+\d+|to\s+(?:our|the|your|customer|warehouse|hub|facility|destination|address|los\s+angeles|zaragoza|madrid)|hacia\s+(?:el\s+|la\s+|nuestro\s+|zaragoza|madrid|almac[eé]n))|transit\s+(?:time|times|delay|delays|status|hub|facility)|tiempo\s+de\s+tr[aá]nsito|tr[aá]nsito\s+del?\s+(?:env[ií]o|paquete|pedido))\b"
-    r"|\b(?:delivery|deliveries|deliver|delivered|entrega|entregas|entregar|entregado|entregada|entregados|entregadas)\b"
+    r"|\b(?:delivery|deliveries|deliver|delivered|entrega|entregas|entregar|entregado|entregada|entregados|entregadas|última\s+milla|ultima\s+milla|last[- ]mile)\b"
     # Packaging and physical goods (collocation required for package/paquete/box)
     r"|\b(?:(?:my|your|our|trackflow)\s+packages?|packages?\s+(?:tracking|status|delayed|lost|missing|damaged|delivery|deliveries|shipped|arrival|label|insurance|pickup|weight|dimensions|size|dispatched|arrived)|(?:track|tracking|ship|shipping|shipped|deliver|delivery|delivered|return|returning|returned|cancel|send|receive|received|dispatch|dispatched)\s+(?:the|this|that)\s+packages?|(?:the|this|that)\s+packages?\s+(?:arrived|was\s+delivered|is\s+delayed|is\s+lost|is\s+damaged|was\s+lost))\b"
     r"|\b(?:(?:mi|mis|nuestro|nuestros)\s+paquetes?|paquetes?\s+(?:perdido|perdidos|da[ñn]ado|da[ñn]ados|retrasado|retrasados|entregado|entregados|enviado|enviados|extraviado|extraviados|roto|rotos)|(?:rastrear|rastreo|enviar|enviado|entregar|entregado|devolver|recibir|recibido|despachar)\s+(?:el|los|este|ese)\s+paquetes?|(?:el|los|este)\s+paquetes?\s+(?:lleg[oó]|fue\s+entregado|est[aá]\s+retrasado|est[aá]\s+perdido|est[aá]\s+da[ñn]ado))\b"
@@ -657,11 +686,11 @@ _IN_DOMAIN_LOGISTICS_CUES: re.Pattern[str] = re.compile(
     r"|\b(?:(?:our|the|this|that|trackflow)\s+facilit(?:y|ies)|facilit(?:y|ies)\s+(?:location|address|hours|operations)|instalaci[oó]n\s+log[ií]stica|instalaciones\s+log[ií]sticas)\b"
     r"|\b(?:coverage|cobertura)\b"
     r"|\b(?:(?:trackflow|warehouse|product|item|sku|unit|units|current|available|catalog)\s+inventory|inventory\s+(?:level|levels|count|status|management|check|availability|shortage)|physical\s+inventory\s+(?:count|audit|check|in\s+(?:the\s+)?(?:warehouse|almac[eé]n|facility|hub|stock)))\b"
-    r"|\b(?:inventario\s+(?:actual|de\s+productos?|de\s+almac[eé]n|disponible|de\s+stock))\b"
+    r"|\b(?:inventario\s+(?:actual|de\s+productos?|de\s+almac[eé]n|disponible|de\s+stock|estancado|sin\s+movimiento|acumulado|en\s+zaragoza|en\s+los\s+[aá]ngeles)|180\s+d[ií]as(?:\s+sin\s+movimiento)?|recargo\s+(?:por\s+)?(?:inventario|almacenamiento))\b"
     r"|\b(?:(?:current|available|in|out\s+of)\s+stock|stock\s+(?:levels?|availability|check|shortage|status|in\s+[a-z]+)|(?:en\s+stock|sin\s+stock|nivel\s+de\s+stock))\b"
     r"|\b(?:existencias\s+(?:disponibles|actuales|en\s+almac[eé]n)|nivel\s+de\s+existencias)\b"
     r"|\b(?:sku|skus)\b"
-    r"|\b(?:(?:cold|pallet|warehouse|freight|cargo|package|logistics|inventory|temperature[- ]controlled)\s+storage|storage\s+(?:facility|facilities|capacity|fees?|costs?|rates?|conditions?|warehouse|requirements?)|almacenamiento\s+(?:en\s+fr[ií]o|log[ií]stico|de\s+(?:paquetes|carga|palets|mercanc[ií]as?|stock)))\b"
+    r"|\b(?:(?:cold|pallet|warehouse|freight|cargo|package|logistics|inventory|temperature[- ]controlled|monthly)\s+storage|storage\s+(?:facility|facilities|capacity|fees?|costs?|rates?|pricing|surcharge|discount|conditions?|warehouse|requirements?)|almacenamiento\s+(?:en\s+fr[ií]o|log[ií]stico|mensual|en\s+zaragoza|en\s+los\s+[aá]ngeles|por\s+metro\s+c[uú]bico|de\s+(?:paquetes|carga|palets|mercanc[ií]as?|stock|inventario))|(?:tarifas?|costes?|costos?|precios?)\s+de\s+(?:almacenamiento|almac[eé]n)|metro\s+c[uú]bico|metros\s+c[uú]bicos|\bm3\b|\bm³\b)\b"
     r"|\b(?:(?:cold[- ]chain|cadena\s+de\s+fr[ií]o)\s+(?:logistics|shipping|transport|transportation|freight|storage|shipments?|delivery|deliveries|packaging|sla|monitoring|protocol|protocols|solutions?|services?|log[ií]stica|transporte|almacenamiento|env[ií]os?|entrega|vacunas?|vaccines?)|(?:refrigerated|temperature[- ]controlled)\s+(?:freight|shipping|transport|storage|logistics|shipments?|facility|facilities|warehouse|trucks?|almac[eé]n|almacenamiento|transporte|env[ií]os?|carga)|(?:temperature\s+control|control\s+de\s+temperatura|temperature\s+monitoring|monitoreo\s+de\s+temperatura)\s+(?:requirement|requirements|sla|protocol|guidelines?|para\s+env[ií]os?|for\s+(?:perishable|food|vaccine|pharma|shipment|delivery))|(?:refrigeraci[oó]n|refrigerated)\s+(?:para\s+env[ií]os?|storage|facility|facilities)|dry\s+ice\s+(?:and\s+cold[- ]chain|shipping|packaging|for\s+(?:shipment|shipping|transport|pharmaceuticals))|hielo\s+seco\s+para\s+env[ií]os?)\b"
     # Colloquial customer queries
     r"|\bwhere\s+is\s+my\b"
@@ -1137,7 +1166,11 @@ _APPLY_US_POLICY_TO_ES_ORDER_PATTERN = re.compile(
 
 
 def extract_referenced_order_ids(text: str) -> List[str]:
-    """Extract normalized order/tracking IDs referenced in a text string."""
+    """Extract normalized customer order/tracking IDs referenced in a text string.
+
+    Excludes internal incident ticket identifiers (`INC-...`) and product SKU codes (`TF-1001`, `SKU-...`)
+    so read-only operational ticket/inventory tool lookups are not treated as customer order IDOR attempts.
+    """
     if not text:
         return []
     found: List[str] = []
@@ -1146,9 +1179,14 @@ def extract_referenced_order_ids(text: str) -> List[str]:
         for match in pattern.finditer(text):
             raw_id = match.group(1)
             norm = AuthenticatedSessionContext.normalize_order_id(raw_id)
-            if norm and norm not in seen:
-                seen.add(norm)
-                found.append(norm)
+            if not norm or norm in seen:
+                continue
+            if norm.startswith("INC-") or norm.startswith("INC_"):
+                continue
+            if re.search(rf"\bSKU\s*[:#-]?\s*{re.escape(norm)}\b", text, re.IGNORECASE):
+                continue
+            seen.add(norm)
+            found.append(norm)
     return found
 
 

@@ -36,6 +36,7 @@ from application.services.agent_guardrails import (
     InputGuardrailValidator,
     OutputGuardrailValidator,
     TwoTierContextSanitizer,
+    _is_spanish,
 )
 from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
@@ -130,7 +131,8 @@ _EXPLICIT_TICKET_ID_PATTERN = re.compile(
 )
 
 _GENERIC_TICKET_NUM_PATTERN = re.compile(
-    r"\b(?:ticket|incident)\s*(?:#|id|number)?\s*[:=]?\s*([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+)\b",
+    r"\b(?:ticket|incident|incidencia|pedido|order|env[ií]o|shipment|tracking|paquete|package)\s*(?:#|id|number|n[uú]mero)?\s*[:=#]?\s*#?([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+|\d{4,10})\b"
+    r"|#(\d{4,10})\b",
     re.IGNORECASE,
 )
 
@@ -145,7 +147,7 @@ _PRODUCT_ID_PATTERN = re.compile(
 )
 
 _TICKET_KEYWORDS_PATTERN = re.compile(
-    r"\b(?:tickets?|incidents?)\b",
+    r"\b(?:tickets?|incidents?|incidencias?)\b",
     re.IGNORECASE,
 )
 
@@ -156,8 +158,10 @@ _INVENTORY_KEYWORDS_PATTERN = re.compile(
 
 _POLICY_RAG_KEYWORDS_PATTERN = re.compile(
     r"\b(?:return\s+window|return\s+policy|returns?\s+policy|return\s+shipping|shipping\s+costs?|shipping\s+fees?|"
-    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|storage\s+rates?|storage\s+pricing|monthly\s+storage|"
-    r"pallet\s+rate|cubic\s+meter|storage\s+discount|discount\s+approval|miguel\s+torres|"
+    r"plazos?\s+de\s+devoluci[oó]n|pol[ií]tica\s+de\s+devoluci[oó]n|devoluciones|costes?\s+de\s+devoluci[oó]n|gastos?\s+de\s+devoluci[oó]n|"
+    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|env[ií]o\s+est[aá]ndar|env[ií]o\s+express|tiempos?\s+de\s+env[ií]o|"
+    r"storage\s+rates?|storage\s+pricing|monthly\s+storage|tarifas?\s+de\s+almacenamiento|almacenamiento\s+mensual|inventario\s+estancado|"
+    r"pallet\s+rate|cubic\s+meter|metro\s+c[uú]bico|storage\s+discount|discount\s+approval|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|"
     r"claims?\s+policy|damaged\s+or\s+lost|lost\s+item|reporting\s+window|company\s+policy|standard\s+policy|"
     r"onboarding|governance|who\s+covers|who\s+approves|pharmaceutical|refrigeration)\b",
     re.IGNORECASE,
@@ -226,7 +230,9 @@ def _extract_ticket_tool_input(query: str) -> TicketToolInput:
 
     generic_match = _GENERIC_TICKET_NUM_PATTERN.search(query)
     if generic_match:
-        return TicketToolInput(ticket_id=_normalize_ticket_id(generic_match.group(1)))
+        matched_id = generic_match.group(1) or generic_match.group(2)
+        if matched_id:
+            return TicketToolInput(ticket_id=_normalize_ticket_id(matched_id))
 
     lowered = query.lower()
 
@@ -1133,17 +1139,58 @@ def tool_fallback_node(state: AgentState) -> AgentState:
     }
 
 
-def _format_ticket_records_summary(output: TicketToolOutput) -> str:
+def _format_ticket_records_summary(
+    output: TicketToolOutput,
+    query: str = "",
+    language: str = "en",
+) -> str:
     """Format live TicketRecordDTO items into a grounded natural-language summary."""
+    use_es = _is_spanish(query, language)
+    is_incident_report = bool(
+        re.search(
+            r"\b(?:incidencia|reclamaci[oó]n|da[ñn]ad[oa]|perdid[oa]|extraviad[oa]|fallid[oa]|problema|report(?:ar)?|abrir)\b",
+            query or "",
+            re.IGNORECASE,
+        )
+    )
     records: List[TicketRecordDTO] = output.records
     if len(records) == 1:
         r = records[0]
+        if use_es:
+            base_es = (
+                f"El pedido/envío #{r.id} ('{r.title}') se encuentra actualmente con estado '{r.status}', "
+                f"categoría '{r.category}', origen '{r.origin}' y centro logístico '{r.branch}' "
+                f"(creado: {r.created_at}, última actualización: {r.updated_at}). "
+                f"Detalle operativo: {r.description}"
+            )
+            if is_incident_report:
+                return (
+                    f"{base_es} Para gestionar una incidencia de entrega sobre el pedido #{r.id} "
+                    f"(paquete dañado, retraso, entrega fallida o dirección incorrecta), TrackFlow "
+                    f"verifica la trazabilidad con el transportista asignado en {r.branch} ({r.origin}) "
+                    f"y coordina la reclamación o reexpedición conforme al SLA del país operativo ({r.origin}). "
+                    f"Indica por favor el motivo exacto de la incidencia para dejarla registrada con nuestro equipo de CX."
+                )
+            return base_es
         return (
             f"Support ticket {r.id} ('{r.title}') currently has status '{r.status}', "
             f"category '{r.category}', origin '{r.origin}', and branch '{r.branch}' "
             f"(created_at: {r.created_at}, updated_at: {r.updated_at}). "
             f"Description: {r.description}"
         )
+
+    if use_es:
+        header_es = (
+            f"Se encontraron {output.total_matched} registros operativos coincidentes "
+            f"(mostrando los {len(records)} más recientes):"
+        )
+        lines_es = [header_es]
+        for r in records:
+            lines_es.append(
+                f"- #{r.id} ('{r.title}'): estado='{r.status}', categoría='{r.category}', "
+                f"origen='{r.origin}', centro='{r.branch}', actualizado='{r.updated_at}'."
+            )
+        return "\n".join(lines_es)
 
     header = (
         f"Found {output.total_matched} matching support incident(s) "
@@ -1312,7 +1359,13 @@ def generation_node(
 
         if not pure_proposal_turn:
             if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
-                segments.append(_format_ticket_records_summary(ticket_out))
+                segments.append(
+                    _format_ticket_records_summary(
+                        ticket_out,
+                        query=query,
+                        language=language,
+                    )
+                )
 
             if inv_out is not None and inv_out.status == "success" and inv_out.records:
                 segments.append(_format_inventory_records_summary(inv_out))
