@@ -28,6 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -100,6 +101,29 @@ CANONICAL_SOURCE_ORDER: Sequence[str] = (
     "inventory_tool",
     "rag",
 )
+
+ALLOWED_CHECKPOINT_MSGPACK_MODULES: Tuple[Tuple[str, str], ...] = (
+    ("domain.agent.entities", "TicketToolInput"),
+    ("domain.agent.entities", "TicketRecordDTO"),
+    ("domain.agent.entities", "TicketToolOutput"),
+    ("domain.agent.entities", "InventoryToolInput"),
+    ("domain.agent.entities", "InventoryRecordDTO"),
+    ("domain.agent.entities", "InventoryToolOutput"),
+    ("domain.agent.entities", "AuthenticatedSessionContext"),
+    ("domain.agent.entities", "GuardrailAuditEvent"),
+    ("domain.agent.entities", "GuardrailEvaluationResult"),
+    ("domain.agent.entities", "MemoryProposal"),
+    ("domain.knowledge.entities", "KnowledgeChunk"),
+    ("domain.knowledge.entities", "RetrievedContext"),
+    ("domain.knowledge.entities", "SourceCitation"),
+)
+
+
+def build_agent_checkpoint_serializer() -> JsonPlusSerializer:
+    """Return a JsonPlusSerializer configured with the explicit allowlist of TrackFlow AgentState domain entities."""
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=list(ALLOWED_CHECKPOINT_MSGPACK_MODULES)
+    )
 
 READ_ONLY_MUTATION_REFUSAL_MESSAGE = (
     "TrackFlow Support Agent operational tools are strictly read-only. "
@@ -1146,10 +1170,23 @@ def _format_ticket_records_summary(
 ) -> str:
     """Format live TicketRecordDTO items into a grounded natural-language summary."""
     use_es = _is_spanish(query, language)
+    query_text = query or ""
     is_incident_report = bool(
         re.search(
-            r"\b(?:incidencia|reclamaci[oó]n|da[ñn]ad[oa]|perdid[oa]|extraviad[oa]|fallid[oa]|problema|report(?:ar)?|abrir)\b",
-            query or "",
+            r"\b(?:incidencia|reclamaci[oó]n|da[ñn]ad[oa]|perdid[oa]|extraviad[oa]|fallid[oa]|problema|report(?:ar)?|abrir|"
+            r"incident|claim|damaged|lost|missing|failed|open\s+an?\s+incident)\b"
+            r"|\bno\s+(?:he\s+recibido|ha\s+llegado|llega|me\s+ha\s+llegado)\b"
+            r"|\b(?:not\s+received|hasn'?t\s+arrived|never\s+arrived)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
+    claims_delivered_but_missing = bool(
+        re.search(
+            r"\b(?:aparece\s+como\s+entregad[oa]|marcad[oa]\s+como\s+entregad[oa]|dice\s+entregad[oa]|consta\s+como\s+entregad[oa]|"
+            r"entregad[oa]\s+pero\s+no|no\s+he\s+recibido|no\s+ha\s+llegado|no\s+me\s+ha\s+llegado|"
+            r"marked\s+as\s+delivered|shows?\s+(?:as\s+)?delivered|appears?\s+(?:as\s+)?delivered|delivered\s+but\s+(?:not|never)|not\s+received)\b",
+            query_text,
             re.IGNORECASE,
         )
     )
@@ -1163,21 +1200,49 @@ def _format_ticket_records_summary(
                 f"(creado: {r.created_at}, última actualización: {r.updated_at}). "
                 f"Detalle operativo: {r.description}"
             )
-            if is_incident_report:
-                return (
-                    f"{base_es} Para gestionar una incidencia de entrega sobre el pedido #{r.id} "
-                    f"(paquete dañado, retraso, entrega fallida o dirección incorrecta), TrackFlow "
-                    f"verifica la trazabilidad con el transportista asignado en {r.branch} ({r.origin}) "
-                    f"y coordina la reclamación o reexpedición conforme al SLA del país operativo ({r.origin}). "
-                    f"Indica por favor el motivo exacto de la incidencia para dejarla registrada con nuestro equipo de CX."
+            if is_incident_report or claims_delivered_but_missing:
+                discrepancy_es = ""
+                if claims_delivered_but_missing and r.status == "in_progress":
+                    discrepancy_es = (
+                        f" Aclaración de discrepancia de estado: aunque indicas que el pedido #{r.id} figura como entregado "
+                        f"o no ha sido recibido, en el sistema operativo de TrackFlow aún consta con estado activo '{r.status}' "
+                        f"(en tránsito desde el centro logístico de {r.branch}, {r.origin}), lo que puede deberse a un "
+                        f"escaneo prematuro del transportista o entrega pendiente en la ventana de 24-48h."
+                    )
+                procedure_es = (
+                    f" Procedimiento paso a paso para abrir y registrar una incidencia de entrega sobre el pedido #{r.id}: "
+                    f"(1) Verificación de trazabilidad y POD: comprobamos el tracking activo de #{r.id} con el transportista "
+                    f"asignado en {r.branch} ({r.origin}) para auditar el albarán/escaneo de entrega; "
+                    f"(2) Datos requeridos para el registro: confirma el motivo exacto (escaneo de entrega erróneo / paquete no recibido, "
+                    f"daño físico, retraso o dirección incorrecta) junto con la dirección y teléfono de contacto; "
+                    f"(3) Apertura y SLA de resolución: nuestro equipo de CX registra formalmente la reclamación vinculada al pedido "
+                    f"#{r.id} ante el transportista en {r.branch} ({r.origin}) para activar la investigación prioritaria o reexpedición según el SLA operativo."
                 )
+                return f"{base_es}{discrepancy_es}{procedure_es}"
             return base_es
-        return (
+
+        base_en = (
             f"Support ticket {r.id} ('{r.title}') currently has status '{r.status}', "
             f"category '{r.category}', origin '{r.origin}', and branch '{r.branch}' "
             f"(created_at: {r.created_at}, updated_at: {r.updated_at}). "
             f"Description: {r.description}"
         )
+        if is_incident_report or claims_delivered_but_missing:
+            discrepancy_en = ""
+            if claims_delivered_but_missing and r.status == "in_progress":
+                discrepancy_en = (
+                    f" Status discrepancy clarification: although you reported order #{r.id} as delivered or missing, "
+                    f"TrackFlow's live operational record currently shows status '{r.status}' (in transit from "
+                    f"{r.branch}, {r.origin}), which may indicate a premature carrier scan while still within the delivery window."
+                )
+            procedure_en = (
+                f" Step-by-step procedure to open and register a delivery incident for order #{r.id}: "
+                f"(1) Tracking & POD verification: we audit the live carrier tracking and proof-of-delivery scan in {r.branch} ({r.origin}); "
+                f"(2) Required claim details: confirm the exact incident reason (erroneous delivery scan / missing parcel, physical damage, delay, or wrong address) and recipient contact details; "
+                f"(3) Ticket registration & resolution SLA: our CX team formally logs the incident claim linked to #{r.id} with the assigned carrier in {r.branch} ({r.origin}) to trigger investigation or reshipment."
+            )
+            return f"{base_en}{discrepancy_en}{procedure_en}"
+        return base_en
 
     if use_es:
         header_es = (
@@ -2008,7 +2073,11 @@ def build_support_agent_graph(
     observability: Optional[GuardrailObservabilityPort] = None,
 ) -> CompiledStateGraph:
     """Assemble, validate, and compile the 7-node TrackFlow Support Agent LangGraph state machine."""
-    resolved_checkpointer = checkpointer if checkpointer is not None else MemorySaver()
+    resolved_checkpointer = (
+        checkpointer
+        if checkpointer is not None
+        else MemorySaver(serde=build_agent_checkpoint_serializer())
+    )
     if ticket_tool is None:
         from infrastructure.adapters.mcp_ticket_tool_adapter import (
             McpTicketToolAdapter,

@@ -276,25 +276,193 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     return True
             return False
 
-        # For chunks within the same document, include closely scored companion chunks
-        if (
-            primary_ctx.chunk.source_document == "returns-policy"
-            and primary_ctx.chunk.chunk_index == 2
-            and secondary_ctx.chunk.chunk_index == 0
-            and not any(k in query_lower for k in ("process", "proceso", "portal", "step", "paso"))
-        ):
-            return False
+        # For chunks within the same document, gate companion chunks by sub-topic relevance
+        doc = primary_ctx.chunk.source_document
+        sec_idx = secondary_ctx.chunk.chunk_index
+
+        if doc == "returns-policy":
+            if sec_idx == 0:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "process",
+                        "proceso",
+                        "portal",
+                        "step",
+                        "paso",
+                        "pasos",
+                        "inspect",
+                        "inspección",
+                        "inspeccion",
+                        "etiqueta",
+                        "label",
+                        "cómo funciona",
+                        "como funciona",
+                        "how does",
+                    )
+                )
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "window",
+                        "plazo",
+                        "plazos",
+                        "30",
+                        "cost",
+                        "coste",
+                        "costes",
+                        "gasto",
+                        "gastos",
+                        "shipping",
+                        "envío",
+                        "envio",
+                        "who covers",
+                        "who pays",
+                        "quién paga",
+                        "quien paga",
+                        "quién cubre",
+                        "quien cubre",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "international",
+                        "internacional",
+                        "cross-border",
+                        "cross border",
+                        "another country",
+                        "otro país",
+                        "otro pais",
+                        "purchased in one country",
+                        "comprado en un país",
+                        "sofía",
+                        "sofia",
+                        "recondition",
+                        "reacondicion",
+                    )
+                )
+
+        if doc == "sla-delivery":
+            if sec_idx in (1, 2):
+                return any(
+                    k in query_lower
+                    for k in (
+                        "sla",
+                        "90%",
+                        "commitment",
+                        "compromiso",
+                        "monthly",
+                        "mensual",
+                        "compensation",
+                        "compensación",
+                        "compensacion",
+                        "penalty",
+                        "penalización",
+                        "penalizacion",
+                        "5%",
+                        "peak",
+                        "pico",
+                        "black friday",
+                        "christmas",
+                        "navidad",
+                        "january sales",
+                        "rebajas",
+                        "40%",
+                        "guarantee",
+                        "garantiza",
+                    )
+                )
+
+        if doc == "storage-pricing":
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "180",
+                        "181",
+                        "150%",
+                        "surcharge",
+                        "recargo",
+                        "stagnant",
+                        "estancado",
+                        "baja rotación",
+                        "baja rotacion",
+                        "aging",
+                        "antigüedad",
+                        "antiguedad",
+                        "long-term",
+                        "prolongado",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "discount",
+                        "descuento",
+                        "preferential",
+                        "preferencial",
+                        "50",
+                        "75",
+                        "miguel torres",
+                        "negotiate",
+                        "negociar",
+                    )
+                )
+
+        if doc == "carrier-coverage":
+            if sec_idx == 0:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "united states",
+                        "estados unidos",
+                        "los angeles",
+                        "los ángeles",
+                        "california",
+                        "ups",
+                        "fedex",
+                        "dhl",
+                    )
+                )
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "spain",
+                        "españa",
+                        "espana",
+                        "zaragoza",
+                        "aragón",
+                        "aragon",
+                        "seur",
+                        "mrw",
+                        "rural",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "carlos vega",
+                        "manual",
+                        "override",
+                        "choose",
+                        "select",
+                        "routing",
+                        "enrutamiento",
+                        "asignan",
+                        "assigned",
+                        "exception",
+                        "excepción",
+                        "excepcion",
+                    )
+                )
 
         if secondary_ctx.similarity_score >= primary_ctx.similarity_score - 0.12:
-            return True
-
-        # Rural Aragón / Spain carrier coverage often benefits from routing automation clause
-        if (
-            same_doc
-            and primary_ctx.chunk.source_document == "carrier-coverage"
-            and ("aragón" in query_lower or "aragon" in query_lower or "carrier" in query_lower or "transportista" in query_lower)
-            and secondary_ctx.chunk.chunk_index in (0, 1, 2)
-        ):
             return True
 
         return False

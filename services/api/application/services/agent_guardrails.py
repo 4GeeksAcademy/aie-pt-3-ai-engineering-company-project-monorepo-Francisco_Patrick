@@ -154,7 +154,10 @@ _SPANISH_INDICATOR_PATTERN = re.compile(
 _ENGLISH_INDICATOR_PATTERN = re.compile(
     r"\b(?:what|where|when|how|which|who|why|please|can\s+you|could\s+you|would\s+you|tell\s+me|"
     r"ignore|disregard|suppose|imagine|explain|write|shipping|delivery|return|returns|order|shipment|"
-    r"package|carrier|warehouse|weather|history|movie|script|packets|protocols)\b",
+    r"package|carrier|warehouse|weather|history|movie|script|packets|protocols|"
+    r"enter|print|reveal|show|output|repeat|dump|display|expose|leak|translate|disable|enable|"
+    r"bypass|override|act|behave|respond|pretend|roleplay|simulate|developer|debug|mode|system|"
+    r"prompt|instructions|rules|restrictions|guardrails|filters|authorization|your|all|full|from|with|without)\b",
     re.IGNORECASE,
 )
 
@@ -961,6 +964,16 @@ class InputGuardrailValidator(InputGuardrailPort):
                     reason_code == "BRIEF_SMALL_TALK"
                     or "trackflow" not in cleaned.lower()
                 ):
+                    sub_category = (
+                        "casual_greeting"
+                        if reason_code == "BRIEF_SMALL_TALK"
+                        else "general_logistics_trivia"
+                    )
+                    sub_reason_code = (
+                        "CASUAL_GREETING_MANDATORY_REDIRECT"
+                        if reason_code == "BRIEF_SMALL_TALK"
+                        else "GENERAL_LOGISTICS_TRIVIA_REDIRECT"
+                    )
                     return GuardrailEvaluationResult(
                         layer="input_guard",
                         action="redirect",
@@ -969,6 +982,10 @@ class InputGuardrailValidator(InputGuardrailPort):
                         input_category="casual_trivia",
                         reason_code="CASUAL_TRIVIA_MANDATORY_REDIRECT",
                         message=build_casual_trivia_response(cleaned, language=language),
+                        metadata={
+                            "sub_category": sub_category,
+                            "sub_reason_code": sub_reason_code,
+                        },
                     )
 
         # 5. Tier 5: Operational In-Domain Logistics Validation (FR-005, AC-6 multi-turn continuity)
