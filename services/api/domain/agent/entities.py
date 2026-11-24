@@ -48,6 +48,22 @@ GuardrailInputCategory = Literal[
 ]
 CustomerSegment = Literal["B2B", "B2C"]
 OperatingCountry = Literal["US", "ES"]
+ChatTurnRole = Literal["user", "assistant"]
+ChatTurnStatus = Literal["streaming", "completed", "interrupted", "error"]
+ChatInterruptedReason = Literal[
+    "client_interrupt",
+    "redirect_new_message",
+    "client_disconnect",
+]
+AgentChatEventName = Literal[
+    "session_rehydrated",
+    "generation_started",
+    "token_chunk",
+    "generation_interrupted",
+    "generation_completed",
+    "error",
+    "pong",
+]
 
 
 def _parse_iso_datetime(val: Any) -> datetime:
@@ -688,7 +704,284 @@ class AgentTrace:
     checkpoints: List[AgentCheckpoint] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ChatMessage:
+    """Represents a single user or assistant turn within a ChatThreadState timeline (FR-006..FR-010, FR-012)."""
+
+    turn_id: str
+    thread_id: str
+    session_id: str
+    role: ChatTurnRole
+    content: str
+    status: ChatTurnStatus = "completed"
+    parent_user_turn_id: Optional[str] = None
+    interrupted_reason: Optional[ChatInterruptedReason] = None
+    is_refusal: bool = False
+    fallback_triggered: bool = False
+    trace_id: Optional[str] = None
+    node_sequence: List[str] = field(default_factory=list)
+    execution_time_ms: float = 0.0
+    sources: List[SourceCitation] = field(default_factory=list)
+    sources_consulted: List[str] = field(default_factory=list)
+    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    memory_proposal: Optional[MemoryProposal] = None
+    recalled_memories: List[str] = field(default_factory=list)
+    guardrail_interventions: List[GuardrailAuditEvent] = field(default_factory=list)
+    resolved_country: Optional[OperatingCountry] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize ChatMessage to a JSON-compatible dictionary."""
+        return {
+            "turn_id": self.turn_id,
+            "thread_id": self.thread_id,
+            "session_id": self.session_id,
+            "role": self.role,
+            "content": self.content,
+            "status": self.status,
+            "parent_user_turn_id": self.parent_user_turn_id,
+            "interrupted_reason": self.interrupted_reason,
+            "is_refusal": bool(self.is_refusal),
+            "fallback_triggered": bool(self.fallback_triggered),
+            "trace_id": self.trace_id,
+            "node_sequence": list(self.node_sequence),
+            "execution_time_ms": round(float(self.execution_time_ms), 3),
+            "sources": [
+                {
+                    "source_document": s.source_document,
+                    "section": s.section,
+                    "similarity_score": round(float(s.similarity_score), 4),
+                }
+                for s in self.sources
+            ],
+            "sources_consulted": list(self.sources_consulted),
+            "tool_calls": [dict(tc) for tc in self.tool_calls],
+            "memory_proposal": (
+                self.memory_proposal.to_dict()
+                if self.memory_proposal is not None
+                else None
+            ),
+            "recalled_memories": list(self.recalled_memories),
+            "guardrail_interventions": [
+                ev.to_dict() if hasattr(ev, "to_dict") else dict(ev)
+                for ev in self.guardrail_interventions
+            ],
+            "resolved_country": self.resolved_country,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChatMessage":
+        """Reconstruct a ChatMessage from a persisted dictionary."""
+        raw_sources = data.get("sources") or []
+        sources: List[SourceCitation] = []
+        for s in raw_sources:
+            if isinstance(s, SourceCitation):
+                sources.append(s)
+            elif isinstance(s, dict):
+                sources.append(
+                    SourceCitation(
+                        source_document=str(s.get("source_document") or ""),
+                        section=str(s.get("section") or ""),
+                        similarity_score=float(s.get("similarity_score", 0.0)),
+                    )
+                )
+
+        raw_proposal = data.get("memory_proposal")
+        memory_proposal: Optional[MemoryProposal] = None
+        if isinstance(raw_proposal, MemoryProposal):
+            memory_proposal = raw_proposal
+        elif isinstance(raw_proposal, dict) and raw_proposal.get("proposal_id"):
+            memory_proposal = MemoryProposal.from_dict(raw_proposal)
+
+        raw_interventions = data.get("guardrail_interventions") or []
+        interventions: List[GuardrailAuditEvent] = []
+        for ev in raw_interventions:
+            if isinstance(ev, GuardrailAuditEvent):
+                interventions.append(ev)
+            elif isinstance(ev, dict) and ev.get("event_id"):
+                interventions.append(
+                    GuardrailAuditEvent(
+                        event_id=str(ev["event_id"]),
+                        timestamp=_parse_iso_datetime(ev.get("timestamp")),
+                        session_id=str(ev.get("session_id") or ""),
+                        failure_type=ev.get("failure_type", "content"),
+                        layer=ev.get("layer", "input_guard"),
+                        input_category=ev.get("input_category", "out_of_domain"),
+                        reason_code=str(ev.get("reason_code") or ""),
+                        disposition=ev.get("disposition", "blocked"),
+                        redacted_preview=str(ev.get("redacted_preview") or ""),
+                        trace_id=ev.get("trace_id"),
+                        metadata=dict(ev.get("metadata") or {}),
+                    )
+                )
+
+        resolved_country_raw = data.get("resolved_country")
+        resolved_country: Optional[OperatingCountry] = (
+            resolved_country_raw if resolved_country_raw in ("US", "ES") else None
+        )
+        interrupted_reason_raw = data.get("interrupted_reason")
+        interrupted_reason: Optional[ChatInterruptedReason] = (
+            interrupted_reason_raw
+            if interrupted_reason_raw
+            in ("client_interrupt", "redirect_new_message", "client_disconnect")
+            else None
+        )
+
+        return cls(
+            turn_id=str(data["turn_id"]),
+            thread_id=str(data["thread_id"]),
+            session_id=str(data.get("session_id") or data["thread_id"]),
+            role=data.get("role", "assistant"),
+            content=str(data.get("content") or ""),
+            status=data.get("status", "completed"),
+            parent_user_turn_id=data.get("parent_user_turn_id"),
+            interrupted_reason=interrupted_reason,
+            is_refusal=bool(data.get("is_refusal", False)),
+            fallback_triggered=bool(data.get("fallback_triggered", False)),
+            trace_id=data.get("trace_id"),
+            node_sequence=[str(n) for n in (data.get("node_sequence") or [])],
+            execution_time_ms=float(data.get("execution_time_ms", 0.0)),
+            sources=sources,
+            sources_consulted=[str(sc) for sc in (data.get("sources_consulted") or [])],
+            tool_calls=[
+                dict(tc) for tc in (data.get("tool_calls") or []) if isinstance(tc, dict)
+            ],
+            memory_proposal=memory_proposal,
+            recalled_memories=[str(m) for m in (data.get("recalled_memories") or [])],
+            guardrail_interventions=interventions,
+            resolved_country=resolved_country,
+            created_at=_parse_iso_datetime(data.get("created_at")),
+            updated_at=_parse_iso_datetime(data.get("updated_at")),
+        )
+
+
+@dataclass(frozen=True)
+class ChatThreadState:
+    """Represents a persistent, multi-turn TrackFlow support agent conversation bound to an authenticated operator (FR-003, FR-012)."""
+
+    thread_id: str
+    session_id: str
+    owner_user_id: str
+    owner_email: Optional[str] = None
+    messages: List[ChatMessage] = field(default_factory=list)
+    pending_proposal: Optional[MemoryProposal] = None
+    session_context: Optional[AuthenticatedSessionContext] = None
+    latest_checkpoint_id: Optional[str] = None
+    latest_sequence_id: int = 0
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize ChatThreadState to a JSON-compatible dictionary."""
+        return {
+            "thread_id": self.thread_id,
+            "session_id": self.session_id,
+            "owner_user_id": self.owner_user_id,
+            "owner_email": self.owner_email,
+            "messages": [m.to_dict() for m in self.messages],
+            "pending_proposal": (
+                self.pending_proposal.to_dict()
+                if self.pending_proposal is not None
+                else None
+            ),
+            "session_context": (
+                self.session_context.to_dict()
+                if self.session_context is not None
+                else None
+            ),
+            "latest_checkpoint_id": self.latest_checkpoint_id,
+            "latest_sequence_id": int(self.latest_sequence_id),
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChatThreadState":
+        """Reconstruct a ChatThreadState from a persisted dictionary."""
+        raw_messages = data.get("messages") or []
+        messages = [
+            m if isinstance(m, ChatMessage) else ChatMessage.from_dict(dict(m))
+            for m in raw_messages
+            if isinstance(m, (ChatMessage, dict))
+        ]
+        raw_pending = data.get("pending_proposal")
+        pending_proposal: Optional[MemoryProposal] = None
+        if isinstance(raw_pending, MemoryProposal):
+            pending_proposal = raw_pending
+        elif isinstance(raw_pending, dict) and raw_pending.get("proposal_id"):
+            pending_proposal = MemoryProposal.from_dict(raw_pending)
+
+        raw_session_ctx = data.get("session_context")
+        session_context: Optional[AuthenticatedSessionContext] = None
+        if isinstance(raw_session_ctx, AuthenticatedSessionContext):
+            session_context = raw_session_ctx
+        elif isinstance(raw_session_ctx, dict) and raw_session_ctx.get("session_id"):
+            session_context = AuthenticatedSessionContext(
+                session_id=str(raw_session_ctx["session_id"]),
+                customer_id=str(raw_session_ctx.get("customer_id") or "default"),
+                customer_segment=raw_session_ctx.get("customer_segment", "B2C"),
+                primary_operating_country=raw_session_ctx.get(
+                    "primary_operating_country", "US"
+                ),
+                authorized_order_ids=tuple(
+                    str(x) for x in (raw_session_ctx.get("authorized_order_ids") or [])
+                ),
+                order_country_map=dict(raw_session_ctx.get("order_country_map") or {}),
+            )
+
+        thread_id = str(data["thread_id"])
+        return cls(
+            thread_id=thread_id,
+            session_id=str(data.get("session_id") or thread_id),
+            owner_user_id=str(data["owner_user_id"]),
+            owner_email=data.get("owner_email"),
+            messages=messages,
+            pending_proposal=pending_proposal,
+            session_context=session_context,
+            latest_checkpoint_id=data.get("latest_checkpoint_id"),
+            latest_sequence_id=int(data.get("latest_sequence_id", 0)),
+            created_at=_parse_iso_datetime(data.get("created_at")),
+            updated_at=_parse_iso_datetime(data.get("updated_at")),
+        )
+
+
+@dataclass(frozen=True)
+class AgentChatStreamEvent:
+    """Structured pub/sub & WebSocket event envelope emitted on a conversation thread channel (FR-004, FR-005)."""
+
+    event: AgentChatEventName
+    thread_id: str
+    session_id: str
+    sequence_id: int
+    payload: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_frame_dict(self) -> Dict[str, Any]:
+        """Serialize event into a flat discriminated WebSocket frame dictionary."""
+        ts_iso = (
+            self.timestamp.isoformat().replace("+00:00", "Z")
+            if self.timestamp.tzinfo is not None
+            else f"{self.timestamp.isoformat()}Z"
+        )
+        base: Dict[str, Any] = {
+            "event": self.event,
+            "thread_id": self.thread_id,
+            "session_id": self.session_id,
+        }
+        for key, val in self.payload.items():
+            if key not in ("event", "thread_id", "session_id", "sequence_id", "timestamp"):
+                base[key] = val
+        base["sequence_id"] = int(self.sequence_id)
+        base["timestamp"] = ts_iso
+        return base
+
+
 __all__ = [
+    "AgentChatEventName",
+    "AgentChatStreamEvent",
     "AgentCheckpoint",
     "AgentQueryRequest",
     "AgentQueryResult",
@@ -696,6 +989,11 @@ __all__ = [
     "AgentTrace",
     "AuditEventType",
     "AuthenticatedSessionContext",
+    "ChatInterruptedReason",
+    "ChatMessage",
+    "ChatThreadState",
+    "ChatTurnRole",
+    "ChatTurnStatus",
     "ConsolidatedCarrierProfile",
     "CustomerSegment",
     "GuardrailAction",

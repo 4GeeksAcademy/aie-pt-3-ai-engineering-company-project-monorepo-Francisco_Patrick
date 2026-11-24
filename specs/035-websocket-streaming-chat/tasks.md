@@ -31,8 +31,8 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 **Purpose**: Shared TypeScript DTO contracts across `@repo/shared-types` and initial module scaffolding for the WebSocket chat broker, TinyDB thread persistence adapter, and backoffice chat client.
 
-- [ ] T001 [P] Extend shared TypeScript contracts with Support Agent WebSocket chat DTOs (`ChatTurnRole`, `ChatTurnStatus`, `ChatInterruptedReason`, `WebSocketChatConnectionStatus`, `ChatMessageDTO`, `ChatThreadHistoryResponseDTO`, discriminated `AgentChatStreamEventDTO` union, discriminated `AgentChatClientCommandDTO` union, and `AgentQueryResponseDTO`) in `packages/shared/types/knowledge.ts`
-- [ ] T002 [P] Export all new Support Agent WebSocket chat DTOs from the `@repo/shared-types` package entrypoint in `packages/shared/index.ts`
+- [X] T001 [P] Extend shared TypeScript contracts with Support Agent WebSocket chat DTOs (`ChatTurnRole`, `ChatTurnStatus`, `ChatInterruptedReason`, `WebSocketChatConnectionStatus`, `ChatMessageDTO`, `ChatThreadHistoryResponseDTO`, discriminated `AgentChatStreamEventDTO` union, discriminated `AgentChatClientCommandDTO` union, and `AgentQueryResponseDTO`) in `packages/shared/types/knowledge.ts`
+- [X] T002 [P] Export all new Support Agent WebSocket chat DTOs from the `@repo/shared-types` package entrypoint in `packages/shared/index.ts`
 
 ---
 
@@ -42,12 +42,12 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Define `ChatTurnRole`, `ChatTurnStatus`, `ChatInterruptedReason`, `ChatMessage`, `ChatThreadState`, and `AgentChatStreamEvent` domain value objects and entities in `services/api/domain/agent/entities.py`
-- [ ] T004 Define abstract `AgentChatThreadRepositoryPort` and `AgentChatEventBrokerPort` interfaces in `services/api/domain/agent/ports.py`
-- [ ] T005 [P] Implement thread-safe `TinyDBAgentChatThreadRepository` adapter (`get_thread`, `save_thread`, `append_or_update_message`, `list_threads_by_owner`, `clear`) in `services/api/infrastructure/adapters/tinydb_chat_thread_repository.py`
-- [ ] T006 [P] Implement async-safe and thread-safe `AgentChatEventBroker` (`subscribe`, `unsubscribe`, `publish`, `register_generation_task`, `abort_active_generation`, `is_generating`, `get_subscriber_count`) in `services/api/infrastructure/messaging/agent_chat_event_broker.py`
-- [ ] T007 [P] Define Pydantic request/response and discriminated WebSocket frame schemas (`ChatMessageSchema`, `ChatThreadHistoryResponseSchema`, `ServerSessionRehydratedEventSchema`, `ServerGenerationStartedEventSchema`, `ServerTokenChunkEventSchema`, `ServerGenerationInterruptedEventSchema`, `ServerGenerationCompletedEventSchema`, `ServerErrorEventSchema`, `ServerPongEventSchema`, and client command schemas) in `services/api/presentation/schemas/agent.py`
-- [ ] T008 Register singleton and FastAPI `Depends` providers (`get_agent_chat_thread_repository_dep`, `get_agent_chat_event_broker_dep`) and wire them into `get_support_agent_service_dep` in `services/api/presentation/dependencies.py`
+- [X] T003 Define `ChatTurnRole`, `ChatTurnStatus`, `ChatInterruptedReason`, `ChatMessage`, `ChatThreadState`, and `AgentChatStreamEvent` domain value objects and entities in `services/api/domain/agent/entities.py`
+- [X] T004 Define abstract `AgentChatThreadRepositoryPort` and `AgentChatEventBrokerPort` interfaces in `services/api/domain/agent/ports.py`
+- [X] T005 [P] Implement thread-safe `TinyDBAgentChatThreadRepository` adapter (`get_thread`, `save_thread`, `append_or_update_message`, `list_threads_by_owner`, `clear`) in `services/api/infrastructure/adapters/tinydb_chat_thread_repository.py`
+- [X] T006 [P] Implement async-safe and thread-safe `AgentChatEventBroker` (`subscribe`, `unsubscribe`, `publish`, `register_generation_task`, `abort_active_generation`, `is_generating`, `get_subscriber_count`) in `services/api/infrastructure/messaging/agent_chat_event_broker.py`
+- [X] T007 [P] Define Pydantic request/response and discriminated WebSocket frame schemas (`ChatMessageSchema`, `ChatThreadHistoryResponseSchema`, `ServerSessionRehydratedEventSchema`, `ServerGenerationStartedEventSchema`, `ServerTokenChunkEventSchema`, `ServerGenerationInterruptedEventSchema`, `ServerGenerationCompletedEventSchema`, `ServerErrorEventSchema`, `ServerPongEventSchema`, and client command schemas) in `services/api/presentation/schemas/agent.py`
+- [X] T008 Register singleton and FastAPI `Depends` providers (`get_agent_chat_thread_repository_dep`, `get_agent_chat_event_broker_dep`) and wire them into `get_support_agent_service_dep` in `services/api/presentation/dependencies.py`
 
 **Checkpoint**: Foundation ready — domain ports, TinyDB persistence adapter, pub/sub broker, schemas, and DI providers are in place for user story implementation.
 
@@ -61,17 +61,17 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Add backend integration tests for sequential `token_chunk` streaming, pre-stream input/auth guardrails, post-stream Layer 4 output guardrail validation, and `generation_completed` metadata (`sources`, `sources_consulted`, `tool_calls`, `memory_proposal`, `guardrail_interventions`, `trace_id`) in `services/api/tests/test_websocket_streaming_chat.py`
-- [ ] T010 [P] [US1] Add frontend unit tests for `token_chunk` frame parsing, progressive token accumulation in the active assistant bubble, and transition to `completed` with citations and tool badges in `uis/backoffice/__tests__/supportAgentChat.test.ts`
+- [X] T009 [P] [US1] Add backend integration tests for sequential `token_chunk` streaming, pre-stream input/auth guardrails, post-stream Layer 4 output guardrail validation, and `generation_completed` metadata (`sources`, `sources_consulted`, `tool_calls`, `memory_proposal`, `guardrail_interventions`, `trace_id`) in `services/api/tests/test_websocket_streaming_chat.py`
+- [X] T010 [P] [US1] Add frontend unit tests for `token_chunk` frame parsing, progressive token accumulation in the active assistant bubble, and transition to `completed` with citations and tool badges in `uis/backoffice/__tests__/supportAgentChat.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement asynchronous `stream_query` execution in `SupportAgentService` (running pre-stream Layer 1–3 intake/tools/RAG retrieval, tokenizing and publishing sequential `token_chunk` events to `AgentChatEventBrokerPort`, running Layer 4 `OutputGuardrailPort.validate_output` prior to `generation_completed`, and persisting user and completed assistant turns in `AgentChatThreadRepositoryPort`) in `services/api/application/services/support_agent_service.py`
-- [ ] T012 [US1] Implement bidirectional WebSocket endpoint `/ws` (`/api/v1/agent/ws` and `/agent/ws`) with concurrent client-reader and broker-subscriber-writer coroutines handling `user_message` and `ping` frames in `services/api/presentation/api/v1/agent.py`
-- [ ] T013 [P] [US1] Implement typed WebSocket frame parser, client command serializer, and live token chunk reducer (`applyStreamEventToMessages`) in `uis/backoffice/lib/supportAgentChatClient.ts`
-- [ ] T014 [US1] Implement `useSupportAgentChat` React hook managing WebSocket connection lifecycle, `sendMessage`, progressive `token_chunk` state updates, and optional synchronous fallback mode (`POST /api/v1/agent/query`) in `uis/backoffice/hooks/useSupportAgentChat.ts`
-- [ ] T015 [US1] Create `SupportAgentChatPanel` component rendering the conversation timeline, live streaming assistant bubble, source citation cards, consulted source badges, operational tool call summaries, guardrail badges, and memory proposal confirmation controls in `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
-- [ ] T016 [US1] Upgrade `/knowledge` page to integrate `SupportAgentChatPanel` and real-time WebSocket streaming mode alongside the existing synchronous policy query interface in `uis/backoffice/app/knowledge/page.tsx`
+- [X] T011 [US1] Implement asynchronous `stream_query` execution in `SupportAgentService` (running pre-stream Layer 1–3 intake/tools/RAG retrieval, tokenizing and publishing sequential `token_chunk` events to `AgentChatEventBrokerPort`, running Layer 4 `OutputGuardrailPort.validate_output` prior to `generation_completed`, and persisting user and completed assistant turns in `AgentChatThreadRepositoryPort`) in `services/api/application/services/support_agent_service.py`
+- [X] T012 [US1] Implement bidirectional WebSocket endpoint `/ws` (`/api/v1/agent/ws` and `/agent/ws`) with concurrent client-reader and broker-subscriber-writer coroutines handling `user_message` and `ping` frames in `services/api/presentation/api/v1/agent.py`
+- [X] T013 [P] [US1] Implement typed WebSocket frame parser, client command serializer, and live token chunk reducer (`applyStreamEventToMessages`) in `uis/backoffice/lib/supportAgentChatClient.ts`
+- [X] T014 [US1] Implement `useSupportAgentChat` React hook managing WebSocket connection lifecycle, `sendMessage`, progressive `token_chunk` state updates, and optional synchronous fallback mode (`POST /api/v1/agent/query`) in `uis/backoffice/hooks/useSupportAgentChat.ts`
+- [X] T015 [US1] Create `SupportAgentChatPanel` component rendering the conversation timeline, live streaming assistant bubble, source citation cards, consulted source badges, operational tool call summaries, guardrail badges, and memory proposal confirmation controls in `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
+- [X] T016 [US1] Upgrade `/knowledge` page to integrate `SupportAgentChatPanel` and real-time WebSocket streaming mode alongside the existing synchronous policy query interface in `uis/backoffice/app/knowledge/page.tsx`
 
 **Checkpoint**: User Story 1 is functional and independently verifiable — operators can send messages over WebSocket and observe live token-by-token rendering and full completion metadata.
 
@@ -85,15 +85,15 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 ### Tests for User Story 2
 
-- [ ] T017 [P] [US2] Add backend tests for mid-stream `interrupt` (`reason="client_interrupt"`), mid-stream redirecting `user_message` (`reason="redirect_new_message"`), last-subscriber disconnect abort (`reason="client_disconnect"`), `< 250ms` abort latency, zero trailing `token_chunk` events, and idempotent no-op `interrupt` when idle in `services/api/tests/test_websocket_streaming_chat.py`
-- [ ] T018 [P] [US2] Add frontend unit tests for mid-response interrupt button click, preservation of partial text with `status: "interrupted"` badge, and mid-stream redirection with a new user prompt in `uis/backoffice/__tests__/supportAgentChat.test.ts`
+- [X] T017 [P] [US2] Add backend tests for mid-stream `interrupt` (`reason="client_interrupt"`), mid-stream redirecting `user_message` (`reason="redirect_new_message"`), last-subscriber disconnect abort (`reason="client_disconnect"`), `< 250ms` abort latency, zero trailing `token_chunk` events, and idempotent no-op `interrupt` when idle in `services/api/tests/test_websocket_streaming_chat.py`
+- [X] T018 [P] [US2] Add frontend unit tests for mid-response interrupt button click, preservation of partial text with `status: "interrupted"` badge, and mid-stream redirection with a new user prompt in `uis/backoffice/__tests__/supportAgentChat.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Add cooperative cancellation checkpoints (`abort_event.is_set()` and `asyncio.CancelledError` handling) before every `token_chunk` emission in `SupportAgentService.stream_query`, persisting partial accumulated text with `status="interrupted"` and `interrupted_reason` and publishing `generation_interrupted` with zero subsequent chunks in `services/api/application/services/support_agent_service.py`
-- [ ] T020 [US2] Handle client `interrupt` frames, automatic pre-turn abort on mid-stream redirecting `user_message` frames, and automatic abort when the last active WebSocket subscriber for a `thread_id` disconnects mid-generation in `services/api/presentation/api/v1/agent.py`
-- [ ] T021 [US2] Add `interruptGeneration` action and mid-stream redirection support (allowing `sendMessage` while `isStreaming` is true without clearing partial assistant content) in `uis/backoffice/hooks/useSupportAgentChat.ts`
-- [ ] T022 [US2] Add interactive **"Interrupt / Stop"** button during active streaming, permanent **"Interrupted"** status badge on preserved partial assistant turns, and enabled input submission during streaming for instant redirection in `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
+- [X] T019 [US2] Add cooperative cancellation checkpoints (`abort_event.is_set()` and `asyncio.CancelledError` handling) before every `token_chunk` emission in `SupportAgentService.stream_query`, persisting partial accumulated text with `status="interrupted"` and `interrupted_reason` and publishing `generation_interrupted` with zero subsequent chunks in `services/api/application/services/support_agent_service.py`
+- [X] T020 [US2] Handle client `interrupt` frames, automatic pre-turn abort on mid-stream redirecting `user_message` frames, and automatic abort when the last active WebSocket subscriber for a `thread_id` disconnects mid-generation in `services/api/presentation/api/v1/agent.py`
+- [X] T021 [US2] Add `interruptGeneration` action and mid-stream redirection support (allowing `sendMessage` while `isStreaming` is true without clearing partial assistant content) in `uis/backoffice/hooks/useSupportAgentChat.ts`
+- [X] T022 [US2] Add interactive **"Interrupt / Stop"** button during active streaming, permanent **"Interrupted"** status badge on preserved partial assistant turns, and enabled input submission during streaming for instant redirection in `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
 
 **Checkpoint**: User Stories 1 and 2 are complete — full-duplex streaming and true server-side generation abort, partial preservation, and mid-stream redirection work end to end.
 
@@ -107,14 +107,14 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 ### Tests for User Story 3
 
-- [ ] T023 [P] [US3] Add backend security tests for missing JWT (`4001`), malformed/expired JWT (`4001`), valid `?token=` handshake auth, valid first-frame `authenticate` auth, and cross-operator thread ownership rejection (`4003` on WebSocket and HTTP `403` on `GET /api/v1/agent/threads/{thread_id}/history`) in `services/api/tests/test_websocket_streaming_chat.py`
-- [ ] T024 [P] [US3] Add frontend unit tests verifying JWT token attachment from backoffice auth storage and immediate halt of reconnection retries on close codes `4001` and `4003` (`unauthorized` status) in `uis/backoffice/__tests__/supportAgentChat.test.ts`
+- [X] T023 [P] [US3] Add backend security tests for missing JWT (`4001`), malformed/expired JWT (`4001`), valid `?token=` handshake auth, valid first-frame `authenticate` auth, and cross-operator thread ownership rejection (`4003` on WebSocket and HTTP `403` on `GET /api/v1/agent/threads/{thread_id}/history`) in `services/api/tests/test_websocket_streaming_chat.py`
+- [X] T024 [P] [US3] Add frontend unit tests verifying JWT token attachment from backoffice auth storage and immediate halt of reconnection retries on close codes `4001` and `4003` (`unauthorized` status) in `uis/backoffice/__tests__/supportAgentChat.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Implement WebSocket JWT authentication helper (`_authenticate_websocket_connection` supporting `?token=`, `Authorization` header, and first-frame `authenticate` message) and per-user thread ownership verification (`owner_user_id` check raising close code `4001` or `4003`) in `services/api/presentation/api/v1/agent.py`
-- [ ] T026 [US3] Enforce `owner_user_id` binding and ownership validation in `SupportAgentService.get_or_create_thread_state` and `SupportAgentService.get_thread_history` in `services/api/application/services/support_agent_service.py`
-- [ ] T027 [US3] Configure `supportAgentChatClient.ts` and `useSupportAgentChat.ts` to read the backoffice JWT token (`getToken()`), bind explicit `thread_id` and `session_id` query parameters on WebSocket connection, and transition to `unauthorized` without retrying on `4001`/`4003` close codes in `uis/backoffice/lib/supportAgentChatClient.ts` and `uis/backoffice/hooks/useSupportAgentChat.ts`
+- [X] T025 [US3] Implement WebSocket JWT authentication helper (`_authenticate_websocket_connection` supporting `?token=`, `Authorization` header, and first-frame `authenticate` message) and per-user thread ownership verification (`owner_user_id` check raising close code `4001` or `4003`) in `services/api/presentation/api/v1/agent.py`
+- [X] T026 [US3] Enforce `owner_user_id` binding and ownership validation in `SupportAgentService.get_or_create_thread_state` and `SupportAgentService.get_thread_history` in `services/api/application/services/support_agent_service.py`
+- [X] T027 [US3] Configure `supportAgentChatClient.ts` and `useSupportAgentChat.ts` to read the backoffice JWT token (`getToken()`), bind explicit `thread_id` and `session_id` query parameters on WebSocket connection, and transition to `unauthorized` without retrying on `4001`/`4003` close codes in `uis/backoffice/lib/supportAgentChatClient.ts` and `uis/backoffice/hooks/useSupportAgentChat.ts`
 
 **Checkpoint**: User Story 3 is complete — all WebSocket and thread history endpoints enforce strict JWT authentication and per-operator thread ownership isolation.
 
@@ -128,14 +128,14 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 ### Tests for User Story 4
 
-- [ ] T028 [P] [US4] Add backend tests for `session_rehydrated` event on connect/reconnect, client `rehydrate` command, `GET /api/v1/agent/threads/{thread_id}/history` (and `/agent/threads/{thread_id}/history`), and durable thread history survival across broker reset / simulated server restart via `TinyDBAgentChatThreadRepository` in `services/api/tests/test_websocket_streaming_chat.py`
-- [ ] T029 [P] [US4] Add frontend unit tests for progressive exponential backoff calculation (`1000, 2000, 4000, 8000, 16000, 30000` ms), automatic reconnect timers, and turn deduplication by `turn_id` upon `session_rehydrated` in `uis/backoffice/__tests__/supportAgentChat.test.ts`
+- [X] T028 [P] [US4] Add backend tests for `session_rehydrated` event on connect/reconnect, client `rehydrate` command, `GET /api/v1/agent/threads/{thread_id}/history` (and `/agent/threads/{thread_id}/history`), and durable thread history survival across broker reset / simulated server restart via `TinyDBAgentChatThreadRepository` in `services/api/tests/test_websocket_streaming_chat.py`
+- [X] T029 [P] [US4] Add frontend unit tests for progressive exponential backoff calculation (`1000, 2000, 4000, 8000, 16000, 30000` ms), automatic reconnect timers, and turn deduplication by `turn_id` upon `session_rehydrated` in `uis/backoffice/__tests__/supportAgentChat.test.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T030 [US4] Implement durable thread rehydration in `SupportAgentService.rehydrate_thread` (merging in-memory broker state, `TinyDBAgentChatThreadRepository` persisted messages, LangGraph checkpoint metadata, and active `MemoryProposal`) and expose `GET /threads/{thread_id}/history` (`response_model=ChatThreadHistoryResponseSchema`) in `services/api/application/services/support_agent_service.py` and `services/api/presentation/api/v1/agent.py`
-- [ ] T031 [US4] Implement deterministic exponential backoff calculator (`calculateReconnectBackoffMs`: `1s, 2s, 4s, 8s, 16s, cap 30s`) and idempotent turn history merger (`mergeRehydratedMessages` deduplicating by `turn_id`) in `uis/backoffice/lib/supportAgentChatClient.ts`
-- [ ] T032 [US4] Integrate automatic progressive-backoff reconnection timer, REST history fallback reconciliation (`GET /api/v1/agent/threads/{thread_id}/history`), and manual reconnect / thread reset controls in `uis/backoffice/hooks/useSupportAgentChat.ts` and `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
+- [X] T030 [US4] Implement durable thread rehydration in `SupportAgentService.rehydrate_thread` (merging in-memory broker state, `TinyDBAgentChatThreadRepository` persisted messages, LangGraph checkpoint metadata, and active `MemoryProposal`) and expose `GET /threads/{thread_id}/history` (`response_model=ChatThreadHistoryResponseSchema`) in `services/api/application/services/support_agent_service.py` and `services/api/presentation/api/v1/agent.py`
+- [X] T031 [US4] Implement deterministic exponential backoff calculator (`calculateReconnectBackoffMs`: `1s, 2s, 4s, 8s, 16s, cap 30s`) and idempotent turn history merger (`mergeRehydratedMessages` deduplicating by `turn_id`) in `uis/backoffice/lib/supportAgentChatClient.ts`
+- [X] T032 [US4] Integrate automatic progressive-backoff reconnection timer, REST history fallback reconciliation (`GET /api/v1/agent/threads/{thread_id}/history`), and manual reconnect / thread reset controls in `uis/backoffice/hooks/useSupportAgentChat.ts` and `uis/backoffice/components/knowledge/SupportAgentChatPanel.tsx`
 
 **Checkpoint**: User Story 4 is complete — transient socket drops and server restarts automatically recover and rehydrate full thread state with zero lost or duplicated turns.
 
@@ -149,12 +149,12 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 ### Tests for User Story 5
 
-- [ ] T033 [P] [US5] Add unit and contract tests for `AgentChatEventBroker` pub/sub isolation (multi-subscriber fan-out, monotonic `sequence_id`, queue cleanup on unsubscribe) and strict schema inspection asserting zero Part 1 RFP SSE fields (`rfp_ticket_created`, `rfp_id`, `services_requested`) across all emitted chat events in `services/api/tests/test_websocket_streaming_chat.py`
-- [ ] T034 [P] [US5] Add frontend contract tests verifying strict domain field alignment (`session_id`, `thread_id`, `trace_id`, `turn_id`, `sources`, `sources_consulted`, `tool_calls`, `memory_proposal`, `guardrail_interventions`, `resolved_country`) and rejection of unknown/RFP event types in `uis/backoffice/__tests__/supportAgentChat.test.ts`
+- [X] T033 [P] [US5] Add unit and contract tests for `AgentChatEventBroker` pub/sub isolation (multi-subscriber fan-out, monotonic `sequence_id`, queue cleanup on unsubscribe) and strict schema inspection asserting zero Part 1 RFP SSE fields (`rfp_ticket_created`, `rfp_id`, `services_requested`) across all emitted chat events in `services/api/tests/test_websocket_streaming_chat.py`
+- [X] T034 [P] [US5] Add frontend contract tests verifying strict domain field alignment (`session_id`, `thread_id`, `trace_id`, `turn_id`, `sources`, `sources_consulted`, `tool_calls`, `memory_proposal`, `guardrail_interventions`, `resolved_country`) and rejection of unknown/RFP event types in `uis/backoffice/__tests__/supportAgentChat.test.ts`
 
 ### Implementation for User Story 5
 
-- [ ] T035 [US5] Harden `AgentChatEventBroker` and `SupportAgentService` event publishing envelopes to enforce strict Pydantic schema serialization, monotonic per-thread `sequence_id` ordering, and automatic idle thread subscriber cleanup in `services/api/infrastructure/messaging/agent_chat_event_broker.py` and `services/api/application/services/support_agent_service.py`
+- [X] T035 [US5] Harden `AgentChatEventBroker` and `SupportAgentService` event publishing envelopes to enforce strict Pydantic schema serialization, monotonic per-thread `sequence_id` ordering, and automatic idle thread subscriber cleanup in `services/api/infrastructure/messaging/agent_chat_event_broker.py` and `services/api/application/services/support_agent_service.py`
 
 **Checkpoint**: All five user stories (`US1`–`US5`) are complete and independently verified.
 
@@ -164,8 +164,8 @@ description: "Task list for Real-Time Bidirectional WebSocket Streaming Chat wit
 
 **Purpose**: End-to-end regression verification, strict TypeScript & build integrity validation, and quickstart audit across the monorepo.
 
-- [ ] T036 [P] Execute full backend test suites (`pytest services/api/tests/test_websocket_streaming_chat.py services/api/tests/test_support_agent*.py services/api/tests/test_agent_*.py`) to verify zero regressions across existing LangGraph workflow, operational tools, persistent memory, and guardrails
-- [ ] T037 [P] Execute frontend Jest test suite (`npm --prefix uis/backoffice test -- supportAgentChat`) and monorepo static TypeScript validation (`npm run typecheck`) to verify zero `any` types and strict compiler compliance
+- [X] T036 [P] Execute full backend test suites (`pytest services/api/tests/test_websocket_streaming_chat.py services/api/tests/test_support_agent*.py services/api/tests/test_agent_*.py`) to verify zero regressions across existing LangGraph workflow, operational tools, persistent memory, and guardrails
+- [X] T037 [P] Execute frontend Jest test suite (`npm --prefix uis/backoffice test -- supportAgentChat`) and monorepo static TypeScript validation (`npm run typecheck`) to verify zero `any` types and strict compiler compliance
 
 ---
 

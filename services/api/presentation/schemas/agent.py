@@ -56,10 +56,12 @@ class GuardrailInterventionSchema(BaseModel):
         "restricted_data_leak",
         "external_injection",
         "malformed_output",
+        "out_of_domain",
+        "needs_context",
     ] = Field(..., description="Specific semantic violation or routing category")
     reason_code: str = Field(..., description="Machine-readable trigger rule code")
-    disposition: Literal["blocked", "redirected"] = Field(
-        ..., description="Enforcement outcome ('blocked' or 'redirected')"
+    disposition: Literal["blocked", "redirected", "deflected", "clarified"] = Field(
+        ..., description="Enforcement outcome ('blocked', 'redirected', 'deflected', or 'clarified')"
     )
     redacted_preview: str = Field(
         ...,
@@ -378,12 +380,251 @@ class SanitizedErrorResponse(BaseModel):
     )
 
 
+class ChatMessageSchema(BaseModel):
+    """Conversation turn entity schema for thread history and rehydration responses (T007)."""
+
+    turn_id: str = Field(..., description="Unique identifier for this conversational turn")
+    thread_id: str = Field(..., description="Bound conversation thread identifier")
+    session_id: str = Field(..., description="Bound session identifier")
+    role: Literal["user", "assistant"] = Field(..., description="Author role of the turn")
+    content: str = Field(
+        ..., description="Full message text or accumulated partial text if interrupted"
+    )
+    status: Literal["streaming", "completed", "interrupted", "error"] = Field(
+        default="completed", description="Lifecycle state of the turn"
+    )
+    parent_user_turn_id: Optional[str] = Field(
+        default=None, description="Triggering user turn_id for assistant turns"
+    )
+    interrupted_reason: Optional[
+        Literal["client_interrupt", "redirect_new_message", "client_disconnect"]
+    ] = Field(default=None, description="Cause of interruption when status is 'interrupted'")
+    is_refusal: bool = Field(default=False, description="Whether the turn was a refusal")
+    fallback_triggered: bool = Field(
+        default=False, description="Whether an operational tool triggered fallback"
+    )
+    trace_id: Optional[str] = Field(default=None, description="Correlated AgentTrace UUID")
+    node_sequence: List[str] = Field(
+        default_factory=list, description="Ordered LangGraph nodes executed for this turn"
+    )
+    execution_time_ms: float = Field(
+        default=0.0, ge=0.0, description="Turn execution duration in milliseconds"
+    )
+    sources: List[KnowledgeSourceCitationSchema] = Field(
+        default_factory=list, description="Grounded policy citations"
+    )
+    sources_consulted: List[str] = Field(
+        default_factory=list, description="Data sources consulted during the turn"
+    )
+    tool_calls: List[ToolCallTraceSchema] = Field(
+        default_factory=list, description="Operational tool call summaries"
+    )
+    memory_proposal: Optional[MemoryProposalSchema] = Field(
+        default=None, description="Candidate operational memory proposed during this turn"
+    )
+    recalled_memories: List[str] = Field(
+        default_factory=list, description="Confirmed cross-session rules recalled"
+    )
+    guardrail_interventions: List[GuardrailInterventionSchema] = Field(
+        default_factory=list, description="Sanitized guardrail audit events"
+    )
+    resolved_country: Optional[Literal["US", "ES"]] = Field(
+        default=None, description="Authoritative operating country resolved for the turn"
+    )
+    created_at: str = Field(..., description="ISO-8601 UTC timestamp when the turn started")
+    updated_at: str = Field(
+        ..., description="ISO-8601 UTC timestamp when the turn completed or was interrupted"
+    )
+
+
+class ChatThreadHistoryResponseSchema(BaseModel):
+    """Response payload returned by GET /api/v1/agent/threads/{thread_id}/history (T007)."""
+
+    thread_id: str = Field(..., description="Conversation thread identifier")
+    session_id: str = Field(..., description="Session identifier")
+    owner_user_id: str = Field(..., description="Authenticated operator user ID owning the thread")
+    messages: List[ChatMessageSchema] = Field(
+        default_factory=list, description="Ordered list of user and assistant turns"
+    )
+    pending_proposal: Optional[MemoryProposalSchema] = Field(
+        default=None, description="Active pending MemoryProposal on this thread, if any"
+    )
+    latest_checkpoint_id: Optional[str] = Field(
+        default=None, description="Most recent LangGraph checkpoint ID"
+    )
+    latest_sequence_id: int = Field(
+        default=0, ge=0, description="Monotonically increasing per-thread event sequence counter"
+    )
+    checkpoint_count: int = Field(
+        default=0, ge=0, description="Total LangGraph checkpoints recorded for this thread"
+    )
+    created_at: str = Field(..., description="ISO-8601 UTC thread creation timestamp")
+    updated_at: str = Field(..., description="ISO-8601 UTC thread last-updated timestamp")
+
+
+class ClientAuthenticateFrameSchema(BaseModel):
+    """Client-to-server first-frame authentication command."""
+
+    event: Literal["authenticate"] = "authenticate"
+    token: str = Field(..., min_length=1)
+    thread_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class ClientUserMessageFrameSchema(BaseModel):
+    """Client-to-server user message command (or mid-stream redirecting prompt)."""
+
+    event: Literal["user_message"] = "user_message"
+    query: str = Field(..., min_length=1, max_length=1000)
+    turn_id: Optional[str] = None
+    thread_id: Optional[str] = None
+    session_id: Optional[str] = None
+    language: Literal["en", "es"] = "en"
+    top_k: int = Field(default=3, ge=1, le=20)
+    min_score: float = Field(default=0.62, ge=0.0, le=1.0)
+    session_context: Optional[AuthenticatedSessionContextSchema] = None
+
+
+class ClientInterruptFrameSchema(BaseModel):
+    """Client-to-server mid-response interrupt command."""
+
+    event: Literal["interrupt"] = "interrupt"
+    turn_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ClientRehydrateFrameSchema(BaseModel):
+    """Client-to-server rehydration request frame."""
+
+    event: Literal["rehydrate"] = "rehydrate"
+    last_sequence_id: Optional[int] = Field(default=None, ge=0)
+
+
+class ClientPingFrameSchema(BaseModel):
+    """Client-to-server heartbeat ping frame."""
+
+    event: Literal["ping"] = "ping"
+    timestamp: Optional[str] = None
+
+
+class ServerSessionRehydratedEventSchema(BaseModel):
+    """Server-to-client session_rehydrated WebSocket event."""
+
+    event: Literal["session_rehydrated"] = "session_rehydrated"
+    thread_id: str
+    session_id: str
+    owner_user_id: str
+    messages: List[ChatMessageSchema] = Field(default_factory=list)
+    pending_proposal: Optional[MemoryProposalSchema] = None
+    latest_checkpoint_id: Optional[str] = None
+    checkpoint_count: int = Field(default=0, ge=0)
+    sequence_id: int = Field(..., ge=0)
+    timestamp: str
+
+
+class ServerGenerationStartedEventSchema(BaseModel):
+    """Server-to-client generation_started WebSocket event."""
+
+    event: Literal["generation_started"] = "generation_started"
+    thread_id: str
+    session_id: str
+    turn_id: str
+    user_turn_id: str
+    query: str
+    sequence_id: int = Field(..., ge=1)
+    timestamp: str
+
+
+class ServerTokenChunkEventSchema(BaseModel):
+    """Server-to-client token_chunk WebSocket event."""
+
+    event: Literal["token_chunk"] = "token_chunk"
+    thread_id: str
+    session_id: str
+    turn_id: str
+    chunk_index: int = Field(..., ge=0)
+    delta: str
+    accumulated_content: str
+    sequence_id: int = Field(..., ge=1)
+    timestamp: str
+
+
+class ServerGenerationInterruptedEventSchema(BaseModel):
+    """Server-to-client generation_interrupted WebSocket event."""
+
+    event: Literal["generation_interrupted"] = "generation_interrupted"
+    thread_id: str
+    session_id: str
+    turn_id: str
+    partial_content: str
+    status: Literal["interrupted"] = "interrupted"
+    reason: Literal["client_interrupt", "redirect_new_message", "client_disconnect"]
+    sequence_id: int = Field(..., ge=1)
+    timestamp: str
+
+
+class ServerGenerationCompletedEventSchema(BaseModel):
+    """Server-to-client generation_completed WebSocket event."""
+
+    event: Literal["generation_completed"] = "generation_completed"
+    thread_id: str
+    session_id: str
+    turn_id: str
+    query: str
+    content: str
+    status: Literal["completed"] = "completed"
+    is_refusal: bool
+    fallback_triggered: bool = False
+    trace_id: str
+    node_sequence: List[str] = Field(default_factory=list)
+    execution_time_ms: float = Field(..., ge=0.0)
+    sources: List[KnowledgeSourceCitationSchema] = Field(default_factory=list)
+    sources_consulted: List[str] = Field(default_factory=list)
+    tool_calls: List[ToolCallTraceSchema] = Field(default_factory=list)
+    memory_proposal: Optional[MemoryProposalSchema] = None
+    recalled_memories: List[str] = Field(default_factory=list)
+    guardrail_interventions: List[GuardrailInterventionSchema] = Field(default_factory=list)
+    resolved_country: Optional[Literal["US", "ES"]] = None
+    sequence_id: int = Field(..., ge=1)
+    timestamp: str
+
+
+class ServerErrorEventSchema(BaseModel):
+    """Server-to-client sanitized error WebSocket event."""
+
+    event: Literal["error"] = "error"
+    thread_id: str
+    session_id: str
+    turn_id: Optional[str] = None
+    error_code: str
+    detail: str
+    sequence_id: int = Field(..., ge=1)
+    timestamp: str
+
+
+class ServerPongEventSchema(BaseModel):
+    """Server-to-client heartbeat pong WebSocket event."""
+
+    event: Literal["pong"] = "pong"
+    thread_id: str
+    session_id: str
+    sequence_id: int = Field(..., ge=0)
+    timestamp: str
+
+
 __all__ = [
     "AgentHealthResponseSchema",
     "AgentQueryRequestSchema",
     "AgentQueryResponseSchema",
     "AgentTraceResponseSchema",
     "AuthenticatedSessionContextSchema",
+    "ChatMessageSchema",
+    "ChatThreadHistoryResponseSchema",
+    "ClientAuthenticateFrameSchema",
+    "ClientInterruptFrameSchema",
+    "ClientPingFrameSchema",
+    "ClientRehydrateFrameSchema",
+    "ClientUserMessageFrameSchema",
     "ConsolidatedCarrierProfileResponseSchema",
     "GuardrailInterventionSchema",
     "GuardrailResetResponseSchema",
@@ -395,5 +636,12 @@ __all__ = [
     "MemoryProposalResponseSchema",
     "MemoryProposalSchema",
     "SanitizedErrorResponse",
+    "ServerErrorEventSchema",
+    "ServerGenerationCompletedEventSchema",
+    "ServerGenerationInterruptedEventSchema",
+    "ServerGenerationStartedEventSchema",
+    "ServerPongEventSchema",
+    "ServerSessionRehydratedEventSchema",
+    "ServerTokenChunkEventSchema",
     "ToolCallTraceSchema",
 ]

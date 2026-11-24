@@ -29,6 +29,8 @@ db.json
 **/db.json
 agent_memory*.json
 **/agent_memory*.json
+agent_chat_threads*.json
+**/agent_chat_threads*.json
 memory_audit_logs*.json
 **/memory_audit_logs*.json
 .qdrant_storage/
