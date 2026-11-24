@@ -19,7 +19,7 @@ const API_BASE_URL: string =
  * @returns Resolved KnowledgeQueryResponseDTO from POST /api/v1/knowledge/query.
  * @throws Error when network request fails or returns a non-2xx HTTP status.
  */
-export async function submitKnowledgeQuery(
+async function submitKnowledgeQuery(
   payload: KnowledgeQueryRequestDTO
 ): Promise<KnowledgeQueryResponseDTO> {
   const response = await fetch(`${API_BASE_URL}/api/v1/knowledge/query`, {

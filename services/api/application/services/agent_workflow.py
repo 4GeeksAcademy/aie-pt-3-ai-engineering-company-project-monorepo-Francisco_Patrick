@@ -28,9 +28,18 @@ if str(_REPO_ROOT) not in sys.path:
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from application.services.agent_guardrails import (
+    AuthorizationGuardrailValidator,
+    InputGuardrailValidator,
+    OutputGuardrailValidator,
+    TwoTierContextSanitizer,
+    _is_spanish,
+)
+from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.knowledge_service import (
     DEFAULT_SIMILARITY_THRESHOLD,
@@ -43,10 +52,14 @@ from data.pipelines.rag_pipeline import (
 )
 from domain.agent.entities import (
     AgentState,
+    AuthenticatedSessionContext,
+    GuardrailAuditEvent,
+    GuardrailEvaluationResult,
     InventoryRecordDTO,
     InventoryToolInput,
     InventoryToolOutput,
     MemoryProposal,
+    OperatingCountry,
     RetrievedContext,
     SourceCitation,
     TicketRecordDTO,
@@ -58,7 +71,12 @@ from domain.agent.exceptions import (
     WorkflowExecutionError,
 )
 from domain.agent.ports import (
+    AuthorizationGuardrailPort,
+    ContextSanitizerPort,
+    GuardrailObservabilityPort,
+    InputGuardrailPort,
     InventoryStockToolPort,
+    OutputGuardrailPort,
     SupportTicketToolPort,
 )
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
@@ -83,6 +101,29 @@ CANONICAL_SOURCE_ORDER: Sequence[str] = (
     "inventory_tool",
     "rag",
 )
+
+ALLOWED_CHECKPOINT_MSGPACK_MODULES: Tuple[Tuple[str, str], ...] = (
+    ("domain.agent.entities", "TicketToolInput"),
+    ("domain.agent.entities", "TicketRecordDTO"),
+    ("domain.agent.entities", "TicketToolOutput"),
+    ("domain.agent.entities", "InventoryToolInput"),
+    ("domain.agent.entities", "InventoryRecordDTO"),
+    ("domain.agent.entities", "InventoryToolOutput"),
+    ("domain.agent.entities", "AuthenticatedSessionContext"),
+    ("domain.agent.entities", "GuardrailAuditEvent"),
+    ("domain.agent.entities", "GuardrailEvaluationResult"),
+    ("domain.agent.entities", "MemoryProposal"),
+    ("domain.knowledge.entities", "KnowledgeChunk"),
+    ("domain.knowledge.entities", "RetrievedContext"),
+    ("domain.knowledge.entities", "SourceCitation"),
+)
+
+
+def build_agent_checkpoint_serializer() -> JsonPlusSerializer:
+    """Return a JsonPlusSerializer configured with the explicit allowlist of TrackFlow AgentState domain entities."""
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=list(ALLOWED_CHECKPOINT_MSGPACK_MODULES)
+    )
 
 READ_ONLY_MUTATION_REFUSAL_MESSAGE = (
     "TrackFlow Support Agent operational tools are strictly read-only. "
@@ -114,7 +155,8 @@ _EXPLICIT_TICKET_ID_PATTERN = re.compile(
 )
 
 _GENERIC_TICKET_NUM_PATTERN = re.compile(
-    r"\b(?:ticket|incident)\s*(?:#|id|number)?\s*[:=]?\s*([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+)\b",
+    r"\b(?:ticket|incident|incidencia|pedido|order|env[ií]o|shipment|tracking|paquete|package)\s*(?:#|id|number|n[uú]mero)?\s*[:=#]?\s*#?([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+|\d{4,10})\b"
+    r"|#(\d{4,10})\b",
     re.IGNORECASE,
 )
 
@@ -129,7 +171,7 @@ _PRODUCT_ID_PATTERN = re.compile(
 )
 
 _TICKET_KEYWORDS_PATTERN = re.compile(
-    r"\b(?:tickets?|incidents?)\b",
+    r"\b(?:tickets?|incidents?|incidencias?)\b",
     re.IGNORECASE,
 )
 
@@ -140,8 +182,10 @@ _INVENTORY_KEYWORDS_PATTERN = re.compile(
 
 _POLICY_RAG_KEYWORDS_PATTERN = re.compile(
     r"\b(?:return\s+window|return\s+policy|returns?\s+policy|return\s+shipping|shipping\s+costs?|shipping\s+fees?|"
-    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|storage\s+rates?|storage\s+pricing|monthly\s+storage|"
-    r"pallet\s+rate|cubic\s+meter|storage\s+discount|discount\s+approval|miguel\s+torres|"
+    r"plazos?\s+de\s+devoluci[oó]n|pol[ií]tica\s+de\s+devoluci[oó]n|devoluciones|costes?\s+de\s+devoluci[oó]n|gastos?\s+de\s+devoluci[oó]n|"
+    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|env[ií]o\s+est[aá]ndar|env[ií]o\s+express|tiempos?\s+de\s+env[ií]o|"
+    r"storage\s+rates?|storage\s+pricing|monthly\s+storage|tarifas?\s+de\s+almacenamiento|almacenamiento\s+mensual|inventario\s+estancado|"
+    r"pallet\s+rate|cubic\s+meter|metro\s+c[uú]bico|storage\s+discount|discount\s+approval|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|"
     r"claims?\s+policy|damaged\s+or\s+lost|lost\s+item|reporting\s+window|company\s+policy|standard\s+policy|"
     r"onboarding|governance|who\s+covers|who\s+approves|pharmaceutical|refrigeration)\b",
     re.IGNORECASE,
@@ -210,7 +254,9 @@ def _extract_ticket_tool_input(query: str) -> TicketToolInput:
 
     generic_match = _GENERIC_TICKET_NUM_PATTERN.search(query)
     if generic_match:
-        return TicketToolInput(ticket_id=_normalize_ticket_id(generic_match.group(1)))
+        matched_id = generic_match.group(1) or generic_match.group(2)
+        if matched_id:
+            return TicketToolInput(ticket_id=_normalize_ticket_id(matched_id))
 
     lowered = query.lower()
 
@@ -365,16 +411,22 @@ def classify_and_plan_query(
 def intake_node(
     state: AgentState,
     memory_service: Optional[Any] = None,
+    input_guard: Optional[InputGuardrailPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> AgentState:
-    """Single-responsibility intake node for input validation, sanitization, memory intent resolution, recall, autonomous routing, and trace initialization.
+    """Single-responsibility intake node for input validation, sanitization, guardrail evaluation, memory intent resolution, recall, autonomous routing, and trace initialization.
 
     Args:
         state: Incoming AgentState dictionary.
         memory_service: Optional AgentMemoryService for pending proposal resolution and cross-session memory recall.
+        input_guard: Optional InputGuardrailPort enforcing anti-jailbreak, personal task refusal, and casual trivia redirect.
+        authorization_guard: Optional AuthorizationGuardrailPort enforcing session-scoped order authorization and US/Spain policy separation.
+        observability: Optional GuardrailObservabilityPort for recording guardrail triggers.
 
     Returns:
         Updated AgentState with sanitized query, canonical `selected_sources`, extracted tool inputs,
-        `recalled_memories`, `proposal_resolution`, initialized `trace_id`, `node_history`, and `step_latencies`.
+        `recalled_memories`, `proposal_resolution`, guardrail state, initialized `trace_id`, `node_history`, and `step_latencies`.
     """
     start_ns = time.perf_counter()
 
@@ -383,6 +435,12 @@ def intake_node(
 
     trace_id = state.get("trace_id") or str(uuid.uuid4())
     thread_id = state.get("thread_id") or trace_id
+    session_context: Optional[AuthenticatedSessionContext] = state.get("session_context")
+    session_id = (
+        session_context.session_id
+        if session_context and session_context.session_id
+        else thread_id
+    )
     raw_top_k = state.get("top_k", 3)
     top_k = max(1, min(20, int(raw_top_k if raw_top_k is not None else 3)))
 
@@ -403,10 +461,115 @@ def intake_node(
     node_history = list(state.get("node_history") or [])
     node_history.append("intake")
 
-    # 1. Evaluate pending memory proposal if active on this thread (T021, T022, FR-011, FR-013, FR-015)
+    resolved_input_guard = input_guard or InputGuardrailValidator()
+    resolved_auth_guard = authorization_guard or AuthorizationGuardrailValidator()
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
+
+    # 1. Layer 1 & Layer 2 Guardrail Evaluation BEFORE resolving pending memory proposals (FR-001, FR-003..FR-008)
+    conversation_history = state.get("conversation_history") or state.get("messages")
+    input_eval = resolved_input_guard.evaluate_input(
+        query=sanitized_query,
+        language=language,
+        conversation_history=conversation_history,
+    )
+    if observability is not None:
+        ev = observability.record_evaluation(
+            result=input_eval,
+            session_id=session_id,
+            raw_preview=sanitized_query,
+            trace_id=trace_id,
+        )
+        if ev is not None:
+            guardrail_events.append(ev)
+
+    auth_eval: Optional[GuardrailEvaluationResult] = None
+    if input_eval.action != "block":
+        auth_eval = resolved_auth_guard.evaluate_authorization_and_policy(
+            query=sanitized_query,
+            session_context=session_context,
+            language=language,
+        )
+        if observability is not None:
+            ev = observability.record_evaluation(
+                result=auth_eval,
+                session_id=session_id,
+                raw_preview=sanitized_query,
+                trace_id=trace_id,
+            )
+            if ev is not None:
+                guardrail_events.append(ev)
+
+    resolved_country: Optional[OperatingCountry] = (
+        auth_eval.resolved_country
+        if auth_eval is not None and auth_eval.resolved_country
+        else (
+            session_context.primary_operating_country
+            if session_context is not None
+            else state.get("resolved_country")
+        )
+    )
+
+    active_block_eval: Optional[GuardrailEvaluationResult] = None
+    if input_eval.action == "block":
+        active_block_eval = input_eval
+    elif auth_eval is not None and auth_eval.action == "block":
+        active_block_eval = auth_eval
+
+    is_guardrail_block = active_block_eval is not None
+    casual_redirect_required = bool(
+        not is_guardrail_block and input_eval.action in ("redirect", "deflect", "clarify")
+    )
+    guardrail_action = (
+        "block"
+        if is_guardrail_block
+        else (input_eval.action if casual_redirect_required else "allow")
+    )
+    guardrail_failure_category = (
+        active_block_eval.failure_category
+        if active_block_eval is not None
+        else (
+            input_eval.failure_category
+            if casual_redirect_required
+            else "none"
+        )
+    )
+    guardrail_reason_code = (
+        active_block_eval.reason_code
+        if active_block_eval is not None
+        else (
+            input_eval.reason_code
+            if casual_redirect_required
+            else None
+        )
+    )
+    guardrail_message = (
+        active_block_eval.message
+        if active_block_eval is not None
+        else (
+            input_eval.message
+            if casual_redirect_required
+            else None
+        )
+    )
+
+    # Discard active pending memory proposal if the user's turn triggers a guardrail block (FR-001)
+    if is_guardrail_block and memory_service is not None and hasattr(memory_service, "discard_pending_proposal"):
+        memory_service.discard_pending_proposal(
+            thread_id=thread_id,
+            reason=guardrail_reason_code or "guardrail_block",
+        )
+
+    # 2. Evaluate pending memory proposal if active on this thread and turn was not blocked or casual-redirected
     proposal_resolution: Optional[Dict[str, Any]] = state.get("proposal_resolution")
     effective_query = sanitized_query
-    if memory_service is not None and len(sanitized_query) >= 2:
+    if (
+        not is_guardrail_block
+        and not casual_redirect_required
+        and memory_service is not None
+        and len(sanitized_query) >= 2
+    ):
         pending = memory_service.get_pending_proposal(thread_id)
         if pending is not None:
             proposal_resolution = memory_service.resolve_pending_proposal(
@@ -418,13 +581,18 @@ def intake_node(
                 if residual:
                     effective_query = sanitize_agent_query(str(residual))
 
-    is_invalid = len(sanitized_query) < MIN_QUERY_LENGTH and proposal_resolution is None
+    is_invalid = (
+        len(sanitized_query) < MIN_QUERY_LENGTH
+        and proposal_resolution is None
+        and not is_guardrail_block
+        and not casual_redirect_required
+    )
     is_mutation = (
         False
-        if is_invalid or proposal_resolution is not None
+        if is_invalid or proposal_resolution is not None or is_guardrail_block
         else detect_mutation_attempt(effective_query)
     )
-    is_refusal = bool(is_invalid or is_mutation)
+    is_refusal = bool(is_invalid or is_mutation or is_guardrail_block)
 
     sources_consulted = list(state.get("sources_consulted") or [])
     recalled_memories: List[str] = list(state.get("recalled_memories") or [])
@@ -433,15 +601,20 @@ def intake_node(
         selected_sources: List[str] = []
         ticket_input: Optional[TicketToolInput] = None
         inventory_input: Optional[InventoryToolInput] = None
+    elif casual_redirect_required:
+        # Casual small talk / general logistics trivia routes directly to generation with pre-built redirected answer
+        selected_sources = []
+        ticket_input = None
+        inventory_input = None
     else:
-        # 2. Cross-session memory recall (T028, FR-006, FR-007)
+        # 3. Cross-session memory recall (T028, FR-006, FR-007)
         if memory_service is not None and not recalled_memories:
             recalled_memories = memory_service.recall_relevant_memories(effective_query)
             if recalled_memories and "agent_memory" not in sources_consulted:
                 sources_consulted.append("agent_memory")
 
         # If this turn purely resolved a pending proposal with no residual operational question,
-        # skip tool/RAG lookups and route straight to generation (or retrieval->generation).
+        # skip tool/RAG lookups and route straight to generation.
         if (
             proposal_resolution is not None
             and not proposal_resolution.get("residual_query")
@@ -477,6 +650,11 @@ def intake_node(
         "min_score": min_score,
         "is_valid": not is_invalid,
         "is_mutation_attempt": is_mutation,
+        "guardrail_action": guardrail_action,
+        "guardrail_failure_category": guardrail_failure_category,
+        "guardrail_reason_code": guardrail_reason_code,
+        "resolved_country": resolved_country,
+        "casual_redirect_required": casual_redirect_required,
         "selected_sources": list(selected_sources),
         "ticket_tool_input": ticket_input.to_dict() if ticket_input else None,
         "inventory_tool_input": inventory_input.to_dict() if inventory_input else None,
@@ -519,21 +697,33 @@ def intake_node(
         "memory_proposal": state.get("memory_proposal"),
         "recalled_memories": recalled_memories,
         "proposal_resolution": proposal_resolution,
+        "session_context": session_context,
+        "resolved_country": resolved_country,
+        "guardrail_action": guardrail_action,
+        "guardrail_failure_category": guardrail_failure_category,
+        "guardrail_reason_code": guardrail_reason_code,
+        "guardrail_message": guardrail_message,
+        "casual_redirect_required": casual_redirect_required,
+        "guardrail_events": guardrail_events,
     }
 
 
 def ticket_tool_node(
     state: AgentState,
     ticket_tool: SupportTicketToolPort,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> AgentState:
     """Single-responsibility node executing the read-only Support Ticket Query Tool (`ticket_tool`).
 
     Args:
         state: Current AgentState containing `ticket_tool_input`.
         ticket_tool: SupportTicketToolPort adapter.
+        context_sanitizer: Optional ContextSanitizerPort enforcing two-tier anti-injection on tool payloads.
+        observability: Optional GuardrailObservabilityPort for recording security events.
 
     Returns:
-        Updated AgentState with `ticket_tool_output`, `"ticket_tool"` appended to `sources_consulted`,
+        Updated AgentState with sanitized `ticket_tool_output`, `"ticket_tool"` appended to `sources_consulted`,
         and `fallback_triggered` updated if status != "success".
     """
     start_ns = time.perf_counter()
@@ -554,6 +744,30 @@ def ticket_tool_node(
             error_message="Support ticket service encountered an unexpected error.",
             queried_criteria=tool_input.to_dict(),
         )
+
+    sanitizer = context_sanitizer or TwoTierContextSanitizer()
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
+    session_ctx = state.get("session_context")
+    session_id = (
+        session_ctx.session_id
+        if session_ctx and session_ctx.session_id
+        else (state.get("thread_id") or state.get("trace_id") or "default")
+    )
+    if output.records:
+        raw_preview = " ".join(f"{r.title} {r.description}" for r in output.records)
+        output, interventions = sanitizer.sanitize_ticket_output(output)
+        if observability is not None:
+            for item in interventions:
+                ev = observability.record_evaluation(
+                    result=item,
+                    session_id=session_id,
+                    raw_preview=raw_preview,
+                    trace_id=state.get("trace_id"),
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
 
     sources_consulted = list(state.get("sources_consulted") or [])
     if "ticket_tool" not in sources_consulted:
@@ -593,21 +807,26 @@ def ticket_tool_node(
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
+        "guardrail_events": guardrail_events,
     }
 
 
 def inventory_tool_node(
     state: AgentState,
     inventory_tool: InventoryStockToolPort,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> AgentState:
     """Single-responsibility node executing the read-only Inventory Stock Query Tool (`inventory_tool`).
 
     Args:
         state: Current AgentState containing `inventory_tool_input`.
         inventory_tool: InventoryStockToolPort adapter.
+        context_sanitizer: Optional ContextSanitizerPort enforcing two-tier anti-injection on tool payloads.
+        observability: Optional GuardrailObservabilityPort for recording security events.
 
     Returns:
-        Updated AgentState with `inventory_tool_output`, `"inventory_tool"` appended to `sources_consulted`,
+        Updated AgentState with sanitized `inventory_tool_output`, `"inventory_tool"` appended to `sources_consulted`,
         and `fallback_triggered` updated if status != "success".
     """
     start_ns = time.perf_counter()
@@ -628,6 +847,30 @@ def inventory_tool_node(
             error_message="Inventory stock service encountered an unexpected error.",
             queried_criteria=tool_input.to_dict(),
         )
+
+    sanitizer = context_sanitizer or TwoTierContextSanitizer()
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
+    session_ctx = state.get("session_context")
+    session_id = (
+        session_ctx.session_id
+        if session_ctx and session_ctx.session_id
+        else (state.get("thread_id") or state.get("trace_id") or "default")
+    )
+    if output.records:
+        raw_preview = " ".join(f"{r.name} {r.description}" for r in output.records)
+        output, interventions = sanitizer.sanitize_inventory_output(output)
+        if observability is not None:
+            for item in interventions:
+                ev = observability.record_evaluation(
+                    result=item,
+                    session_id=session_id,
+                    raw_preview=raw_preview,
+                    trace_id=state.get("trace_id"),
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
 
     sources_consulted = list(state.get("sources_consulted") or [])
     if "inventory_tool" not in sources_consulted:
@@ -667,6 +910,7 @@ def inventory_tool_node(
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
+        "guardrail_events": guardrail_events,
     }
 
 
@@ -675,22 +919,14 @@ def retrieval_node(
     vector_store: VectorStorePort,
     embedding_service: EmbeddingServicePort,
     default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> AgentState:
     """Single-responsibility retrieval node reusing `retrieve()` from `data.pipelines.rag_pipeline`.
 
     Embeds the sanitized query, performs cosine similarity search, filters candidates
-    strictly against the calibrated `min_score` threshold (0.62 default), and records
-    `"rag"` in `sources_consulted`.
-
-    Args:
-        state: Current AgentState.
-        vector_store: VectorStorePort adapter.
-        embedding_service: EmbeddingServicePort adapter.
-        default_min_score: Fallback minimum similarity threshold.
-
-    Returns:
-        Updated AgentState with threshold-qualified `contexts`, `sources_consulted`,
-        `node_history`, `step_latencies`, and `node_outputs`.
+    strictly against the calibrated `min_score` threshold (0.62 default), applies two-tier
+    prompt-injection sanitization on retrieved chunks (FR-009), and records `"rag"` in `sources_consulted`.
     """
     start_ns = time.perf_counter()
 
@@ -713,6 +949,32 @@ def retrieval_node(
             message="Vector retrieval failed during support agent execution.",
             trace_id=state.get("trace_id"),
         ) from exc
+
+    sanitizer = context_sanitizer or TwoTierContextSanitizer()
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
+    session_ctx = state.get("session_context")
+    session_id = (
+        session_ctx.session_id
+        if session_ctx and session_ctx.session_id
+        else (state.get("thread_id") or state.get("trace_id") or "default")
+    )
+    if qualified_contexts:
+        raw_preview = " ".join(c.chunk.text for c in qualified_contexts)
+        qualified_contexts, interventions = sanitizer.sanitize_rag_contexts(
+            qualified_contexts
+        )
+        if observability is not None:
+            for item in interventions:
+                ev = observability.record_evaluation(
+                    result=item,
+                    session_id=session_id,
+                    raw_preview=raw_preview,
+                    trace_id=state.get("trace_id"),
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
 
     sources_consulted = list(state.get("sources_consulted") or [])
     if "rag" not in sources_consulted:
@@ -744,6 +1006,7 @@ def retrieval_node(
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
+        "guardrail_events": guardrail_events,
     }
 
 
@@ -900,17 +1163,99 @@ def tool_fallback_node(state: AgentState) -> AgentState:
     }
 
 
-def _format_ticket_records_summary(output: TicketToolOutput) -> str:
+def _format_ticket_records_summary(
+    output: TicketToolOutput,
+    query: str = "",
+    language: str = "en",
+) -> str:
     """Format live TicketRecordDTO items into a grounded natural-language summary."""
+    use_es = _is_spanish(query, language)
+    query_text = query or ""
+    is_incident_report = bool(
+        re.search(
+            r"\b(?:incidencia|reclamaci[oó]n|da[ñn]ad[oa]|perdid[oa]|extraviad[oa]|fallid[oa]|problema|report(?:ar)?|abrir|"
+            r"incident|claim|damaged|lost|missing|failed|open\s+an?\s+incident)\b"
+            r"|\bno\s+(?:he\s+recibido|ha\s+llegado|llega|me\s+ha\s+llegado)\b"
+            r"|\b(?:not\s+received|hasn'?t\s+arrived|never\s+arrived)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
+    claims_delivered_but_missing = bool(
+        re.search(
+            r"\b(?:aparece\s+como\s+entregad[oa]|marcad[oa]\s+como\s+entregad[oa]|dice\s+entregad[oa]|consta\s+como\s+entregad[oa]|"
+            r"entregad[oa]\s+pero\s+no|no\s+he\s+recibido|no\s+ha\s+llegado|no\s+me\s+ha\s+llegado|"
+            r"marked\s+as\s+delivered|shows?\s+(?:as\s+)?delivered|appears?\s+(?:as\s+)?delivered|delivered\s+but\s+(?:not|never)|not\s+received)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
     records: List[TicketRecordDTO] = output.records
     if len(records) == 1:
         r = records[0]
-        return (
+        if use_es:
+            base_es = (
+                f"El pedido/envío #{r.id} ('{r.title}') se encuentra actualmente con estado '{r.status}', "
+                f"categoría '{r.category}', origen '{r.origin}' y centro logístico '{r.branch}' "
+                f"(creado: {r.created_at}, última actualización: {r.updated_at}). "
+                f"Detalle operativo: {r.description}"
+            )
+            if is_incident_report or claims_delivered_but_missing:
+                discrepancy_es = ""
+                if claims_delivered_but_missing and r.status == "in_progress":
+                    discrepancy_es = (
+                        f" Aclaración de discrepancia de estado: aunque indicas que el pedido #{r.id} figura como entregado "
+                        f"o no ha sido recibido, en el sistema operativo de TrackFlow aún consta con estado activo '{r.status}' "
+                        f"(en tránsito desde el centro logístico de {r.branch}, {r.origin}), lo que puede deberse a un "
+                        f"escaneo prematuro del transportista o entrega pendiente en la ventana de 24-48h."
+                    )
+                procedure_es = (
+                    f" Procedimiento paso a paso para abrir y registrar una incidencia de entrega sobre el pedido #{r.id}: "
+                    f"(1) Verificación de trazabilidad y POD: comprobamos el tracking activo de #{r.id} con el transportista "
+                    f"asignado en {r.branch} ({r.origin}) para auditar el albarán/escaneo de entrega; "
+                    f"(2) Datos requeridos para el registro: confirma el motivo exacto (escaneo de entrega erróneo / paquete no recibido, "
+                    f"daño físico, retraso o dirección incorrecta) junto con la dirección y teléfono de contacto; "
+                    f"(3) Apertura y SLA de resolución: nuestro equipo de CX registra formalmente la reclamación vinculada al pedido "
+                    f"#{r.id} ante el transportista en {r.branch} ({r.origin}) para activar la investigación prioritaria o reexpedición según el SLA operativo."
+                )
+                return f"{base_es}{discrepancy_es}{procedure_es}"
+            return base_es
+
+        base_en = (
             f"Support ticket {r.id} ('{r.title}') currently has status '{r.status}', "
             f"category '{r.category}', origin '{r.origin}', and branch '{r.branch}' "
             f"(created_at: {r.created_at}, updated_at: {r.updated_at}). "
             f"Description: {r.description}"
         )
+        if is_incident_report or claims_delivered_but_missing:
+            discrepancy_en = ""
+            if claims_delivered_but_missing and r.status == "in_progress":
+                discrepancy_en = (
+                    f" Status discrepancy clarification: although you reported order #{r.id} as delivered or missing, "
+                    f"TrackFlow's live operational record currently shows status '{r.status}' (in transit from "
+                    f"{r.branch}, {r.origin}), which may indicate a premature carrier scan while still within the delivery window."
+                )
+            procedure_en = (
+                f" Step-by-step procedure to open and register a delivery incident for order #{r.id}: "
+                f"(1) Tracking & POD verification: we audit the live carrier tracking and proof-of-delivery scan in {r.branch} ({r.origin}); "
+                f"(2) Required claim details: confirm the exact incident reason (erroneous delivery scan / missing parcel, physical damage, delay, or wrong address) and recipient contact details; "
+                f"(3) Ticket registration & resolution SLA: our CX team formally logs the incident claim linked to #{r.id} with the assigned carrier in {r.branch} ({r.origin}) to trigger investigation or reshipment."
+            )
+            return f"{base_en}{discrepancy_en}{procedure_en}"
+        return base_en
+
+    if use_es:
+        header_es = (
+            f"Se encontraron {output.total_matched} registros operativos coincidentes "
+            f"(mostrando los {len(records)} más recientes):"
+        )
+        lines_es = [header_es]
+        for r in records:
+            lines_es.append(
+                f"- #{r.id} ('{r.title}'): estado='{r.status}', categoría='{r.category}', "
+                f"origen='{r.origin}', centro='{r.branch}', actualizado='{r.updated_at}'."
+            )
+        return "\n".join(lines_es)
 
     header = (
         f"Found {output.total_matched} matching support incident(s) "
@@ -1008,32 +1353,39 @@ def generation_node(
     llm_generator: LLMGenerationPort,
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
     memory_service: Optional[Any] = None,
+    output_guard: Optional[OutputGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> AgentState:
     """Single-responsibility generation node synthesizing grounded answers from pre-retrieved contexts, live operational tool outputs, and recalled operational memories.
 
-    Also performs single-call memory candidate evaluation (< 100ms, zero secondary LLMs) (T013, FR-008, FR-010, AC-3.2).
-
-    Args:
-        state: Current AgentState.
-        llm_generator: LLMGenerationPort implementation.
-        guardrail_validator: Optional BusinessGuardrailValidator instance.
-        memory_service: Optional AgentMemoryService for single-call proposal attachment.
-
-    Returns:
-        Updated AgentState with `answer`, `is_refusal=False`, `sources`, `memory_proposal`, `node_history`, `step_latencies`, and `node_outputs`.
+    Enforces post-generation output guardrails (`OutputGuardrailPort`, FR-010) and suppresses new
+    memory proposals on blocked or casual-redirected turns (FR-001).
     """
     start_ns = time.perf_counter()
     validator = guardrail_validator or BusinessGuardrailValidator()
+    resolved_output_guard = output_guard or OutputGuardrailValidator()
 
     query = state.get("query") or ""
     language = state.get("language") or "en"
     thread_id = state.get("thread_id") or state.get("trace_id")
+    session_ctx: Optional[AuthenticatedSessionContext] = state.get("session_context")
+    session_id = (
+        session_ctx.session_id
+        if session_ctx and session_ctx.session_id
+        else (thread_id or "default")
+    )
     contexts: List[RetrievedContext] = list(state.get("contexts") or [])
     ticket_out = state.get("ticket_tool_output")
     inv_out = state.get("inventory_tool_output")
     fallback_messages: List[str] = list(state.get("fallback_messages") or [])
     recalled_memories: List[str] = list(state.get("recalled_memories") or [])
     proposal_resolution: Optional[Dict[str, Any]] = state.get("proposal_resolution")
+    casual_redirect_required = bool(state.get("casual_redirect_required", False))
+    guardrail_action = state.get("guardrail_action")
+    guardrail_message = state.get("guardrail_message")
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
 
     segments: List[str] = []
     citations: List[SourceCitation] = []
@@ -1056,85 +1408,128 @@ def generation_node(
         if not has_residual:
             pure_proposal_turn = True
 
-    # 2. Include recalled cross-session operational memories (T028, US3)
-    if recalled_memories and not pure_proposal_turn:
-        recalled_text = (
-            "Operational Memory Context (Confirmed Cross-Session Rules):\n"
-            + "\n".join(
-                f"- {mem} ( recommend using local carrier alternatives accordingly )"
-                for mem in recalled_memories
+    if casual_redirect_required and guardrail_message:
+        segments.append(str(guardrail_message))
+    else:
+        # 2. Include recalled cross-session operational memories (T028, US3)
+        if recalled_memories and not pure_proposal_turn:
+            recalled_text = (
+                "Operational Memory Context (Confirmed Cross-Session Rules):\n"
+                + "\n".join(
+                    f"- {mem} ( recommend using local carrier alternatives accordingly )"
+                    for mem in recalled_memories
+                )
             )
-        )
-        segments.append(recalled_text)
+            segments.append(recalled_text)
 
-    if not pure_proposal_turn:
-        if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
-            segments.append(_format_ticket_records_summary(ticket_out))
-
-        if inv_out is not None and inv_out.status == "success" and inv_out.records:
-            segments.append(_format_inventory_records_summary(inv_out))
-
-        if fallback_messages:
-            segments.append(" ".join(fallback_messages))
-
-        if contexts:
-            try:
-                enforced_rag_answer, rag_citations = rag_generate_answer(
-                    question=query,
-                    context=contexts,
-                    llm_generator=llm_generator,
-                    guardrail_validator=validator,
-                    language=language,
-                )
-                parsed_answer, parsed_candidate = _parse_structured_llm_output(
-                    enforced_rag_answer
-                )
-                if parsed_candidate is not None:
-                    structured_llm_candidate = parsed_candidate
-                    enforced_rag_answer = validator.enforce(
+        if not pure_proposal_turn:
+            if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
+                segments.append(
+                    _format_ticket_records_summary(
+                        ticket_out,
                         query=query,
-                        answer=parsed_answer,
-                        contexts=contexts,
+                        language=language,
                     )
-                segments.append(enforced_rag_answer)
-                citations = list(rag_citations)
-            except Exception as exc:
-                raise WorkflowExecutionError(
-                    message="Answer generation failed during support agent execution.",
-                    trace_id=state.get("trace_id"),
-                ) from exc
-        elif not segments:
-            # Defensive fallback if generation_node is invoked directly with empty state
-            try:
-                enforced_rag_answer, rag_citations = rag_generate_answer(
-                    question=query,
-                    context=contexts,
-                    llm_generator=llm_generator,
-                    guardrail_validator=validator,
-                    language=language,
                 )
-                parsed_answer, parsed_candidate = _parse_structured_llm_output(
-                    enforced_rag_answer
-                )
-                if parsed_candidate is not None:
-                    structured_llm_candidate = parsed_candidate
-                    enforced_rag_answer = validator.enforce(
-                        query=query,
-                        answer=parsed_answer,
-                        contexts=contexts,
+
+            if inv_out is not None and inv_out.status == "success" and inv_out.records:
+                segments.append(_format_inventory_records_summary(inv_out))
+
+            if fallback_messages:
+                segments.append(" ".join(fallback_messages))
+
+            if contexts:
+                try:
+                    enforced_rag_answer, rag_citations = rag_generate_answer(
+                        question=query,
+                        context=contexts,
+                        llm_generator=llm_generator,
+                        guardrail_validator=validator,
+                        language=language,
                     )
-                segments.append(enforced_rag_answer)
-                citations = list(rag_citations)
-            except Exception as exc:
-                raise WorkflowExecutionError(
-                    message="Answer generation failed during support agent execution.",
-                    trace_id=state.get("trace_id"),
-                ) from exc
+                    parsed_answer, parsed_candidate = _parse_structured_llm_output(
+                        enforced_rag_answer
+                    )
+                    if parsed_candidate is not None:
+                        structured_llm_candidate = parsed_candidate
+                        enforced_rag_answer = validator.enforce(
+                            query=query,
+                            answer=parsed_answer,
+                            contexts=contexts,
+                        )
+                    segments.append(enforced_rag_answer)
+                    citations = list(rag_citations)
+                except Exception as exc:
+                    raise WorkflowExecutionError(
+                        message="Answer generation failed during support agent execution.",
+                        trace_id=state.get("trace_id"),
+                    ) from exc
+            elif not segments:
+                # Defensive fallback if generation_node is invoked directly with empty state
+                try:
+                    enforced_rag_answer, rag_citations = rag_generate_answer(
+                        question=query,
+                        context=contexts,
+                        llm_generator=llm_generator,
+                        guardrail_validator=validator,
+                        language=language,
+                    )
+                    parsed_answer, parsed_candidate = _parse_structured_llm_output(
+                        enforced_rag_answer
+                    )
+                    if parsed_candidate is not None:
+                        structured_llm_candidate = parsed_candidate
+                        enforced_rag_answer = validator.enforce(
+                            query=query,
+                            answer=parsed_answer,
+                            contexts=contexts,
+                        )
+                    segments.append(enforced_rag_answer)
+                    citations = list(rag_citations)
+                except Exception as exc:
+                    raise WorkflowExecutionError(
+                        message="Answer generation failed during support agent execution.",
+                        trace_id=state.get("trace_id"),
+                    ) from exc
 
     final_answer = "\n\n".join(seg for seg in segments if seg).strip()
 
-    # 3. Single-call memory candidate evaluation and proposal prompt attachment (T013, FR-008, FR-010, FR-012, AC-3.2)
-    if memory_service is not None and proposal_resolution is None:
+    # 3. Layer 4: Post-Generation Output Guardrail Validation (FR-010)
+    output_eval = resolved_output_guard.validate_output(
+        query=query,
+        candidate_answer=final_answer,
+        session_context=session_ctx,
+        casual_redirect_required=casual_redirect_required,
+        language=language,
+    )
+    if observability is not None:
+        ev = observability.record_evaluation(
+            result=output_eval,
+            session_id=session_id,
+            raw_preview=final_answer,
+            trace_id=state.get("trace_id"),
+        )
+        if ev is not None:
+            guardrail_events.append(ev)
+
+    is_output_blocked = output_eval.action == "block"
+    if output_eval.sanitized_text is not None:
+        final_answer = output_eval.sanitized_text
+
+    # 4. Single-call memory candidate evaluation — suppressed on any blocked or casual-redirected turn (FR-001)
+    should_suppress_memory_proposal = bool(
+        is_output_blocked
+        or casual_redirect_required
+        or guardrail_action in ("block", "redirect", "deflect", "clarify")
+    )
+    if should_suppress_memory_proposal:
+        memory_proposal = None
+        if is_output_blocked and memory_service is not None and hasattr(memory_service, "discard_pending_proposal"):
+            memory_service.discard_pending_proposal(
+                thread_id=thread_id,
+                reason=output_eval.reason_code or "output_guardrail_block",
+            )
+    elif memory_service is not None and proposal_resolution is None:
         candidate_proposal, final_answer = memory_service.evaluate_turn_for_proposal(
             user_message=query,
             base_answer=final_answer,
@@ -1155,59 +1550,100 @@ def generation_node(
     node_outputs: Dict[str, Dict[str, Any]] = dict(state.get("node_outputs") or {})
     node_outputs["generation"] = {
         "answer": final_answer,
-        "is_refusal": False,
-        "source_count": len(citations),
-        "sources": [
-            {
-                "source_document": c.source_document,
-                "section": c.section,
-                "similarity_score": c.similarity_score,
-            }
-            for c in citations
-        ],
+        "is_refusal": is_output_blocked,
+        "output_guard_action": output_eval.action,
+        "output_guard_reason_code": output_eval.reason_code,
+        "source_count": 0 if is_output_blocked else len(citations),
+        "sources": (
+            []
+            if is_output_blocked
+            else [
+                {
+                    "source_document": c.source_document,
+                    "section": c.section,
+                    "similarity_score": c.similarity_score,
+                }
+                for c in citations
+            ]
+        ),
         "memory_proposal": memory_proposal.to_dict() if memory_proposal else None,
         "recalled_memories": list(recalled_memories),
     }
 
     return {
         "answer": final_answer,
-        "is_refusal": False,
-        "sources": citations,
+        "is_refusal": is_output_blocked,
+        "sources": [] if is_output_blocked else citations,
         "memory_proposal": memory_proposal,
         "recalled_memories": recalled_memories,
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
+        "guardrail_events": guardrail_events,
     }
 
 
-def refusal_node(state: AgentState) -> AgentState:
-    """Single-responsibility refusal node formatting standardized honest policy or read-only mutation refusals.
+def refusal_node(
+    state: AgentState,
+    output_guard: Optional[OutputGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
+) -> AgentState:
+    """Single-responsibility refusal node formatting standardized policy, guardrail, or read-only mutation refusals.
 
-    Executed when input is blank/short at intake, when a prompt attempts a disallowed write
+    Executed when input is blocked by `InputGuardrailPort` or `AuthorizationGuardrailPort`,
+    when input is blank/short at intake, when a prompt attempts a disallowed write
     mutation on tickets/inventory, or when zero context chunks satisfy the calibrated
     0.62 similarity threshold after retrieval.
-
-    Args:
-        state: Current AgentState.
-
-    Returns:
-        Updated AgentState with standardized refusal `answer`, `is_refusal=True`, and `sources=[]`.
     """
     start_ns = time.perf_counter()
 
     query = (state.get("query") or "").strip()
+    language = state.get("language") or "en"
     intake_out = (state.get("node_outputs") or {}).get("intake") or {}
     is_mutation = bool(
         intake_out.get("is_mutation_attempt") or detect_mutation_attempt(query)
     )
+    guardrail_action = state.get("guardrail_action")
+    guardrail_msg = state.get("guardrail_message")
+    guardrail_events: List[GuardrailAuditEvent] = list(
+        state.get("guardrail_events") or []
+    )
 
-    if len(query) < MIN_QUERY_LENGTH:
+    if guardrail_action == "block" and guardrail_msg:
+        refusal_text = str(guardrail_msg)
+    elif len(query) < MIN_QUERY_LENGTH:
         refusal_text = STANDARD_REFUSAL_MESSAGE
     elif is_mutation:
         refusal_text = READ_ONLY_MUTATION_REFUSAL_MESSAGE
     else:
         refusal_text = build_refusal_message(query)
+
+    # Validate refusal text through OutputGuardrailPort to ensure zero sensitive leaks
+    resolved_output_guard = output_guard or OutputGuardrailValidator()
+    out_eval = resolved_output_guard.validate_output(
+        query=query,
+        candidate_answer=refusal_text,
+        session_context=state.get("session_context"),
+        casual_redirect_required=False,
+        language=language,
+    )
+    if out_eval.sanitized_text:
+        refusal_text = out_eval.sanitized_text
+    if observability is not None and out_eval.action != "allow":
+        session_ctx = state.get("session_context")
+        session_id = (
+            session_ctx.session_id
+            if session_ctx and session_ctx.session_id
+            else (state.get("thread_id") or state.get("trace_id") or "default")
+        )
+        ev = observability.record_evaluation(
+            result=out_eval,
+            session_id=session_id,
+            raw_preview=refusal_text,
+            trace_id=state.get("trace_id"),
+        )
+        if ev is not None:
+            guardrail_events.append(ev)
 
     node_history = list(state.get("node_history") or [])
     node_history.append("refusal")
@@ -1221,6 +1657,7 @@ def refusal_node(state: AgentState) -> AgentState:
         "answer": refusal_text,
         "is_refusal": True,
         "is_mutation_refusal": is_mutation,
+        "guardrail_reason_code": state.get("guardrail_reason_code"),
         "source_count": 0,
     }
 
@@ -1228,9 +1665,11 @@ def refusal_node(state: AgentState) -> AgentState:
         "answer": refusal_text,
         "is_refusal": True,
         "sources": [],
+        "memory_proposal": None,
         "node_history": node_history,
         "step_latencies": step_latencies,
         "node_outputs": node_outputs,
+        "guardrail_events": guardrail_events,
     }
 
 
@@ -1239,22 +1678,17 @@ def route_after_intake(
 ) -> Literal["ticket_tool", "inventory_tool", "retrieval", "generation", "refusal"]:
     """Conditional routing edge evaluated immediately after `intake_node`.
 
-    Routes empty/short queries and write-mutation attempts directly to `refusal`,
-    routes pure proposal resolution turns (no residual query and no planned sources)
-    directly to `generation`, and otherwise transitions to the first planned source
-    in `selected_sources` following canonical order (`ticket_tool` -> `inventory_tool` -> `retrieval`).
-
-    Args:
-        state: AgentState emitted by `intake_node`.
-
-    Returns:
-        Target node identifier: `'ticket_tool'`, `'inventory_tool'`, `'retrieval'`, `'generation'`, or `'refusal'`.
+    Routes empty/short queries, guardrail blocks, and write-mutation attempts directly to `refusal`,
+    routes casual small talk / general logistics trivia (`casual_redirect_required=True`) and pure
+    proposal resolution turns directly to `generation`, and otherwise transitions to the first planned
+    source in `selected_sources` following canonical order (`ticket_tool` -> `inventory_tool` -> `retrieval`).
     """
     query = (state.get("query") or "").strip()
     proposal_resolution = state.get("proposal_resolution")
     if (
         (len(query) < MIN_QUERY_LENGTH and proposal_resolution is None)
         or state.get("is_refusal") is True
+        or state.get("guardrail_action") == "block"
         or state.get("error")
         or (
             proposal_resolution is None
@@ -1262,6 +1696,9 @@ def route_after_intake(
         )
     ):
         return "refusal"
+
+    if state.get("casual_redirect_required") is True:
+        return "generation"
 
     selected = list(state.get("selected_sources") or [])
     if not selected:
@@ -1413,22 +1850,36 @@ def route_after_tool_fallback(
 
 def create_ticket_tool_node(
     ticket_tool: SupportTicketToolPort,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument ticket_tool node function for LangGraph registration."""
 
     def _bound_ticket_tool(state: AgentState) -> AgentState:
-        return ticket_tool_node(state=state, ticket_tool=ticket_tool)
+        return ticket_tool_node(
+            state=state,
+            ticket_tool=ticket_tool,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
+        )
 
     return _bound_ticket_tool
 
 
 def create_inventory_tool_node(
     inventory_tool: InventoryStockToolPort,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument inventory_tool node function for LangGraph registration."""
 
     def _bound_inventory_tool(state: AgentState) -> AgentState:
-        return inventory_tool_node(state=state, inventory_tool=inventory_tool)
+        return inventory_tool_node(
+            state=state,
+            inventory_tool=inventory_tool,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
+        )
 
     return _bound_inventory_tool
 
@@ -1437,6 +1888,8 @@ def create_retrieval_node(
     vector_store: VectorStorePort,
     embedding_service: EmbeddingServicePort,
     default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument retrieval node function for LangGraph registration."""
 
@@ -1446,6 +1899,8 @@ def create_retrieval_node(
             vector_store=vector_store,
             embedding_service=embedding_service,
             default_min_score=default_min_score,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
         )
 
     return _bound_retrieval
@@ -1453,11 +1908,20 @@ def create_retrieval_node(
 
 def create_intake_node(
     memory_service: Optional[Any] = None,
+    input_guard: Optional[InputGuardrailPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument intake node function for LangGraph registration."""
 
     def _bound_intake(state: AgentState) -> AgentState:
-        return intake_node(state=state, memory_service=memory_service)
+        return intake_node(
+            state=state,
+            memory_service=memory_service,
+            input_guard=input_guard,
+            authorization_guard=authorization_guard,
+            observability=observability,
+        )
 
     return _bound_intake
 
@@ -1466,6 +1930,8 @@ def create_generation_node(
     llm_generator: LLMGenerationPort,
     guardrail_validator: Optional[BusinessGuardrailValidator] = None,
     memory_service: Optional[Any] = None,
+    output_guard: Optional[OutputGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument generation node function for LangGraph registration."""
 
@@ -1475,9 +1941,27 @@ def create_generation_node(
             llm_generator=llm_generator,
             guardrail_validator=guardrail_validator,
             memory_service=memory_service,
+            output_guard=output_guard,
+            observability=observability,
         )
 
     return _bound_generation
+
+
+def create_refusal_node(
+    output_guard: Optional[OutputGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
+) -> Callable[[AgentState], AgentState]:
+    """Create a bound single-argument refusal node function for LangGraph registration."""
+
+    def _bound_refusal(state: AgentState) -> AgentState:
+        return refusal_node(
+            state=state,
+            output_guard=output_guard,
+            observability=observability,
+        )
+
+    return _bound_refusal
 
 
 def compile_and_validate_graph(
@@ -1582,33 +2066,18 @@ def build_support_agent_graph(
     checkpointer: Optional[BaseCheckpointSaver] = None,
     default_min_score: float = DEFAULT_SIMILARITY_THRESHOLD,
     memory_service: Optional[Any] = None,
+    input_guard: Optional[InputGuardrailPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
+    context_sanitizer: Optional[ContextSanitizerPort] = None,
+    output_guard: Optional[OutputGuardrailPort] = None,
+    observability: Optional[GuardrailObservabilityPort] = None,
 ) -> CompiledStateGraph:
-    """Assemble, validate, and compile the 7-node TrackFlow Support Agent LangGraph state machine.
-
-    Topology:
-    - `START` -> `intake`
-    - `intake` --(`route_after_intake`)--> `ticket_tool` | `inventory_tool` | `retrieval` | `refusal`
-    - `ticket_tool` --(`route_after_ticket_tool`)--> `inventory_tool` | `retrieval` | `tool_fallback` | `generation`
-    - `inventory_tool` --(`route_after_inventory_tool`)--> `retrieval` | `tool_fallback` | `generation`
-    - `retrieval` --(`route_after_retrieval`)--> `tool_fallback` | `generation` | `refusal`
-    - `tool_fallback` --(`route_after_tool_fallback`)--> `generation` | `END`
-    - `generation` -> `END`
-    - `refusal` -> `END`
-
-    Args:
-        vector_store: VectorStorePort implementation for semantic search.
-        embedding_service: EmbeddingServicePort implementation for query embeddings.
-        llm_generator: LLMGenerationPort implementation for grounded synthesis.
-        ticket_tool: Optional SupportTicketToolPort implementation (defaults to IncidentSupportTicketToolAdapter).
-        inventory_tool: Optional InventoryStockToolPort implementation (defaults to InventoryStockQueryToolAdapter).
-        guardrail_validator: Optional BusinessGuardrailValidator instance.
-        checkpointer: Optional checkpointer (defaults to `MemorySaver()`).
-        default_min_score: Calibrated cosine similarity threshold (defaults to 0.62).
-
-    Returns:
-        CompiledStateGraph instance validated at build time.
-    """
-    resolved_checkpointer = checkpointer if checkpointer is not None else MemorySaver()
+    """Assemble, validate, and compile the 7-node TrackFlow Support Agent LangGraph state machine."""
+    resolved_checkpointer = (
+        checkpointer
+        if checkpointer is not None
+        else MemorySaver(serde=build_agent_checkpoint_serializer())
+    )
     if ticket_tool is None:
         from infrastructure.adapters.mcp_ticket_tool_adapter import (
             McpTicketToolAdapter,
@@ -1631,17 +2100,28 @@ def build_support_agent_graph(
 
     workflow.add_node(
         "intake",
-        create_intake_node(memory_service=memory_service)
-        if memory_service is not None
-        else intake_node,
+        create_intake_node(
+            memory_service=memory_service,
+            input_guard=input_guard,
+            authorization_guard=authorization_guard,
+            observability=observability,
+        ),
     )
     workflow.add_node(
         "ticket_tool",
-        create_ticket_tool_node(ticket_tool=resolved_ticket_tool),
+        create_ticket_tool_node(
+            ticket_tool=resolved_ticket_tool,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
+        ),
     )
     workflow.add_node(
         "inventory_tool",
-        create_inventory_tool_node(inventory_tool=resolved_inventory_tool),
+        create_inventory_tool_node(
+            inventory_tool=resolved_inventory_tool,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
+        ),
     )
     workflow.add_node(
         "retrieval",
@@ -1649,6 +2129,8 @@ def build_support_agent_graph(
             vector_store=vector_store,
             embedding_service=embedding_service,
             default_min_score=default_min_score,
+            context_sanitizer=context_sanitizer,
+            observability=observability,
         ),
     )
     workflow.add_node("tool_fallback", tool_fallback_node)
@@ -1658,9 +2140,17 @@ def build_support_agent_graph(
             llm_generator=llm_generator,
             guardrail_validator=guardrail_validator,
             memory_service=memory_service,
+            output_guard=output_guard,
+            observability=observability,
         ),
     )
-    workflow.add_node("refusal", refusal_node)
+    workflow.add_node(
+        "refusal",
+        create_refusal_node(
+            output_guard=output_guard,
+            observability=observability,
+        ),
+    )
 
     workflow.add_edge(START, "intake")
     workflow.add_conditional_edges(

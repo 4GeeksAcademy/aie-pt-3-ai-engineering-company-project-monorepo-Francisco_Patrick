@@ -13,6 +13,11 @@ from typing import Any, List, Optional, Set
 
 import httpx
 
+from application.services.agent_guardrails import (
+    _is_spanish,
+    build_hardened_system_prompt,
+    wrap_passive_external_context,
+)
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.knowledge_service import build_refusal_message
 from domain.knowledge.entities import KnowledgeRuntimeConfig, RetrievedContext
@@ -96,14 +101,17 @@ class GroundedGenerationAdapter(LLMGenerationPort):
 
         if not candidate_answer:
             candidate_answer = self._synthesize_deterministically(
+                query=query,
                 query_lower=query.lower(),
                 contexts=contexts,
+                language=language,
             )
 
         return self._guardrails.enforce(
             query=query,
             answer=candidate_answer,
             contexts=contexts,
+            language=language,
         )
 
     def _generate_with_external_llm(
@@ -119,16 +127,17 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         """
         active_model = self.select_active_model(query)
         context_block = "\n\n".join(
-            f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}"
+            wrap_passive_external_context(
+                f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}",
+                source_label=f"rag:{ctx.chunk.source_document}:{ctx.chunk.section}",
+            )
             for ctx in contexts
         )
-        system_instruction = (
-            "You are a consultative TrackFlow Account Manager. Answer the inquiry strictly "
-            "using ONLY the provided TrackFlow policy context. Never invent prices, SLAs, "
-            "or policies not explicitly stated in the context. Respond in language: "
-            f"{language}."
+        system_instruction = build_hardened_system_prompt(language=language)
+        user_prompt = (
+            f"Retrieved Passive Knowledge Context:\n{context_block}\n\n"
+            f'<user_inquiry authority="untrusted">{query}</user_inquiry>'
         )
-        user_prompt = f"Context:\n{context_block}\n\nInquiry: {query}"
 
         api_key = (self.config.llm_api_key or "").strip()
         try:
@@ -201,8 +210,11 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         self,
         query_lower: str,
         contexts: List[RetrievedContext],
+        query: str = "",
+        language: str = "en",
     ) -> str:
         """Synthesize a deterministic grounded response from retrieved chunks."""
+        use_es = _is_spanish(query or query_lower, language)
         synthesized_parts: List[str] = []
         seen_chunks: Set[str] = set()
 
@@ -211,6 +223,7 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         primary_statement = self._format_chunk_in_persona(
             query_lower=query_lower,
             context=primary_ctx,
+            use_es=use_es,
         )
         synthesized_parts.append(primary_statement)
         seen_chunks.add(f"{primary_ctx.chunk.source_document}:{primary_ctx.chunk.chunk_index}")
@@ -224,6 +237,7 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                 secondary_statement = self._format_chunk_in_persona(
                     query_lower=query_lower,
                     context=ctx,
+                    use_es=use_es,
                 )
                 if secondary_statement not in synthesized_parts:
                     synthesized_parts.append(secondary_statement)
@@ -238,21 +252,217 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         secondary_ctx: RetrievedContext,
     ) -> bool:
         """Determine whether a secondary retrieved chunk adds required policy facts."""
-        # If secondary chunk has high similarity or query asks a compound question
+        same_doc = secondary_ctx.chunk.source_document == primary_ctx.chunk.source_document
+
+        # Do not mix unrelated policy documents unless the query explicitly spans multiple domains
+        if not same_doc:
+            if " and " in query_lower or " y " in query_lower:
+                doc = secondary_ctx.chunk.source_document
+                if doc == "sla-delivery" and any(
+                    k in query_lower for k in ("sla", "express", "estándar", "estandar", "delivery time", "tiempo")
+                ):
+                    return True
+                if doc == "carrier-coverage" and any(
+                    k in query_lower for k in ("carrier", "transportista", "seur", "mrw", "ups", "fedex", "dhl")
+                ):
+                    return True
+                if doc == "storage-pricing" and any(
+                    k in query_lower for k in ("storage", "almacenamiento", "180", "cubic", "cúbico", "cubico")
+                ):
+                    return True
+                if doc == "returns-policy" and any(
+                    k in query_lower for k in ("return", "devoluci", "reembolso", "refund")
+                ):
+                    return True
+            return False
+
+        # For chunks within the same document, gate companion chunks by sub-topic relevance
+        doc = primary_ctx.chunk.source_document
+        sec_idx = secondary_ctx.chunk.chunk_index
+
+        if doc == "returns-policy":
+            if sec_idx == 0:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "process",
+                        "proceso",
+                        "portal",
+                        "step",
+                        "paso",
+                        "pasos",
+                        "inspect",
+                        "inspección",
+                        "inspeccion",
+                        "etiqueta",
+                        "label",
+                        "cómo funciona",
+                        "como funciona",
+                        "how does",
+                    )
+                )
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "window",
+                        "plazo",
+                        "plazos",
+                        "30",
+                        "cost",
+                        "coste",
+                        "costes",
+                        "gasto",
+                        "gastos",
+                        "shipping",
+                        "envío",
+                        "envio",
+                        "who covers",
+                        "who pays",
+                        "quién paga",
+                        "quien paga",
+                        "quién cubre",
+                        "quien cubre",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "international",
+                        "internacional",
+                        "cross-border",
+                        "cross border",
+                        "another country",
+                        "otro país",
+                        "otro pais",
+                        "purchased in one country",
+                        "comprado en un país",
+                        "sofía",
+                        "sofia",
+                        "recondition",
+                        "reacondicion",
+                    )
+                )
+
+        if doc == "sla-delivery":
+            if sec_idx in (1, 2):
+                return any(
+                    k in query_lower
+                    for k in (
+                        "sla",
+                        "90%",
+                        "commitment",
+                        "compromiso",
+                        "monthly",
+                        "mensual",
+                        "compensation",
+                        "compensación",
+                        "compensacion",
+                        "penalty",
+                        "penalización",
+                        "penalizacion",
+                        "5%",
+                        "peak",
+                        "pico",
+                        "black friday",
+                        "christmas",
+                        "navidad",
+                        "january sales",
+                        "rebajas",
+                        "40%",
+                        "guarantee",
+                        "garantiza",
+                    )
+                )
+
+        if doc == "storage-pricing":
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "180",
+                        "181",
+                        "150%",
+                        "surcharge",
+                        "recargo",
+                        "stagnant",
+                        "estancado",
+                        "baja rotación",
+                        "baja rotacion",
+                        "aging",
+                        "antigüedad",
+                        "antiguedad",
+                        "long-term",
+                        "prolongado",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "discount",
+                        "descuento",
+                        "preferential",
+                        "preferencial",
+                        "50",
+                        "75",
+                        "miguel torres",
+                        "negotiate",
+                        "negociar",
+                    )
+                )
+
+        if doc == "carrier-coverage":
+            if sec_idx == 0:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "united states",
+                        "estados unidos",
+                        "los angeles",
+                        "los ángeles",
+                        "california",
+                        "ups",
+                        "fedex",
+                        "dhl",
+                    )
+                )
+            if sec_idx == 1:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "spain",
+                        "españa",
+                        "espana",
+                        "zaragoza",
+                        "aragón",
+                        "aragon",
+                        "seur",
+                        "mrw",
+                        "rural",
+                    )
+                )
+            if sec_idx == 2:
+                return any(
+                    k in query_lower
+                    for k in (
+                        "carlos vega",
+                        "manual",
+                        "override",
+                        "choose",
+                        "select",
+                        "routing",
+                        "enrutamiento",
+                        "asignan",
+                        "assigned",
+                        "exception",
+                        "excepción",
+                        "excepcion",
+                    )
+                )
+
         if secondary_ctx.similarity_score >= primary_ctx.similarity_score - 0.12:
-            return True
-
-        # Rural Aragón / Spain carrier coverage often benefits from routing automation clause
-        if (
-            primary_ctx.chunk.source_document == "carrier-coverage"
-            and secondary_ctx.chunk.source_document == "carrier-coverage"
-            and ("aragón" in query_lower or "aragon" in query_lower or "carrier" in query_lower)
-            and secondary_ctx.chunk.chunk_index == 2
-        ):
-            return True
-
-        # Compound questions with 'and' covering multiple documents
-        if " and " in query_lower and secondary_ctx.similarity_score >= 0.65:
             return True
 
         return False
@@ -261,6 +471,7 @@ class GroundedGenerationAdapter(LLMGenerationPort):
         self,
         query_lower: str,
         context: RetrievedContext,
+        use_es: bool = False,
     ) -> str:
         """Format a retrieved chunk into TrackFlow Account Manager consultative prose."""
         doc = context.chunk.source_document
@@ -268,6 +479,15 @@ class GroundedGenerationAdapter(LLMGenerationPort):
 
         if doc == "returns-policy":
             if idx == 0:
+                if use_es:
+                    return (
+                        "Bajo el proceso estándar de logística inversa de TrackFlow: (1) el cliente final "
+                        "solicita la devolución a través del portal de la marca cliente; (2) TrackFlow genera "
+                        "automáticamente la etiqueta de devolución cuando el motivo coincide con las reglas "
+                        "configuradas por la marca (como talla incorrecta o producto defectuoso); y (3) al "
+                        "llegar al almacén, un operario inspecciona y clasifica el artículo como apto para "
+                        "reventa, apto para reacondicionamiento o no apto (disposición final)."
+                    )
                 return (
                     "Under TrackFlow's standard reverse logistics process: (1) the end customer "
                     "requests a return through the client brand's portal; (2) TrackFlow automatically "
@@ -277,6 +497,14 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "reconditioning, or not fit (disposal)."
                 )
             if idx == 1:
+                if use_es:
+                    return (
+                        "El plazo estándar de devolución en TrackFlow es de 30 días desde la entrega, salvo "
+                        "que la marca cliente haya configurado una ventana personalizada en su contrato. Los "
+                        "costes de envío de devolución corren a cargo de la marca cliente en circunstancias "
+                        "normales; TrackFlow solo asume el coste de envío de la devolución cuando se debe a "
+                        "un error imputable a TrackFlow (como producto dañado en tránsito o entrega errónea)."
+                    )
                 return (
                     "TrackFlow's standard return window is 30 days from delivery, unless the client "
                     "brand has configured a custom window in their contract. Return shipping costs "
@@ -285,6 +513,14 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "in transit or wrong delivery)."
                 )
             if idx == 2:
+                if use_es:
+                    return (
+                        "Las devoluciones internacionales (artículos comprados en un país y devueltos en otro) "
+                        "no están cubiertas por el proceso automatizado estándar de devoluciones y requieren "
+                        "gestión manual por parte del equipo de Sofía Ramos (Returns Manager). Además, TrackFlow "
+                        "no reacondiciona ni revende productos por cuenta propia, ejecutando la logística "
+                        "estrictamente según las reglas definidas por cada marca cliente."
+                    )
                 return (
                     "International returns (items purchased in one country and returned in another) "
                     "are not covered by the standard automated returns process and require manual "
@@ -295,6 +531,14 @@ class GroundedGenerationAdapter(LLMGenerationPort):
 
         if doc == "storage-pricing":
             if idx == 0:
+                if use_es:
+                    return (
+                        "TrackFlow calcula las tarifas de almacenamiento en función del volumen ocupado y no "
+                        "por número de unidades: la tarifa estándar mensual de almacenamiento es de 18 USD por "
+                        "metro cúbico al mes en Los Ángeles y de 16 EUR por metro cúbico al mes en Zaragoza, "
+                        "con un periodo de carencia de 30 días durante el cual la mercancía recién recibida no "
+                        "genera cargos de almacenamiento durante los primeros 30 días."
+                    )
                 return (
                     "TrackFlow calculates storage fees based on occupied volume rather than unit count: "
                     "the standard monthly storage rate is 18 USD per cubic meter per month in Los Angeles "
@@ -302,6 +546,13 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "newly arrived inventory incurs no storage charge for the first 30 days."
                 )
             if idx == 1:
+                if use_es:
+                    return (
+                        "Para el inventario estancado con más de 180 días sin movimiento (sin ventas ni salidas "
+                        "de almacén), TrackFlow aplica un recargo por almacenamiento prolongado del 150% sobre "
+                        "la tarifa estándar a partir del día 181. Los clientes pueden solicitar en cualquier "
+                        "momento un informe de antigüedad de inventario a través de su Account Manager."
+                    )
                 return (
                     "For inventory with more than 180 days of no movement (no sales or outbound shipments), "
                     "TrackFlow applies a long-term inventory surcharge of 150% over the standard rate "
@@ -309,6 +560,13 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "through their account manager (generated internally)."
                 )
             if idx == 2:
+                if use_es:
+                    return (
+                        "Los clientes que mantienen un volumen medio mensual superior a 50 metros cúbicos "
+                        "pueden negociar una tarifa de almacenamiento preferencial; sin embargo, dicha "
+                        "negociación debe ser aprobada siempre por el Director Comercial Miguel Torres — un "
+                        "Account Manager no puede ofrecer ni aprobar descuentos de almacenamiento por su cuenta."
+                    )
                 return (
                     "Clients maintaining more than 50 cubic meters of average monthly volume qualify "
                     "to negotiate a preferential storage rate; however, that negotiation must always "
@@ -318,6 +576,14 @@ class GroundedGenerationAdapter(LLMGenerationPort):
 
         if doc == "carrier-coverage":
             if idx == 0:
+                if use_es:
+                    return (
+                        "En Estados Unidos (Los Ángeles), TrackFlow trabaja con UPS, FedEx y DHL: "
+                        "UPS ofrece cobertura nacional completa y las mejores tarifas para paquetes pesados "
+                        "(más de 5 kg); FedEx proporciona los tiempos de tránsito más rápidos para envíos "
+                        "express dentro de California; y DHL es la opción dedicada para envíos internacionales "
+                        "con salida desde Los Ángeles."
+                    )
                 return (
                     "In the United States (Los Angeles), TrackFlow partners with UPS, FedEx, and DHL: "
                     "UPS provides full national coverage and the best rates for heavy packages (over 5 kg); "
@@ -325,6 +591,15 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "and DHL is the dedicated reliable option for international shipments departing Los Angeles."
                 )
             if idx == 1:
+                if use_es:
+                    return (
+                        "En España (Zaragoza), TrackFlow opera con SEUR, MRW, DHL y dos transportistas locales "
+                        "de última milla: SEUR ofrece la mejor cobertura en zonas rurales de Aragón, MRW "
+                        "proporciona las tarifas más competitivas para paquetes pequeños de menos de 2 kg, y "
+                        "los transportistas locales operan exclusivamente en el área metropolitana de Zaragoza. "
+                        "Los transportistas se asignan automáticamente mediante el sistema de enrutamiento según "
+                        "destino, peso, tipo de producto y urgencia."
+                    )
                 return (
                     "In Spain (Zaragoza), TrackFlow works with SEUR, MRW, DHL, and two local last-mile "
                     "carriers: SEUR offers the best coverage in rural areas of Aragón, MRW provides the "
@@ -333,6 +608,13 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "assigned by the routing system based on destination, weight, product type, and urgency."
                 )
             if idx == 2:
+                if use_es:
+                    return (
+                        "La selección de transportista para cada envío la determina automáticamente el sistema "
+                        "de enrutamiento de TrackFlow según destino, peso, tipo de producto y urgencia — un "
+                        "Account Manager no elige manualmente el transportista salvo excepción aprobada por "
+                        "Carlos Vega (Head of Carrier Operations)."
+                    )
                 return (
                     "Carrier selection for each shipment is automatically determined by TrackFlow's routing "
                     "system based on destination, weight, product type, and urgency — an account manager "
@@ -342,6 +624,15 @@ class GroundedGenerationAdapter(LLMGenerationPort):
 
         if doc == "sla-delivery":
             if idx == 0:
+                if use_es:
+                    return (
+                        "TrackFlow gestiona la entrega de última milla desde Los Ángeles (EE. UU.) y Zaragoza "
+                        "(España) con tres niveles de servicio: el envío Estándar tarda de 3 a 5 días hábiles "
+                        "a nivel nacional; el envío Express tarda de 24 a 48 horas (disponible en el área "
+                        "metropolitana de Los Ángeles y en el corredor Zaragoza-Madrid); y el envío Internacional "
+                        "entre EE. UU. y España tarda de 7 a 12 días hábiles, sujeto a tiempos de aduana ajenos "
+                        "al control de TrackFlow."
+                    )
                 return (
                     "TrackFlow manages last-mile delivery from Los Angeles (US) and Zaragoza (Spain) "
                     "with three service tiers: Standard shipping takes 3 to 5 business days domestically; "
@@ -350,6 +641,13 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "takes 7 to 12 business days, subject to customs hold times outside TrackFlow's control."
                 )
             if idx == 1:
+                if use_es:
+                    return (
+                        "El SLA de entrega comprometido por contrato en TrackFlow es del 90% de entregas a "
+                        "tiempo al mes, medido por país. Si un país cae por debajo del 90% durante dos meses "
+                        "consecutivos, la marca cliente tiene derecho a una compensación del 5% sobre la cuota "
+                        "mensual de ese país según el contrato estándar."
+                    )
                 return (
                     "TrackFlow's contractually committed delivery SLA is 90% on-time deliveries per month, "
                     "measured by country. If a country falls below 90% for two consecutive months, the "
@@ -357,6 +655,14 @@ class GroundedGenerationAdapter(LLMGenerationPort):
                     "standard contract."
                 )
             if idx == 2:
+                if use_es:
+                    return (
+                        "TrackFlow no garantiza los SLAs estándar de entrega (incluido el compromiso mensual "
+                        "del 90%) durante fechas pico de alta demanda declaradas (Black Friday, Navidad y "
+                        "Rebajas de Enero en España). Durante estas fechas pico, los plazos de entrega pueden "
+                        "extenderse hasta un 40% adicional, lo cual debe comunicarse proactivamente a los "
+                        "clientes con antelación."
+                    )
                 return (
                     "TrackFlow does not guarantee standard delivery SLAs (including the 90% monthly commitment) "
                     "during declared high-demand peak dates (Black Friday, Christmas, and January Sales in Spain). "

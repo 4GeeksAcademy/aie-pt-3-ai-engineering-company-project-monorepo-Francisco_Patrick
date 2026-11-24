@@ -13,6 +13,7 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@repo/shared-types$': '<rootDir>/../../packages/shared/index.ts',
   },
   collectCoverageFrom: [
     'lib/auth.ts',
