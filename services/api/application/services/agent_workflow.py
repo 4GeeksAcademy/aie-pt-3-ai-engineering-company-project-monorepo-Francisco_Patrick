@@ -28,6 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -36,6 +37,7 @@ from application.services.agent_guardrails import (
     InputGuardrailValidator,
     OutputGuardrailValidator,
     TwoTierContextSanitizer,
+    _is_spanish,
 )
 from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
@@ -100,6 +102,29 @@ CANONICAL_SOURCE_ORDER: Sequence[str] = (
     "rag",
 )
 
+ALLOWED_CHECKPOINT_MSGPACK_MODULES: Tuple[Tuple[str, str], ...] = (
+    ("domain.agent.entities", "TicketToolInput"),
+    ("domain.agent.entities", "TicketRecordDTO"),
+    ("domain.agent.entities", "TicketToolOutput"),
+    ("domain.agent.entities", "InventoryToolInput"),
+    ("domain.agent.entities", "InventoryRecordDTO"),
+    ("domain.agent.entities", "InventoryToolOutput"),
+    ("domain.agent.entities", "AuthenticatedSessionContext"),
+    ("domain.agent.entities", "GuardrailAuditEvent"),
+    ("domain.agent.entities", "GuardrailEvaluationResult"),
+    ("domain.agent.entities", "MemoryProposal"),
+    ("domain.knowledge.entities", "KnowledgeChunk"),
+    ("domain.knowledge.entities", "RetrievedContext"),
+    ("domain.knowledge.entities", "SourceCitation"),
+)
+
+
+def build_agent_checkpoint_serializer() -> JsonPlusSerializer:
+    """Return a JsonPlusSerializer configured with the explicit allowlist of TrackFlow AgentState domain entities."""
+    return JsonPlusSerializer(
+        allowed_msgpack_modules=list(ALLOWED_CHECKPOINT_MSGPACK_MODULES)
+    )
+
 READ_ONLY_MUTATION_REFUSAL_MESSAGE = (
     "TrackFlow Support Agent operational tools are strictly read-only. "
     "I cannot create, modify, transition, close, or delete support tickets "
@@ -130,7 +155,8 @@ _EXPLICIT_TICKET_ID_PATTERN = re.compile(
 )
 
 _GENERIC_TICKET_NUM_PATTERN = re.compile(
-    r"\b(?:ticket|incident)\s*(?:#|id|number)?\s*[:=]?\s*([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+)\b",
+    r"\b(?:ticket|incident|incidencia|pedido|order|env[ií]o|shipment|tracking|paquete|package)\s*(?:#|id|number|n[uú]mero)?\s*[:=#]?\s*#?([A-Za-z]{2,6}-\d+|inc_[A-Za-z0-9]+|\d{4,10})\b"
+    r"|#(\d{4,10})\b",
     re.IGNORECASE,
 )
 
@@ -145,7 +171,7 @@ _PRODUCT_ID_PATTERN = re.compile(
 )
 
 _TICKET_KEYWORDS_PATTERN = re.compile(
-    r"\b(?:tickets?|incidents?)\b",
+    r"\b(?:tickets?|incidents?|incidencias?)\b",
     re.IGNORECASE,
 )
 
@@ -156,8 +182,10 @@ _INVENTORY_KEYWORDS_PATTERN = re.compile(
 
 _POLICY_RAG_KEYWORDS_PATTERN = re.compile(
     r"\b(?:return\s+window|return\s+policy|returns?\s+policy|return\s+shipping|shipping\s+costs?|shipping\s+fees?|"
-    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|storage\s+rates?|storage\s+pricing|monthly\s+storage|"
-    r"pallet\s+rate|cubic\s+meter|storage\s+discount|discount\s+approval|miguel\s+torres|"
+    r"plazos?\s+de\s+devoluci[oó]n|pol[ií]tica\s+de\s+devoluci[oó]n|devoluciones|costes?\s+de\s+devoluci[oó]n|gastos?\s+de\s+devoluci[oó]n|"
+    r"sla\b|delivery\s+tiers?|delivery\s+time|transit\s+time|env[ií]o\s+est[aá]ndar|env[ií]o\s+express|tiempos?\s+de\s+env[ií]o|"
+    r"storage\s+rates?|storage\s+pricing|monthly\s+storage|tarifas?\s+de\s+almacenamiento|almacenamiento\s+mensual|inventario\s+estancado|"
+    r"pallet\s+rate|cubic\s+meter|metro\s+c[uú]bico|storage\s+discount|discount\s+approval|miguel\s+torres|sof[ií]a\s+ramos|carlos\s+vega|"
     r"claims?\s+policy|damaged\s+or\s+lost|lost\s+item|reporting\s+window|company\s+policy|standard\s+policy|"
     r"onboarding|governance|who\s+covers|who\s+approves|pharmaceutical|refrigeration)\b",
     re.IGNORECASE,
@@ -226,7 +254,9 @@ def _extract_ticket_tool_input(query: str) -> TicketToolInput:
 
     generic_match = _GENERIC_TICKET_NUM_PATTERN.search(query)
     if generic_match:
-        return TicketToolInput(ticket_id=_normalize_ticket_id(generic_match.group(1)))
+        matched_id = generic_match.group(1) or generic_match.group(2)
+        if matched_id:
+            return TicketToolInput(ticket_id=_normalize_ticket_id(matched_id))
 
     lowered = query.lower()
 
@@ -438,9 +468,11 @@ def intake_node(
     )
 
     # 1. Layer 1 & Layer 2 Guardrail Evaluation BEFORE resolving pending memory proposals (FR-001, FR-003..FR-008)
+    conversation_history = state.get("conversation_history") or state.get("messages")
     input_eval = resolved_input_guard.evaluate_input(
         query=sanitized_query,
         language=language,
+        conversation_history=conversation_history,
     )
     if observability is not None:
         ev = observability.record_evaluation(
@@ -487,12 +519,12 @@ def intake_node(
 
     is_guardrail_block = active_block_eval is not None
     casual_redirect_required = bool(
-        not is_guardrail_block and input_eval.action == "redirect"
+        not is_guardrail_block and input_eval.action in ("redirect", "deflect", "clarify")
     )
     guardrail_action = (
         "block"
         if is_guardrail_block
-        else ("redirect" if casual_redirect_required else "allow")
+        else (input_eval.action if casual_redirect_required else "allow")
     )
     guardrail_failure_category = (
         active_block_eval.failure_category
@@ -1131,17 +1163,99 @@ def tool_fallback_node(state: AgentState) -> AgentState:
     }
 
 
-def _format_ticket_records_summary(output: TicketToolOutput) -> str:
+def _format_ticket_records_summary(
+    output: TicketToolOutput,
+    query: str = "",
+    language: str = "en",
+) -> str:
     """Format live TicketRecordDTO items into a grounded natural-language summary."""
+    use_es = _is_spanish(query, language)
+    query_text = query or ""
+    is_incident_report = bool(
+        re.search(
+            r"\b(?:incidencia|reclamaci[oó]n|da[ñn]ad[oa]|perdid[oa]|extraviad[oa]|fallid[oa]|problema|report(?:ar)?|abrir|"
+            r"incident|claim|damaged|lost|missing|failed|open\s+an?\s+incident)\b"
+            r"|\bno\s+(?:he\s+recibido|ha\s+llegado|llega|me\s+ha\s+llegado)\b"
+            r"|\b(?:not\s+received|hasn'?t\s+arrived|never\s+arrived)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
+    claims_delivered_but_missing = bool(
+        re.search(
+            r"\b(?:aparece\s+como\s+entregad[oa]|marcad[oa]\s+como\s+entregad[oa]|dice\s+entregad[oa]|consta\s+como\s+entregad[oa]|"
+            r"entregad[oa]\s+pero\s+no|no\s+he\s+recibido|no\s+ha\s+llegado|no\s+me\s+ha\s+llegado|"
+            r"marked\s+as\s+delivered|shows?\s+(?:as\s+)?delivered|appears?\s+(?:as\s+)?delivered|delivered\s+but\s+(?:not|never)|not\s+received)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+    )
     records: List[TicketRecordDTO] = output.records
     if len(records) == 1:
         r = records[0]
-        return (
+        if use_es:
+            base_es = (
+                f"El pedido/envío #{r.id} ('{r.title}') se encuentra actualmente con estado '{r.status}', "
+                f"categoría '{r.category}', origen '{r.origin}' y centro logístico '{r.branch}' "
+                f"(creado: {r.created_at}, última actualización: {r.updated_at}). "
+                f"Detalle operativo: {r.description}"
+            )
+            if is_incident_report or claims_delivered_but_missing:
+                discrepancy_es = ""
+                if claims_delivered_but_missing and r.status == "in_progress":
+                    discrepancy_es = (
+                        f" Aclaración de discrepancia de estado: aunque indicas que el pedido #{r.id} figura como entregado "
+                        f"o no ha sido recibido, en el sistema operativo de TrackFlow aún consta con estado activo '{r.status}' "
+                        f"(en tránsito desde el centro logístico de {r.branch}, {r.origin}), lo que puede deberse a un "
+                        f"escaneo prematuro del transportista o entrega pendiente en la ventana de 24-48h."
+                    )
+                procedure_es = (
+                    f" Procedimiento paso a paso para abrir y registrar una incidencia de entrega sobre el pedido #{r.id}: "
+                    f"(1) Verificación de trazabilidad y POD: comprobamos el tracking activo de #{r.id} con el transportista "
+                    f"asignado en {r.branch} ({r.origin}) para auditar el albarán/escaneo de entrega; "
+                    f"(2) Datos requeridos para el registro: confirma el motivo exacto (escaneo de entrega erróneo / paquete no recibido, "
+                    f"daño físico, retraso o dirección incorrecta) junto con la dirección y teléfono de contacto; "
+                    f"(3) Apertura y SLA de resolución: nuestro equipo de CX registra formalmente la reclamación vinculada al pedido "
+                    f"#{r.id} ante el transportista en {r.branch} ({r.origin}) para activar la investigación prioritaria o reexpedición según el SLA operativo."
+                )
+                return f"{base_es}{discrepancy_es}{procedure_es}"
+            return base_es
+
+        base_en = (
             f"Support ticket {r.id} ('{r.title}') currently has status '{r.status}', "
             f"category '{r.category}', origin '{r.origin}', and branch '{r.branch}' "
             f"(created_at: {r.created_at}, updated_at: {r.updated_at}). "
             f"Description: {r.description}"
         )
+        if is_incident_report or claims_delivered_but_missing:
+            discrepancy_en = ""
+            if claims_delivered_but_missing and r.status == "in_progress":
+                discrepancy_en = (
+                    f" Status discrepancy clarification: although you reported order #{r.id} as delivered or missing, "
+                    f"TrackFlow's live operational record currently shows status '{r.status}' (in transit from "
+                    f"{r.branch}, {r.origin}), which may indicate a premature carrier scan while still within the delivery window."
+                )
+            procedure_en = (
+                f" Step-by-step procedure to open and register a delivery incident for order #{r.id}: "
+                f"(1) Tracking & POD verification: we audit the live carrier tracking and proof-of-delivery scan in {r.branch} ({r.origin}); "
+                f"(2) Required claim details: confirm the exact incident reason (erroneous delivery scan / missing parcel, physical damage, delay, or wrong address) and recipient contact details; "
+                f"(3) Ticket registration & resolution SLA: our CX team formally logs the incident claim linked to #{r.id} with the assigned carrier in {r.branch} ({r.origin}) to trigger investigation or reshipment."
+            )
+            return f"{base_en}{discrepancy_en}{procedure_en}"
+        return base_en
+
+    if use_es:
+        header_es = (
+            f"Se encontraron {output.total_matched} registros operativos coincidentes "
+            f"(mostrando los {len(records)} más recientes):"
+        )
+        lines_es = [header_es]
+        for r in records:
+            lines_es.append(
+                f"- #{r.id} ('{r.title}'): estado='{r.status}', categoría='{r.category}', "
+                f"origen='{r.origin}', centro='{r.branch}', actualizado='{r.updated_at}'."
+            )
+        return "\n".join(lines_es)
 
     header = (
         f"Found {output.total_matched} matching support incident(s) "
@@ -1310,7 +1424,13 @@ def generation_node(
 
         if not pure_proposal_turn:
             if ticket_out is not None and ticket_out.status == "success" and ticket_out.records:
-                segments.append(_format_ticket_records_summary(ticket_out))
+                segments.append(
+                    _format_ticket_records_summary(
+                        ticket_out,
+                        query=query,
+                        language=language,
+                    )
+                )
 
             if inv_out is not None and inv_out.status == "success" and inv_out.records:
                 segments.append(_format_inventory_records_summary(inv_out))
@@ -1400,7 +1520,7 @@ def generation_node(
     should_suppress_memory_proposal = bool(
         is_output_blocked
         or casual_redirect_required
-        or guardrail_action in ("block", "redirect")
+        or guardrail_action in ("block", "redirect", "deflect", "clarify")
     )
     if should_suppress_memory_proposal:
         memory_proposal = None
@@ -1953,7 +2073,11 @@ def build_support_agent_graph(
     observability: Optional[GuardrailObservabilityPort] = None,
 ) -> CompiledStateGraph:
     """Assemble, validate, and compile the 7-node TrackFlow Support Agent LangGraph state machine."""
-    resolved_checkpointer = checkpointer if checkpointer is not None else MemorySaver()
+    resolved_checkpointer = (
+        checkpointer
+        if checkpointer is not None
+        else MemorySaver(serde=build_agent_checkpoint_serializer())
+    )
     if ticket_tool is None:
         from infrastructure.adapters.mcp_ticket_tool_adapter import (
             McpTicketToolAdapter,
