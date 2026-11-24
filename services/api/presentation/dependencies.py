@@ -615,6 +615,15 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)) -> Us
     return current_user
 
 
+def get_rfp_notification_broadcaster_dep() -> Any:
+    """Dependency provider for the singleton in-memory RFP SSE notification broadcaster."""
+    from infrastructure.messaging.rfp_notification_broadcaster import (
+        get_rfp_notification_broadcaster_singleton,
+    )
+
+    return get_rfp_notification_broadcaster_singleton()
+
+
 __all__ = [
     "get_agent_memory_repository_dep",
     "get_agent_memory_service_dep",
@@ -644,6 +653,7 @@ __all__ = [
     "get_profile_repository_dep",
     "get_profile_service_dep",
     "get_rate_limiter_dep",
+    "get_rfp_notification_broadcaster_dep",
     "get_security_adapter_dep",
     "get_sqlmodel_session_dep",
     "get_supplier_repository_dep",

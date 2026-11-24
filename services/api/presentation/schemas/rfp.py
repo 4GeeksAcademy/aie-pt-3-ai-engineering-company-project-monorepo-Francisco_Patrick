@@ -70,7 +70,7 @@ class IntakeTicketSummary(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    ticket_id: UUID
+    ticket_id: UUID | str
     ticket_number: str
     status: TicketStatusLiteral
     raw_pdf_filename: str
@@ -78,6 +78,67 @@ class IntakeTicketSummary(BaseModel):
     rejection_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    rfp_id: Optional[str] = None
+    client_country: Optional[Literal["US", "ES"]] = None
+    services_requested: List[str] = Field(default_factory=list)
+
+
+class CreateRFPTicketRequest(BaseModel):
+    """Request payload for deterministic non-LLM RFP ticket registration (`POST /api/v1/rfp/tickets`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: Optional[str] = Field(
+        default=None,
+        description="Optional explicit ticket identifier (e.g. 'tkt_0225' or UUID).",
+    )
+    rfp_id: Optional[str] = Field(
+        default=None,
+        description="Optional explicit RFP identifier (e.g. 'rfp_0071').",
+    )
+    client_name: str = Field(
+        ...,
+        min_length=1,
+        description="Name of the prospective client organization.",
+    )
+    client_country: Literal["US", "ES"] = Field(
+        ...,
+        description="Client operating country ('US' or 'ES').",
+    )
+    services_requested: List[Literal["warehouse", "lastmile", "reverse"]] = Field(
+        ...,
+        min_length=1,
+        description="List of requested TrackFlow logistics services.",
+    )
+    monthly_volume: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Optional expected monthly order volume.",
+    )
+    deadline: Optional[str] = Field(
+        default=None,
+        description="Optional proposal submission deadline.",
+    )
+    budget_range: Optional[str] = Field(
+        default=None,
+        description="Optional client budget range expectation.",
+    )
+
+
+class RFPTicketCreatedEventSchema(BaseModel):
+    """Flat JSON payload schema for `event: rfp_ticket_created` (`trackflow-BRIEFING.es.md` §2-§3)."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    ticket_id: str = Field(..., min_length=1)
+    rfp_id: str = Field(..., min_length=1)
+    client_name: str = Field(..., min_length=1)
+    client_country: Literal["US", "ES"]
+    services_requested: List[Literal["warehouse", "lastmile", "reverse"]] = Field(
+        ..., min_length=1
+    )
+    status: Literal["analyzing"] = "analyzing"
+    created_at: str = Field(..., min_length=1)
 
 
 class IntakeTicketListResponse(BaseModel):

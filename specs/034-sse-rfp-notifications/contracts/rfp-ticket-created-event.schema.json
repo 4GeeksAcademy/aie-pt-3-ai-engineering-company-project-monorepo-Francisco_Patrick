@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.internal/schemas/rfp-ticket-created-event.schema.json",
+  "title": "RFPTicketCreatedEvent",
+  "description": "Flat JSON payload carried in the SSE 'data:' line for the 'rfp_ticket_created' event (docs/real-time-notification/trackflow-BRIEFING.es.md §2-§3).",
+  "type": "object",
+  "required": [
+    "ticket_id",
+    "rfp_id",
+    "client_name",
+    "client_country",
+    "services_requested",
+    "status",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "ticket_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of the RFP ticket (e.g., 'tkt_0225' or UUID).",
+      "examples": ["tkt_0225"]
+    },
+    "rfp_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the associated RFP record (e.g., 'rfp_0071').",
+      "examples": ["rfp_0071"]
+    },
+    "client_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the prospective client organization.",
+      "examples": ["Northline Apparel"]
+    },
+    "client_country": {
+      "type": "string",
+      "enum": ["US", "ES"],
+      "description": "Client operating country code ('US' or 'ES').",
+      "examples": ["US"]
+    },
+    "services_requested": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": ["warehouse", "lastmile", "reverse"]
+      },
+      "description": "List of TrackFlow logistics services requested in the RFP.",
+      "examples": [["warehouse", "lastmile"]]
+    },
+    "status": {
+      "type": "string",
+      "const": "analyzing",
+      "description": "Initial ticket lifecycle status when entering the system ('analyzing')."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the ticket was registered.",
+      "examples": ["2026-07-24T14:32:00Z"]
+    }
+  }
+}
