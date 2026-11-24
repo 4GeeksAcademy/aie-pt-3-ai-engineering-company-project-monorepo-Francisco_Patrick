@@ -19,6 +19,19 @@ from data.pipelines.rfp_intake.rfp_generator_agents import (  # noqa: E402
     get_department_generator_agent,
 )
 
+FABRICATED_RATES = [
+    "5.20",
+    "9.60",
+    "6.40",
+    "11.80",
+    "2.40",
+    "3.90",
+    "2.80",
+    "4.50",
+    "1,350.00",
+    "1,500.00",
+]
+
 
 def test_warehouse_generator_modaviva_spain_eur_draft() -> None:
     """Verify WarehouseGeneratorAgent produces a compliant EUR draft for ModaViva Spain without PDF re-parsing."""
@@ -55,13 +68,16 @@ def test_warehouse_generator_modaviva_spain_eur_draft() -> None:
     assert "90%" in draft
     assert "16.00 EUR por m³" in draft
     assert "Miguel Torres" in draft
-    assert "Pendiente" in draft
+    assert "Pending confirmation" in draft
+    assert "Pendiente de confirmación" in draft
     assert "Volume Discount" in draft
     assert "Open Questions" in draft
+    for fabricated in FABRICATED_RATES:
+        assert fabricated not in draft
 
 
 def test_lastmile_generator_luna_cosmetics_us_usd_draft() -> None:
-    """Verify LastMileGeneratorAgent produces a compliant USD draft for Luna Cosmetics US."""
+    """Verify LastMileGeneratorAgent produces a compliant USD draft for Luna Cosmetics US without fabricated rates."""
     agent = LastMileGeneratorAgent()
     rfp_metadata = {
         "client_name": "Luna Cosmetics",
@@ -91,10 +107,14 @@ def test_lastmile_generator_luna_cosmetics_us_usd_draft() -> None:
     assert "90%" in draft
     assert "Miguel Torres" in draft
     assert "Volume Discount" in draft
+    assert "Pending confirmation" in draft
+    assert "Pendiente de confirmación" in draft
+    for fabricated in FABRICATED_RATES:
+        assert fabricated not in draft
 
 
 def test_reverse_generator_enforces_48h_minimum_turnaround() -> None:
-    """Verify ReverseLogisticsGeneratorAgent commits to >= 48h turnaround in EUR for Spain."""
+    """Verify ReverseLogisticsGeneratorAgent commits to >= 48h turnaround in EUR for Spain without fabricated rates."""
     agent = ReverseLogisticsGeneratorAgent()
     rfp_metadata = {
         "client_name": "ModaViva, S.L.",
@@ -118,9 +138,14 @@ def test_reverse_generator_enforces_48h_minimum_turnaround() -> None:
     assert "Sofía Ramos" in draft
     assert "48 to 72 hours" in draft
     assert "EUR" in draft
+    assert "USD" not in draft
     assert "90%" in draft
     assert "Miguel Torres" in draft
     assert "30 days" in draft
+    assert "Pending confirmation" in draft
+    assert "Pendiente de confirmación" in draft
+    for fabricated in FABRICATED_RATES:
+        assert fabricated not in draft
 
 
 def test_factory_get_department_generator_agent() -> None:

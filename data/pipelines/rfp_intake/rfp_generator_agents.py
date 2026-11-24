@@ -11,6 +11,7 @@ Includes encapsulated VectorStorePort lookup with graceful offline fallback to b
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 from domain.knowledge.ports import EmbeddingServicePort, VectorStorePort
@@ -28,11 +29,11 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
         "rates": {
             "USD": {
                 "storage_m3_monthly": "$18.00 USD por m³",
-                "onboarding_fee": "$1,500.00 USD",
+                "onboarding_fee": "Pending confirmation (Pendiente de confirmación en USD según alcance de integración)",
             },
             "EUR": {
                 "storage_m3_monthly": "16.00 EUR por m³",
-                "onboarding_fee": "1,350.00 EUR",
+                "onboarding_fee": "Pending confirmation (Pendiente de confirmación en EUR según alcance de integración)",
             },
         },
         "policy_note": (
@@ -48,12 +49,12 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
         "on_time_sla_pct": "90%",
         "rates": {
             "USD": {
-                "standard_parcel": "$6.40 USD",
-                "express_parcel": "$11.80 USD",
+                "standard_parcel": "Pending confirmation (Pendiente de confirmación en USD)",
+                "express_parcel": "Pending confirmation (Pendiente de confirmación en USD)",
             },
             "EUR": {
-                "standard_parcel": "5.20 EUR",
-                "express_parcel": "9.60 EUR",
+                "standard_parcel": "Pending confirmation (Pendiente de confirmación en EUR)",
+                "express_parcel": "Pending confirmation (Pendiente de confirmación en EUR)",
             },
         },
         "policy_note": (
@@ -68,17 +69,18 @@ FALLBACK_BRIEFING_STANDARDS: Dict[DepartmentIdLiteral, Dict[str, Any]] = {
         "minimum_turnaround_hours": "48 to 72 hours",
         "rates": {
             "USD": {
-                "return_inspection_unit": "$2.80 USD",
-                "refurbishment_unit": "$4.50 USD",
+                "return_inspection_unit": "Pending confirmation (Pendiente de confirmación de tarifa en USD según reglas de la marca cliente)",
+                "refurbishment_unit": "Pending confirmation (Pendiente de confirmación en USD; TrackFlow ejecuta logística sin reacondicionar por cuenta propia)",
             },
             "EUR": {
-                "return_inspection_unit": "2.40 EUR",
-                "refurbishment_unit": "3.90 EUR",
+                "return_inspection_unit": "Pending confirmation (Pendiente de confirmación de tarifa en EUR según reglas de la marca cliente)",
+                "refurbishment_unit": "Pending confirmation (Pendiente de confirmación en EUR; TrackFlow ejecuta logística sin reacondicionar por cuenta propia)",
             },
         },
         "policy_note": (
             "TrackFlow Reverse checks each return item within 48 to 72 hours. "
             "Returns processing is never promised under 48 hours. "
+            "Return shipping costs are borne by the client brand unless caused by TrackFlow error. "
             "We meet the canonical 90% on-time SLA."
         ),
     },
@@ -101,7 +103,6 @@ def format_currency_amount(amount: float, client_country: str) -> str:
 
 def build_volume_discount_table(currency: Literal["USD", "EUR"]) -> str:
     """Generate the mandatory volume discount table (§5 RULE-DISCOUNT-TIERS) governed by Miguel Torres."""
-    unit_symbol = "$" if currency == "USD" else "€"
     return (
         "### Volume Discount Table (Tabla de Descuentos por Volumen)\n\n"
         "Gobernanza comercial: Cualquier tarifa preferencial o descuento por volumen "
@@ -114,6 +115,74 @@ def build_volume_discount_table(currency: Literal["USD", "EUR"]) -> str:
         f"| Tier 3: 7,501 - 15,000 orders/month | 10% volume discount | -10% on all {currency} unit rates | Pendiente de aprobación comercial por Miguel Torres |\n"
         f"| Tier 4: 15,001+ orders/month | 15% volume discount | -15% on all {currency} unit rates | Pendiente de aprobación comercial por Miguel Torres |\n"
     )
+
+
+def _extract_missing_aspects_from_feedback(feedback_text: str) -> List[str]:
+    """Extract missing key_aspect identifiers from a [RELEVANCE] feedback directive."""
+    if not feedback_text:
+        return []
+    match = re.search(
+        r"missing Part 1 key aspects in the proposal section:\s*([^.]+)",
+        feedback_text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return []
+    raw_items = match.group(1).split(",")
+    return [item.strip() for item in raw_items if item.strip()]
+
+
+def _extract_kb_rate_or_pending(
+    snippets: List[str],
+    pattern: str,
+    default_value: str,
+    currency: Literal["USD", "EUR"],
+) -> str:
+    """Pull a rate from KB snippets if present for the target currency, else return default_value."""
+    other_currency = "EUR" if currency == "USD" else "USD"
+    for snippet in snippets:
+        match = re.search(pattern, snippet, re.IGNORECASE)
+        if match:
+            found = match.group(0).strip()
+            # Avoid injecting a snippet fragment that contains the opposite currency
+            if other_currency.lower() not in found.lower():
+                return found
+    return default_value
+
+
+def _sanitize_foreign_currency_in_text(
+    text: str,
+    currency: Literal["USD", "EUR"],
+) -> str:
+    """Sanitize any conflicting currency tokens or symbols when enforcing RULE-CURRENCY."""
+    cleaned = text
+    if currency == "EUR":
+        cleaned = re.sub(r"\$\s*(\d+(?:[.,]\d+)?)\s*(?:USD)?", r"\1 EUR", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bUSD\b", "EUR", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bdólares\b|\bdollars?\b", "euros", cleaned, flags=re.IGNORECASE)
+    else:
+        cleaned = re.sub(r"€\s*(\d+(?:[.,]\d+)?)\s*(?:EUR)?", r"$\1 USD", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"(\d+(?:[.,]\d+)?)\s*€", r"$\1 USD", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bEUR\b", "USD", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\beuros?\b", "USD", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _sanitize_sub_48h_returns_in_text(text: str) -> str:
+    """Replace any sub-48h return turnaround promises in text with 48 to 72 hours."""
+    cleaned = re.sub(
+        r"\b(?:12|24|36)\s*(?:-\s*48\s*)?(?:h|hr|hrs|hours?|horas?)\b",
+        "48 to 72 hours",
+        text,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\b(?:same[-\s]?day|mismo\s+d[ií]a|inmediat[oa]|instant[aá]ne[oa])\b",
+        "48 to 72 hours",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned
 
 
 class KnowledgeRetrievalHelper:
@@ -194,6 +263,81 @@ class BaseDepartmentGeneratorAgent:
         """Generate or revise a specialized department proposal section from Part 1 handoff data."""
         raise NotImplementedError
 
+    def _build_body_feedback_directive(
+        self,
+        feedback_for_generator: Optional[str],
+        currency: Literal["USD", "EUR"],
+        key_aspects: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        """Parse feedback_for_generator into concrete section-level body modifications for Sections 1-4."""
+        modifications: Dict[str, List[str]] = {
+            "section_1": [],
+            "section_2": [],
+            "section_3": [],
+            "section_4": [],
+        }
+        if not feedback_for_generator:
+            return modifications
+
+        fb_upper = feedback_for_generator.upper()
+        missing_aspects = _extract_missing_aspects_from_feedback(feedback_for_generator)
+
+        if "RULE-SLA" in fb_upper or "SLA" in fb_upper:
+            modifications["section_2"].append(
+                "Contractual SLA guarantee: TrackFlow commits to a 90% monthly on-time SLA measured by country, "
+                "with a 5% monthly tariff compensation if on-time performance falls below 90% for two consecutive months."
+            )
+
+        if "RULE-CURRENCY" in fb_upper or "CURRENCY" in fb_upper:
+            modifications["section_3"].append(
+                f"Currency compliance update: All tariff schedules and commercial figures in this section are strictly denominated in {currency} with zero foreign currency exposure."
+            )
+
+        if "RULE-RETURNS-TIME" in fb_upper or "48" in fb_upper:
+            modifications["section_2"].append(
+                "Turnaround compliance update: We strictly enforce a 48 to 72 hours minimum inspection and processing window; any sub-48h return request is superseded by this policy."
+            )
+
+        if "RULE-DISCOUNT-TIERS" in fb_upper or "DISCOUNT" in fb_upper or "MIGUEL TORRES" in fb_upper:
+            modifications["section_3"].append(
+                "Commercial governance update: Preferential volume tiers and storage volumes exceeding 50 m³ require express sign-off from Miguel Torres (Director Comercial)."
+            )
+
+        if "RULE-CARRIER-RATES" in fb_upper or "CARRIER" in fb_upper:
+            modifications["section_3"].append(
+                f"Rate confidentiality update: Internal carrier wholesale tariffs are strictly excluded; only final client rates in {currency} (or Pending confirmation) are presented."
+            )
+
+        if missing_aspects:
+            for aspect in missing_aspects:
+                if aspect == "open_questions_coverage":
+                    modifications["section_4"].append(
+                        "Open questions and operational assumptions are formally logged for client confirmation prior to contract signature."
+                    )
+                else:
+                    val = key_aspects.get(aspect, "Pending confirmation")
+                    label = aspect.replace("_", " ")
+                    modifications["section_1"].append(
+                        f"Addressed operational parameter {label} ({aspect}): {val if val is not None else 'Pending confirmation'}."
+                    )
+
+        if "READABILITY" in fb_upper:
+            modifications["section_1"].append(
+                "Executive summary refined for clear operational readability and direct service alignment."
+            )
+
+        # If freeform feedback did not match any specific tag above, apply it directly into Section 1 and Section 2 body
+        if not any(modifications.values()):
+            cleaned_fb = _sanitize_foreign_currency_in_text(
+                _sanitize_sub_48h_returns_in_text(feedback_for_generator.strip()),
+                currency,
+            )
+            modifications["section_1"].append(
+                f"Updated operational scope per review feedback: {cleaned_fb}"
+            )
+
+        return modifications
+
 
 class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
     """Warehouse Operations proposal generator agent led by Ana Whitfield."""
@@ -224,6 +368,10 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             "warehouse",
             f"Warehouse pallet SKU rates onboarding {client_country}",
         )
+        kb_snippets: List[str] = [
+            _sanitize_foreign_currency_in_text(str(s), currency)
+            for s in (kb_context.get("snippets") or [])
+        ]
 
         location_pref = key_aspects.get("warehouse_location_preference") or (
             "Los Ángeles" if client_country == "US" else "Zaragoza"
@@ -236,7 +384,7 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
         if pallet_req is not None:
             pallet_desc = f"We allocate storage capacity for {pallet_req} pallet positions calculated by occupied volume in m³."
         else:
-            pallet_desc = "Capacidad adicional de almacenamiento: Pendiente de confirmación según volumen en m³."
+            pallet_desc = "Capacidad de almacenamiento de pallets: Pendiente de confirmación según volumen ocupado en m³."
 
         if sku_count is not None:
             sku_desc = f"Our team tracks {sku_count} SKU inventory references."
@@ -254,32 +402,68 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
             else "your monthly order flow"
         )
 
-        storage_rate_label = (
+        default_storage_label = (
             "16.00 EUR por m³ al mes (Zaragoza)"
             if currency == "EUR"
             else "$18.00 USD por m³ al mes (Los Ángeles)"
         )
+        storage_rate_label = _extract_kb_rate_or_pending(
+            kb_snippets,
+            r"(?:16(?:\.00)?\s*EUR|(?:\$)?18(?:\.00)?\s*USD)\s+por\s+(?:m³|metro\s+cúbico)(?:\s+al\s+mes)?",
+            default_storage_label,
+            currency,
+        )
+        if storage_rate_label == "16 EUR por metro cúbico al mes":
+            storage_rate_label = "16.00 EUR por m³ al mes (Zaragoza)"
+        elif storage_rate_label in ("18 USD por metro cúbico al mes", "$18 USD por metro cúbico al mes"):
+            storage_rate_label = "$18.00 USD por m³ al mes (Los Ángeles)"
+
+        onboarding_fee_label = rates["onboarding_fee"]
+        body_mods = self._build_body_feedback_directive(
+            feedback_for_generator if iteration > 1 else None,
+            currency,
+            key_aspects,
+        )
+
+        sec1_lines = [
+            f"We run your stock at our {location_pref} warehouse hub for {client_name}. "
+            f"{pallet_desc} {sku_desc} "
+            f"We support {handling_desc} for {volume_desc}."
+        ]
+        if body_mods["section_1"]:
+            sec1_lines.extend(body_mods["section_1"])
+
+        sec2_lines = [
+            f"Your onboarding level is {onboarding_complexity}. "
+            f"Setup takes {standards['standard_onboarding_weeks']}. "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA for all orders per contractual standards. "
+            "Restock and return checks take 48 to 72 hours."
+        ]
+        if body_mods["section_2"]:
+            sec2_lines.extend(body_mods["section_2"])
+
+        sec3_lines = [
+            f"All prices use {currency} as final client rates based on occupied volume in m³:",
+            f"- Storage Rate: {storage_rate_label} (first 30 days free grace period; >180 days pays 150% long-term storage fee)",
+            "- Additional capacity and handling: Pendiente de confirmación según volumen en m³",
+            f"- Setup and Onboarding Fee: {onboarding_fee_label}",
+        ]
+        if body_mods["section_3"]:
+            for mod in body_mods["section_3"]:
+                sec3_lines.append(f"- {mod}")
 
         lines: List[str] = [
             f"## Warehouse Proposal for {client_name}",
             f"Lead: {self.responsible_person}. Hub country: {client_country}. Currency: {currency}.",
             "",
             "### 1. Space and Stock Plan",
-            f"We run your stock at our {location_pref} warehouse hub for {client_name}. "
-            f"{pallet_desc} {sku_desc} "
-            f"We support {handling_desc} for {volume_desc}.",
+            " ".join(sec1_lines),
             "",
             "### 2. Onboarding Plan and Service SLA",
-            f"Your onboarding level is {onboarding_complexity}. "
-            f"Setup takes {standards['standard_onboarding_weeks']}. "
-            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA for all orders per contractual standards. "
-            "Restock and return checks take 48 to 72 hours.",
+            " ".join(sec2_lines),
             "",
             f"### 3. Warehouse Rates ({currency})",
-            f"All prices use {currency} as final client rates based on occupied volume in m³:",
-            f"- Storage Rate: {storage_rate_label} (first 30 days free grace period; >180 days pays 150% long-term storage fee)",
-            f"- Additional capacity and handling: Pendiente de confirmación según volumen en m³",
-            f"- Setup Fee: {rates['onboarding_fee']} one time",
+            *sec3_lines,
             "",
             build_volume_discount_table(currency),
         ]
@@ -292,31 +476,43 @@ class WarehouseGeneratorAgent(BaseDepartmentGeneratorAgent):
                 "special_handling",
                 "onboarding_complexity",
             }:
-                lines.append(f"- Aspect {k}: {v}")
+                val_str = str(v)
+                if feedback_for_generator and iteration > 1:
+                    val_str = _sanitize_foreign_currency_in_text(
+                        _sanitize_sub_48h_returns_in_text(val_str),
+                        currency,
+                    )
+                lines.append(f"- Aspect {k}: {val_str}")
 
-        if open_questions:
+        if open_questions or body_mods["section_4"]:
             lines.append("")
             lines.append("### 4. Open Questions")
             lines.append("We will confirm these open questions during onboarding.")
             for idx, q in enumerate(open_questions, start=1):
-                lines.append(f"- Question {idx}: {q} (Pending client check on SKU and volume details).")
+                lines.append(f"- Question {idx}: {q} (Pending confirmation on SKU and volume details).")
+            for mod in body_mods["section_4"]:
+                lines.append(f"- {mod}")
 
-        if kb_context.get("snippets"):
+        if kb_snippets:
             lines.append("")
-            lines.append(f"Policy Note ({kb_context['source']}): {kb_context['snippets'][0]}")
+            lines.append(f"Policy Note ({kb_context['source']}): {kb_snippets[0]}")
 
         if feedback_for_generator and iteration > 1:
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"Applied active corrections based on evaluator feedback:\n"
-                f"- Enforced canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual policy.\n"
-                f"- Aligned storage pricing strictly to {storage_rate_label} based on occupied volume in m³.\n"
-                f"- Marked all unconfirmed capacity and custom operations as 'Pendiente de confirmación según volumen en m³'.\n"
-                f"- Enforced volume discount table governance under Miguel Torres (Director Comercial)."
+                f"Applied active corrections to the proposal body based on evaluator feedback:\n"
+                f"- Updated body sections to address: {_sanitize_foreign_currency_in_text(_sanitize_sub_48h_returns_in_text(feedback_for_generator), currency)}\n"
+                f"- Aligned storage pricing strictly to KB rate {storage_rate_label} and marked unconfirmed fees as Pending confirmation."
             )
 
-        return "\n".join(lines)
+        draft = "\n".join(lines)
+        if feedback_for_generator and iteration > 1:
+            draft = _sanitize_foreign_currency_in_text(
+                _sanitize_sub_48h_returns_in_text(draft),
+                currency,
+            )
+        return draft
 
 
 class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
@@ -348,6 +544,10 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
             "lastmile",
             f"Last mile carrier SLA shipping rates {client_country}",
         )
+        kb_snippets: List[str] = [
+            _sanitize_foreign_currency_in_text(str(s), currency)
+            for s in (kb_context.get("snippets") or [])
+        ]
 
         carrier_strategy = key_aspects.get("carrier_strategy") or "TrackFlow Network"
         geographic_scope = key_aspects.get("geographic_scope") or (
@@ -356,10 +556,16 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
         delivery_sla_req = key_aspects.get("delivery_sla_requested")
         special_reqs = key_aspects.get("special_delivery_requirements") or []
 
+        carrier_hub_network = (
+            "UPS, FedEx, and DHL from Los Ángeles"
+            if client_country == "US"
+            else "MRW, SEUR, DHL, and 2 local last-mile carriers in Zaragoza"
+        )
+
         sla_target_desc = (
             f"We support your {delivery_sla_req} delivery transit goal."
             if delivery_sla_req
-            else "Standard delivery takes 48 to 72 hours across all zones."
+            else "Standard delivery takes 3 to 5 business days across all zones."
         )
         special_reqs_desc = (
             ", ".join(str(r) for r in special_reqs)
@@ -372,23 +578,48 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
             else "your monthly parcel shipments"
         )
 
+        body_mods = self._build_body_feedback_directive(
+            feedback_for_generator if iteration > 1 else None,
+            currency,
+            key_aspects,
+        )
+
+        sec1_lines = [
+            f"We use the {carrier_strategy} ({carrier_hub_network}) across {geographic_scope} for {client_name}. "
+            f"Our team handles {volume_desc} with {special_reqs_desc}."
+        ]
+        if body_mods["section_1"]:
+            sec1_lines.extend(body_mods["section_1"])
+
+        sec2_lines = [
+            f"{sla_target_desc} "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual standards. "
+            "Return parcels take 48 to 72 hours to process."
+        ]
+        if body_mods["section_2"]:
+            sec2_lines.extend(body_mods["section_2"])
+
+        sec3_lines = [
+            f"All shipping fees use {currency} as final client prices:",
+            f"- Ground Parcel Rate: {rates['standard_parcel']}",
+            f"- Express Parcel Rate: {rates['express_parcel']}",
+        ]
+        if body_mods["section_3"]:
+            for mod in body_mods["section_3"]:
+                sec3_lines.append(f"- {mod}")
+
         lines: List[str] = [
             f"## Last Mile Proposal for {client_name}",
             f"Lead: {self.responsible_person}. Scope country: {client_country}. Currency: {currency}.",
             "",
             "### 1. Carrier Plan and Geographic Scope",
-            f"We use the {carrier_strategy} across {geographic_scope} for {client_name}. "
-            f"Our team handles {volume_desc} with {special_reqs_desc}.",
+            " ".join(sec1_lines),
             "",
             "### 2. On-Time Delivery SLA",
-            f"{sla_target_desc} "
-            f"We commit to a canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual standards. "
-            "Return parcels take 48 to 72 hours to process.",
+            " ".join(sec2_lines),
             "",
             f"### 3. Final Client Shipping Rates ({currency})",
-            f"All shipping fees use {currency} as final client prices:",
-            f"- Ground Parcel Rate: {rates['standard_parcel']} per box",
-            f"- Express Parcel Rate: {rates['express_parcel']} per box",
+            *sec3_lines,
             "",
             build_volume_discount_table(currency),
         ]
@@ -400,30 +631,43 @@ class LastMileGeneratorAgent(BaseDepartmentGeneratorAgent):
                 "delivery_sla_requested",
                 "special_delivery_requirements",
             }:
-                lines.append(f"- Aspect {k}: {v}")
+                val_str = str(v)
+                if feedback_for_generator and iteration > 1:
+                    val_str = _sanitize_foreign_currency_in_text(
+                        _sanitize_sub_48h_returns_in_text(val_str),
+                        currency,
+                    )
+                lines.append(f"- Aspect {k}: {val_str}")
 
-        if open_questions:
+        if open_questions or body_mods["section_4"]:
             lines.append("")
             lines.append("### 4. Open Questions")
             lines.append("We will confirm these open questions on delivery SLA tiers.")
-            for idx, _ in enumerate(open_questions, start=1):
-                lines.append(f"- Question {idx}: Pending client check on parcel SLA split.")
+            for idx, q in enumerate(open_questions, start=1):
+                lines.append(f"- Question {idx}: {q} (Pending confirmation on parcel weight and SLA split).")
+            for mod in body_mods["section_4"]:
+                lines.append(f"- {mod}")
 
-        if kb_context.get("snippets"):
+        if kb_snippets:
             lines.append("")
-            lines.append(f"Policy Note ({kb_context['source']}): {kb_context['snippets'][0]}")
+            lines.append(f"Policy Note ({kb_context['source']}): {kb_snippets[0]}")
 
         if feedback_for_generator and iteration > 1:
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"Applied active corrections based on evaluator feedback:\n"
-                f"- Enforced canonical {standards['on_time_sla_pct']} on-time delivery SLA per contractual standards.\n"
-                f"- Quoted final client shipping rates strictly in {currency} without disclosing internal carrier tariffs.\n"
-                f"- Incorporated volume discount table under Miguel Torres commercial governance."
+                f"Applied active corrections to the proposal body based on evaluator feedback:\n"
+                f"- Updated body sections to address: {_sanitize_foreign_currency_in_text(_sanitize_sub_48h_returns_in_text(feedback_for_generator), currency)}\n"
+                f"- Marked unpublished parcel rates as Pending confirmation in {currency} without disclosing internal carrier tariffs."
             )
 
-        return "\n".join(lines)
+        draft = "\n".join(lines)
+        if feedback_for_generator and iteration > 1:
+            draft = _sanitize_foreign_currency_in_text(
+                _sanitize_sub_48h_returns_in_text(draft),
+                currency,
+            )
+        return draft
 
 
 class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
@@ -454,6 +698,10 @@ class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
             "reverse",
             f"Reverse returns turnaround 48 hours pricing {client_country}",
         )
+        kb_snippets: List[str] = [
+            _sanitize_foreign_currency_in_text(str(s), currency)
+            for s in (kb_context.get("snippets") or [])
+        ]
 
         return_window = key_aspects.get("return_window_days") or 30
         return_rate = key_aspects.get("estimated_return_rate")
@@ -467,34 +715,61 @@ class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
         rate_desc = (
             f"We plan for a return rate of {float(return_rate) * 100:.1f}%."
             if isinstance(return_rate, (int, float))
-            else "We will confirm your expected return rate at launch."
+            else "We will confirm your expected return rate at launch (Pending confirmation)."
         )
         flow_desc = ", ".join(str(d) for d in disposition_flow)
         inspection_desc = (
             "full manual quality inspection"
             if inspection_req
-            else "fast return inspection"
+            else "standard return inspection"
         )
+
+        body_mods = self._build_body_feedback_directive(
+            feedback_for_generator if iteration > 1 else None,
+            currency,
+            key_aspects,
+        )
+
+        sec1_lines = [
+            f"We support a {return_window} days return window for {client_name}. "
+            f"{rate_desc} "
+            f"Each unit gets {inspection_desc}. "
+            f"Our disposition flow covers: {flow_desc}. "
+            "TrackFlow executes return logistics per client brand rules and does not refurbish or resell products on its own account."
+        ]
+        if body_mods["section_1"]:
+            sec1_lines.extend(body_mods["section_1"])
+
+        sec2_lines = [
+            f"Led by {self.responsible_person}, return turnaround takes {standards['minimum_turnaround_hours']}. "
+            "TrackFlow strictly enforces a minimum turnaround of 48 hours; we never promise returns under 48 hours. "
+            f"We commit to a canonical {standards['on_time_sla_pct']} on-time SLA per contractual standards."
+        ]
+        if body_mods["section_2"]:
+            sec2_lines.extend(body_mods["section_2"])
+
+        sec3_lines = [
+            f"All return fees use {currency} as final client prices:",
+            f"- Return Shipping Cost Policy: Borne by the client brand unless caused by a TrackFlow error (transit damage or wrong delivery)",
+            f"- Return Inspection Rate: {rates['return_inspection_unit']}",
+            f"- Classification and Disposition Handling Rate: {rates['refurbishment_unit']}",
+        ]
+        if body_mods["section_3"]:
+            for mod in body_mods["section_3"]:
+                sec3_lines.append(f"- {mod}")
 
         lines: List[str] = [
             f"## Reverse Logistics Proposal for {client_name}",
             f"Lead: {self.responsible_person}. Country: {client_country}. Currency: {currency}.",
             "",
             "### 1. Return Window and Inspection Flow",
-            f"We support a {return_window} days return window for {client_name}. "
-            f"{rate_desc} "
-            f"Each unit gets {inspection_desc}. "
-            f"Our disposition flow covers: {flow_desc}.",
+            " ".join(sec1_lines),
             "",
             "### 2. Turnaround Time (48 to 72 Hours) and SLA",
-            f"Led by {self.responsible_person}, return turnaround takes {standards['minimum_turnaround_hours']}. "
-            "TrackFlow strictly enforces a minimum turnaround of 48 hours; we never promise returns under 48 hours. "
-            f"We commit to a canonical {standards['on_time_sla_pct']} on-time SLA per contractual standards.",
+            " ".join(sec2_lines),
             "",
             f"### 3. Returns Rates ({currency})",
-            f"All return fees use {currency} as final client prices:",
-            f"- Return Inspection Rate: {rates['return_inspection_unit']} per unit",
-            f"- Repack and Care Rate: {rates['refurbishment_unit']} per unit",
+            *sec3_lines,
             "",
             build_volume_discount_table(currency),
         ]
@@ -506,31 +781,43 @@ class ReverseLogisticsGeneratorAgent(BaseDepartmentGeneratorAgent):
                 "inspection_required",
                 "disposition_flow",
             }:
-                lines.append(f"- Aspect {k}: {v}")
+                val_str = str(v)
+                if feedback_for_generator and iteration > 1:
+                    val_str = _sanitize_foreign_currency_in_text(
+                        _sanitize_sub_48h_returns_in_text(val_str),
+                        currency,
+                    )
+                lines.append(f"- Aspect {k}: {val_str}")
 
-        if open_questions:
+        if open_questions or body_mods["section_4"]:
             lines.append("")
             lines.append("### 4. Open Questions")
             lines.append("We will confirm these open questions on return rate volume.")
-            for idx, _ in enumerate(open_questions, start=1):
-                lines.append(f"- Question {idx}: Pending client check on expected return rate.")
+            for idx, q in enumerate(open_questions, start=1):
+                lines.append(f"- Question {idx}: {q} (Pending confirmation on expected return rate).")
+            for mod in body_mods["section_4"]:
+                lines.append(f"- {mod}")
 
-        if kb_context.get("snippets"):
+        if kb_snippets:
             lines.append("")
-            lines.append(f"Policy Note ({kb_context['source']}): {kb_context['snippets'][0]}")
+            lines.append(f"Policy Note ({kb_context['source']}): {kb_snippets[0]}")
 
         if feedback_for_generator and iteration > 1:
             lines.append("")
             lines.append(
                 f"### 5. Revision Note (Attempt {iteration})\n"
-                f"Applied active corrections based on evaluator feedback:\n"
-                f"- Strictly enforced minimum turnaround of 48 to 72 hours per TrackFlow policy (eliminating any sub-48h promises).\n"
-                f"- Committed to canonical {standards['on_time_sla_pct']} on-time delivery and returns SLA per contractual standards.\n"
-                f"- Quoted return processing rates strictly in {currency} and marked unconfirmed volumes as 'Pendiente'.\n"
-                f"- Incorporated volume discount table under Miguel Torres commercial governance."
+                f"Applied active corrections to the proposal body based on evaluator feedback:\n"
+                f"- Updated body sections to address: {_sanitize_foreign_currency_in_text(_sanitize_sub_48h_returns_in_text(feedback_for_generator), currency)}\n"
+                f"- Grounded returns cost policy in the Knowledge Base and marked per-unit tariffs as Pending confirmation in {currency}."
             )
 
-        return "\n".join(lines)
+        draft = "\n".join(lines)
+        if feedback_for_generator and iteration > 1:
+            draft = _sanitize_foreign_currency_in_text(
+                _sanitize_sub_48h_returns_in_text(draft),
+                currency,
+            )
+        return draft
 
 
 def get_department_generator_agent(

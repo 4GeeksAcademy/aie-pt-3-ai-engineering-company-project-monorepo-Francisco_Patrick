@@ -46,3 +46,6 @@ Thumbs.db
 .vscode/
 .idea/
 
+
+guardrail_cli.py
+test_guardrail_cli.py
