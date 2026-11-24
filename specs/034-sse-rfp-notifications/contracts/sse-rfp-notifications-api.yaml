@@ -1,0 +1,244 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Real-Time RFP Notifications API (SSE Part 1)
+  version: 1.0.0
+  description: >
+    Server-Sent Events (SSE) push channel and deterministic non-LLM RFP ticket
+    registration contracts for real-time commercial dashboard notifications.
+    Mounted at both `/api/v1/rfp` and legacy `/rfp`.
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RFPTicketCreatedEvent:
+      type: object
+      required:
+        - ticket_id
+        - rfp_id
+        - client_name
+        - client_country
+        - services_requested
+        - status
+        - created_at
+      properties:
+        ticket_id:
+          type: string
+          example: "tkt_0225"
+        rfp_id:
+          type: string
+          example: "rfp_0071"
+        client_name:
+          type: string
+          example: "Northline Apparel"
+        client_country:
+          type: string
+          enum: ["US", "ES"]
+          example: "US"
+        services_requested:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: ["warehouse", "lastmile", "reverse"]
+          example: ["warehouse", "lastmile"]
+        status:
+          type: string
+          enum: ["analyzing"]
+          example: "analyzing"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-07-24T14:32:00Z"
+
+    CreateRFPTicketRequest:
+      type: object
+      required:
+        - client_name
+        - client_country
+        - services_requested
+      properties:
+        ticket_id:
+          type: ["string", "null"]
+          description: Optional explicit ticket identifier (e.g. 'tkt_0225' or UUID).
+          example: "tkt_0225"
+        rfp_id:
+          type: ["string", "null"]
+          description: Optional explicit RFP identifier (e.g. 'rfp_0071').
+          example: "rfp_0071"
+        client_name:
+          type: string
+          minLength: 1
+          example: "Northline Apparel"
+        client_country:
+          type: string
+          enum: ["US", "ES"]
+          example: "US"
+        services_requested:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: ["warehouse", "lastmile", "reverse"]
+          example: ["warehouse", "lastmile"]
+        monthly_volume:
+          type: ["integer", "null"]
+          example: 45000
+        deadline:
+          type: ["string", "null"]
+          example: "2026-08-15"
+        budget_range:
+          type: ["string", "null"]
+          example: "$150,000 - $200,000 / month"
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          example: "Not authenticated"
+
+paths:
+  /api/v1/rfp/notifications/stream:
+    get:
+      summary: Subscribe to Real-Time RFP Ticket Notifications (SSE)
+      description: >
+        Establishes an authenticated Server-Sent Events (`text/event-stream`) connection.
+        Emits named `event: rfp_ticket_created` frames with a flat JSON payload in `data:`
+        whenever a new RFP ticket enters the system with `status = analyzing`.
+        Replays missed events from the bounded server ring buffer when `Last-Event-ID`
+        header or `last_event_id` query parameter is provided.
+        Emits `: keep-alive` comment frames every 15 seconds (or `heartbeat_interval` in tests).
+      tags:
+        - RFP Real-Time Notifications
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Last monotonic SSE event ID received by the client for missed-event replay.
+        - name: last_event_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Query parameter fallback for Last-Event-ID replay.
+        - name: heartbeat_interval
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 15.0
+            minimum: 0.1
+            maximum: 60.0
+          description: Keep-alive heartbeat interval in seconds (default 15s; configurable for tests).
+        - name: max_events
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional limit of events/frames to yield before closing (used in deterministic automated tests).
+      responses:
+        "200":
+          description: Active SSE stream (`text/event-stream`).
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache"
+            Connection:
+              schema:
+                type: string
+                example: "keep-alive"
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: "no"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                rfp_ticket_created:
+                  summary: Named SSE event for a newly created RFP ticket
+                  value: |
+                    id: 1
+                    event: rfp_ticket_created
+                    data: {"ticket_id": "tkt_0225", "rfp_id": "rfp_0071", "client_name": "Northline Apparel", "client_country": "US", "services_requested": ["warehouse", "lastmile"], "status": "analyzing", "created_at": "2026-07-24T14:32:00Z"}
+
+        "401":
+          description: Missing, invalid, or expired Bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Authenticated user account is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/rfp/events:
+    get:
+      summary: Compatibility Alias for Real-Time RFP Ticket Notifications (SSE)
+      description: Alias for `GET /api/v1/rfp/notifications/stream` with identical authentication and SSE framing.
+      tags:
+        - RFP Real-Time Notifications
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Active SSE stream (`text/event-stream`).
+        "401":
+          description: Missing, invalid, or expired Bearer token.
+
+  /api/v1/rfp/tickets:
+    post:
+      summary: Register a new RFP ticket in analyzing status and broadcast rfp_ticket_created (No LLM)
+      description: >
+        Registers a new RFP ticket with initial status `analyzing` (`analizando` in DB)
+        and its commercial metadata without invoking any LLM or AI agent, and immediately
+        broadcasts the `rfp_ticket_created` event to all connected SSE subscribers.
+      tags:
+        - RFP Real-Time Notifications
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRFPTicketRequest"
+      responses:
+        "201":
+          description: Ticket registered and `rfp_ticket_created` broadcast emitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RFPTicketCreatedEvent"
+        "401":
+          description: Missing, invalid, or expired Bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error on request payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
