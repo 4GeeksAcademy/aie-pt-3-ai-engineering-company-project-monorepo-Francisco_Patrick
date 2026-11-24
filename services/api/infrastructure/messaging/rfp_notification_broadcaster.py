@@ -18,7 +18,15 @@ class RFPNotificationBroadcaster(RFPNotificationBroadcasterPort):
 
     Supports both async FastAPI route publication and synchronous background pipeline publication,
     assigns monotonically increasing SSE `id:` numbers, stores recent events in a bounded ring
-    buffer (`maxlen=256`) for `Last-Event-ID` reconnection replay, and deduplicates by `ticket_id`.
+    buffer (`maxlen=max_history`, default 256) for `Last-Event-ID` reconnection replay, and deduplicates
+    by `ticket_id`.
+
+    Note on bounded server deduplication:
+    Server deduplication is bounded to `max_history` items to prevent unbounded memory growth in
+    long-running processes. Even if a ticket ID evicts from the broadcaster's ring buffer after
+    `max_history` subsequent events, client-side deduplication (`seenTicketIdsRef` in `useRFPNotifications`
+    and `mergeAndDeduplicateTickets` in `rfpNotificationsClient`) provides a secondary layer of defense
+    guaranteeing idempotency in the UI.
     """
 
     def __init__(self, max_history: int = 256, max_queue_size: int = 128) -> None:

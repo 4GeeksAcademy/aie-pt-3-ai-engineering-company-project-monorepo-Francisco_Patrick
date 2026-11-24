@@ -446,3 +446,47 @@ def test_us3_get_tickets_reconciliation_includes_enriched_briefing_fields(
     assert summary["client_country"] == "US"
     assert summary["services_requested"] == ["warehouse", "lastmile"]
     assert summary["status"] == "analizando"
+
+
+def test_broadcaster_deduplication_exceeding_max_history() -> None:
+    """Verify that after max_history intervening events, an evicted ticket_id can be re-published by the broadcaster.
+
+    This documents and verifies the bounded memory ring buffer behavior (maxlen=max_history) and reinforces
+    that client-side deduplication acts as the second layer of defense.
+    """
+    broadcaster = RFPNotificationBroadcaster(max_history=5)
+
+    initial_event = RFPTicketCreatedEvent(
+        ticket_id="tkt_initial",
+        rfp_id="rfp_init",
+        client_name="Initial Client",
+        client_country="ES",
+        services_requested=["warehouse"],
+    )
+
+    # Initial publication succeeds
+    first_publish = broadcaster.publish_ticket_created(initial_event)
+    assert first_publish is not None
+    assert first_publish.ticket_id == "tkt_initial"
+
+    # Immediate duplicate within max_history is suppressed
+    duplicate_suppressed = broadcaster.publish_ticket_created(initial_event)
+    assert duplicate_suppressed is None
+
+    # Emit 5 intervening events to push tkt_initial past the max_history=5 buffer
+    for idx in range(5):
+        filler_event = RFPTicketCreatedEvent(
+            ticket_id=f"tkt_filler_{idx}",
+            rfp_id=f"rfp_filler_{idx}",
+            client_name="Filler Client",
+            client_country="ES",
+            services_requested=["lastmile"],
+        )
+        filler_publish = broadcaster.publish_ticket_created(filler_event)
+        assert filler_publish is not None
+
+    # Once evicted from the bounded deque, server allows publishing, relying on client-side deduplication
+    evicted_republish = broadcaster.publish_ticket_created(initial_event)
+    assert evicted_republish is not None
+    assert evicted_republish.ticket_id == "tkt_initial"
+

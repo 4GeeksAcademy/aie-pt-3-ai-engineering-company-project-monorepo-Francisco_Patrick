@@ -30,6 +30,12 @@ export interface UseRFPNotificationsOptions {
   apiUrl?: string;
   /** Optional status filter (`"all"`, `"analizando"`, `"analisis_completo"`, `"descartado"`). */
   statusFilter?: string;
+  /**
+   * Optional maximum tickets to retrieve during REST fallback reconciliation (defaults to 100).
+   * For network drops exceeding this threshold, client-side deduplication guarantees idempotency,
+   * while table pagination or page refresh covers deep historical backlog.
+   */
+  reconciliationLimit?: number;
   /** Callback invoked whenever live or recovered tickets should be merged into dashboard state. */
   onTicketsReceived?: (incomingTickets: IntakeTicketSummaryDTO[]) => void;
 }
@@ -83,6 +89,8 @@ export function useRFPNotifications(
   const seenTicketIdsRef = useRef<Set<string>>(new Set<string>());
   const hasConnectedOnceRef = useRef<boolean>(false);
 
+  const reconciliationLimit = options.reconciliationLimit ?? 100;
+
   const dismissLatestArrival = useCallback((): void => {
     setLatestArrival(null);
   }, []);
@@ -90,13 +98,16 @@ export function useRFPNotifications(
   const reconcileMissedTickets = useCallback(
     async (token: string): Promise<void> => {
       try {
-        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/v1/rfp/tickets?limit=50`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          cache: 'no-store',
-        });
+        const response = await fetch(
+          `${apiUrl.replace(/\/$/, '')}/api/v1/rfp/tickets?limit=${reconciliationLimit}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: 'no-store',
+          }
+        );
         if (!response.ok) {
           return;
         }
@@ -112,7 +123,7 @@ export function useRFPNotifications(
         // Reconciliation failure is non-fatal; subsequent SSE frames or reconnect will retry
       }
     },
-    [apiUrl]
+    [apiUrl, reconciliationLimit]
   );
 
   const retryConnection = useCallback((): void => {
