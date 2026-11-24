@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IntakeHandoffPayloadSchema",
+  "description": "Immutable Part 2 handoff contract emitted upon intake completion",
+  "type": "object",
+  "required": [
+    "ticket_id",
+    "schema_version",
+    "metadata",
+    "department_aspects",
+    "sales_synthesis",
+    "emitted_at"
+  ],
+  "properties": {
+    "ticket_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "client_name",
+        "client_country",
+        "currency",
+        "services_requested",
+        "monthly_volume",
+        "deadline",
+        "budget_range",
+        "departments_needed",
+        "unsupported_services",
+        "readability_scores"
+      ],
+      "properties": {
+        "client_name": { "type": "string" },
+        "client_country": { "type": "string", "enum": ["US", "ES"] },
+        "currency": { "type": "string", "enum": ["USD", "EUR"] },
+        "services_requested": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "monthly_volume": { "type": ["integer", "null"] },
+        "deadline": { "type": ["string", "null"] },
+        "budget_range": { "type": ["string", "null"] },
+        "departments_needed": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["warehouse", "lastmile", "reverse"] }
+        },
+        "unsupported_services": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "readability_scores": {
+          "type": "object",
+          "required": [
+            "flesch_reading_ease",
+            "flesch_kincaid_grade",
+            "reading_level_label",
+            "word_count",
+            "sentence_count"
+          ],
+          "properties": {
+            "flesch_reading_ease": { "type": "number" },
+            "flesch_kincaid_grade": { "type": "number" },
+            "reading_level_label": { "type": "string" },
+            "word_count": { "type": "integer" },
+            "sentence_count": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "department_aspects": {
+      "type": "object",
+      "description": "Key aspects evaluated per active department (omits inactive departments)",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "department_id",
+          "department_name",
+          "responsible_person",
+          "key_aspects",
+          "open_questions",
+          "policy_warnings"
+        ],
+        "properties": {
+          "department_id": { "type": "string" },
+          "department_name": { "type": "string" },
+          "responsible_person": { "type": "string" },
+          "key_aspects": { "type": "object" },
+          "open_questions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "policy_warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "sales_synthesis": {
+      "type": "object",
+      "required": [
+        "executive_summary",
+        "flagged_contradictions",
+        "key_questions_for_prospect",
+        "internal_contacts"
+      ],
+      "properties": {
+        "executive_summary": { "type": "string" },
+        "flagged_contradictions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "key_questions_for_prospect": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "internal_contacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "role", "department"],
+            "properties": {
+              "name": { "type": "string" },
+              "role": { "type": "string" },
+              "department": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "emitted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

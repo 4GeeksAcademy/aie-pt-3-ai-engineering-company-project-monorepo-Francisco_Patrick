@@ -116,4 +116,136 @@ class TelemetryEventRecord(SQLModel, table=True):
     )
 
 
-__all__ = ["SKU", "StockEntry", "StockExit", "TelemetryEventRecord"]
+class IntakeTicketTable(SQLModel, table=True):
+    """Relational table model for RFP intake tickets."""
+
+    __tablename__ = "intake_tickets"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_number: str = Field(unique=True, index=True, nullable=False)
+    status: str = Field(index=True, nullable=False)
+    raw_pdf_path: str = Field(nullable=False)
+    raw_pdf_filename: str = Field(nullable=False)
+    file_size_bytes: int = Field(nullable=False)
+    rejection_reason: Optional[str] = Field(default=None, nullable=True)
+    error_message: Optional[str] = Field(default=None, nullable=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+class RFPMetadataTable(SQLModel, table=True):
+    """Relational table model for extracted RFP commercial metadata."""
+
+    __tablename__ = "rfp_metadata"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", unique=True, index=True, nullable=False
+    )
+    client_name: str = Field(nullable=False)
+    client_country: str = Field(nullable=False)
+    currency: str = Field(nullable=False)
+    services_requested: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    monthly_volume: Optional[int] = Field(default=None, nullable=True)
+    deadline: Optional[str] = Field(default=None, nullable=True)
+    budget_range: Optional[str] = Field(default=None, nullable=True)
+    departments_needed: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    unsupported_services: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    readability_scores: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+class DepartmentSectionTable(SQLModel, table=True):
+    """Relational table model for department worker evaluations."""
+
+    __tablename__ = "department_sections"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", index=True, nullable=False
+    )
+    department_id: str = Field(index=True, nullable=False)
+    department_name: str = Field(nullable=False)
+    responsible_person: str = Field(nullable=False)
+    key_aspects: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    open_questions: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    policy_warnings: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+class IntakeHandoffPayloadTable(SQLModel, table=True):
+    """Relational table model for canonical Part 2 handoff payloads."""
+
+    __tablename__ = "intake_handoff_payloads"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", unique=True, index=True, nullable=False
+    )
+    schema_version: str = Field(default="1.0.0", nullable=False)
+    executive_summary: str = Field(nullable=False)
+    flagged_contradictions: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    key_questions_for_prospect: List[str] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    internal_contacts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    full_handoff_json: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+__all__ = [
+    "DepartmentSectionTable",
+    "IntakeHandoffPayloadTable",
+    "IntakeTicketTable",
+    "RFPMetadataTable",
+    "SKU",
+    "StockEntry",
+    "StockExit",
+    "TelemetryEventRecord",
+]

@@ -196,6 +196,10 @@ class SQLModelClientManager:
             StockEntry,
             StockExit,
             TelemetryEventRecord,
+            IntakeTicketTable,
+            RFPMetadataTable,
+            DepartmentSectionTable,
+            IntakeHandoffPayloadTable,
         )
         from infrastructure.queue.models import DeadLetterQueueRecord  # noqa: F401
 
