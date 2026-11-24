@@ -1,12 +1,15 @@
 """Domain ports (interfaces) for RFP Intake, Proposal Generation & Analysis."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
 
 from domain.rfp.entities import (
+    ArbitrationLog,
     DepartmentSection,
     EvaluationResult,
+    FinalDocument,
     IntakeHandoffPayload,
     IntakeTicket,
     Part3HandoffPayload,
@@ -104,6 +107,41 @@ class IntakeTicketRepositoryPort(ABC):
     @abstractmethod
     def get_part3_handoff_payload(self, ticket_id: UUID) -> Optional[Part3HandoffPayload]:
         """Retrieve the canonical Part 3 handoff payload for a ticket."""
+        pass
+
+    @abstractmethod
+    def update_department_section_approval(
+        self,
+        ticket_id: UUID,
+        department_id: str,
+        approval_status: str,
+        approver: Optional[str] = None,
+        review_feedback: Optional[str] = None,
+        iteration: Optional[int] = None,
+        draft_content: Optional[str] = None,
+        approved_at: Optional[datetime] = None,
+    ) -> Optional[DepartmentSection]:
+        """Update Part 3 human approval status, approver, feedback, and timestamp for a department section."""
+        pass
+
+    @abstractmethod
+    def save_arbitration_log(self, log: ArbitrationLog) -> ArbitrationLog:
+        """Persist a deterministic conflict arbitration audit log entry."""
+        pass
+
+    @abstractmethod
+    def list_arbitration_logs(self, ticket_id: UUID) -> List[ArbitrationLog]:
+        """Retrieve all arbitration audit log entries for a ticket ordered chronologically."""
+        pass
+
+    @abstractmethod
+    def save_final_document(self, document: FinalDocument) -> FinalDocument:
+        """Persist or update the synthesized final proposal document for a ticket."""
+        pass
+
+    @abstractmethod
+    def get_final_document(self, ticket_id: UUID) -> Optional[FinalDocument]:
+        """Retrieve the synthesized final proposal document for a ticket."""
         pass
 
 

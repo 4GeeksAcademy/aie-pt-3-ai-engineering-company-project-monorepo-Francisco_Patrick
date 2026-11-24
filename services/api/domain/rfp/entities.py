@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TicketStatus(str, Enum):
-    """Lifecycle status states for an RFP ticket across Part 1 and Part 2."""
+    """Lifecycle status states for an RFP ticket across Part 1, Part 2, and Part 3."""
 
     ANALIZANDO = "analizando"
     DESCARTADO = "descartado"
@@ -19,6 +19,29 @@ class TicketStatus(str, Enum):
     DRAFTING = "generando_borrador"
     UNDER_EVALUATION = "en_evaluación"
     NEEDS_HUMAN_REVIEW = "needs_human_review"
+    # Part 3 human approval & final synthesis statuses
+    WAITING_FOR_APPROVAL = "esperando_aprobación"
+    TERMINADO = "terminado"
+    DONE = "terminado"
+
+
+class ApprovalStatus(str, Enum):
+    """Human review approval status for an individual department section in Part 3."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CHANGES_REQUESTED = "changes_requested"
+    NEEDS_HUMAN_REVIEW = "needs_human_review"
+
+
+ApprovalDecisionLiteral = Literal["approve", "reject", "request_changes"]
+ArbitrationTriggerLiteral = Literal[
+    "volume-vs-capacity",
+    "returns-sla-breach",
+    "currency-mismatch",
+]
+ArbiterLiteral = Literal["Miguel Torres", "Sofía Ramos"]
 
 
 @dataclass(frozen=True)
@@ -155,7 +178,7 @@ class EvaluationResult(BaseModel):
 
 @dataclass(frozen=True)
 class DepartmentSection:
-    """Department-specific operational evaluation, generated draft, and evaluation history."""
+    """Department-specific operational evaluation, generated draft, evaluation history, and Part 3 approval status."""
 
     id: UUID
     ticket_id: UUID
@@ -169,8 +192,98 @@ class DepartmentSection:
     iteration: int = 0
     status: str = "pending"
     evaluation_results: List[Dict[str, Any]] = field(default_factory=list)
+    approval_status: str = "pending"
+    approver: Optional[str] = None
+    review_feedback: Optional[str] = None
+    approved_at: Optional[datetime] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def iteration_count(self) -> int:
+        """Alias returning current revision iteration count."""
+        return self.iteration
+
+
+@dataclass(frozen=True)
+class ArbitrationLog:
+    """Immutable audit record of a deterministic cross-department conflict arbitration in Part 3."""
+
+    id: UUID
+    ticket_id: UUID
+    trigger_id: ArbitrationTriggerLiteral
+    arbiter: ArbiterLiteral
+    rule_applied: str
+    resolution_details: Dict[str, Any]
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_schema_dict(self) -> Dict[str, Any]:
+        """Serialize strictly to arbitration-log.schema.json compliant dictionary."""
+        return {
+            "id": str(self.id),
+            "ticket_id": str(self.ticket_id),
+            "trigger_id": self.trigger_id,
+            "arbiter": self.arbiter,
+            "rule_applied": self.rule_applied,
+            "resolution_details": dict(self.resolution_details),
+            "created_at": (
+                self.created_at.isoformat()
+                if isinstance(self.created_at, datetime)
+                else str(self.created_at)
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class FinalDocument:
+    """Consolidated, client-ready commercial proposal document synthesized upon 100% department approval."""
+
+    id: UUID
+    ticket_id: UUID
+    title: str
+    client_name: str
+    currency: Literal["USD", "EUR"]
+    executive_summary: str
+    sections: Dict[str, Any]
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_schema_dict(self) -> Dict[str, Any]:
+        """Serialize strictly to final-document.schema.json compliant dictionary."""
+        return {
+            "id": str(self.id),
+            "ticket_id": str(self.ticket_id),
+            "title": self.title,
+            "client_name": self.client_name,
+            "currency": self.currency,
+            "executive_summary": self.executive_summary,
+            "sections": dict(self.sections),
+            "generated_at": (
+                self.generated_at.isoformat()
+                if isinstance(self.generated_at, datetime)
+                else str(self.generated_at)
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class ExecutionTraceEntry:
+    """Structured node execution trace entry recorded in LangGraph state."""
+
+    node_name: str
+    input_state: Dict[str, Any]
+    output_state: Dict[str, Any]
+    timestamp: str
+    department_id: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert trace entry to serializable dictionary."""
+        return {
+            "node_name": self.node_name,
+            "department_id": self.department_id,
+            "input_state": dict(self.input_state),
+            "output_state": dict(self.output_state),
+            "timestamp": self.timestamp,
+        }
 
 
 @dataclass(frozen=True)
@@ -294,3 +407,17 @@ class IntakeTicket:
         if error_message is not None:
             self.error_message = error_message
         self.updated_at = datetime.now(timezone.utc)
+
+    def mark_waiting_for_approval(self) -> None:
+        """Transition ticket to Part 3 human approval phase (esperando_aprobación)."""
+        self.status = TicketStatus.WAITING_FOR_APPROVAL
+        self.updated_at = datetime.now(timezone.utc)
+
+    def mark_terminado(self) -> None:
+        """Transition ticket to final completed state (terminado) after document synthesis."""
+        self.status = TicketStatus.TERMINADO
+        self.updated_at = datetime.now(timezone.utc)
+
+    def mark_done(self) -> None:
+        """Alias for mark_terminado()."""
+        self.mark_terminado()

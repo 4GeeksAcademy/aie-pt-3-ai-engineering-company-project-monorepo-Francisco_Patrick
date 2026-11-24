@@ -31,10 +31,13 @@ from domain.rfp.ports import IntakeTicketRepositoryPort
 from infrastructure.persistence.sqlmodel.rfp_repository import SQLModelIntakeTicketRepository
 from presentation.dependencies import get_sqlmodel_session_dep
 from presentation.schemas.rfp import (
+    ArbitrationLogListResponse,
+    ArbitrationLogResponse,
     ComplianceEvaluationSchema,
     DepartmentSectionResponse,
     ErrorResponse,
     EvaluationResultSchema,
+    FinalDocumentResponse,
     IntakeHandoffPayloadResponse,
     IntakeTicketAcceptedResponse,
     IntakeTicketDetailResponse,
@@ -47,6 +50,8 @@ from presentation.schemas.rfp import (
     ReadabilityEvaluationSchema,
     ReadabilityScoresResponse,
     RelevanceEvaluationSchema,
+    ResumeDecisionRequest,
+    ResumeDecisionResponse,
     RFPMetadataResponse,
 )
 
@@ -111,6 +116,10 @@ def _map_section_to_response(s: DepartmentSection) -> DepartmentSectionResponse:
         draft_content=s.draft_content,
         latest_evaluation=latest_eval,
         evaluation_results=eval_schemas,
+        approval_status=s.approval_status,
+        approver=s.approver,
+        review_feedback=s.review_feedback,
+        approved_at=s.approved_at,
     )
 
 
@@ -289,6 +298,34 @@ def get_rfp_ticket_by_id(
             created_at=handoff_entity.created_at,
         )
 
+    arb_logs_entities = repository.list_arbitration_logs(ticket.id)
+    arb_logs_response = [
+        ArbitrationLogResponse(
+            id=log.id,
+            ticket_id=log.ticket_id,
+            trigger_id=log.trigger_id,
+            arbiter=log.arbiter,
+            rule_applied=log.rule_applied,
+            resolution_details=log.resolution_details,
+            created_at=log.created_at,
+        )
+        for log in arb_logs_entities
+    ]
+
+    final_doc_entity = repository.get_final_document(ticket.id)
+    final_doc_response = None
+    if final_doc_entity:
+        final_doc_response = FinalDocumentResponse(
+            id=final_doc_entity.id,
+            ticket_id=final_doc_entity.ticket_id,
+            title=final_doc_entity.title,
+            client_name=final_doc_entity.client_name,
+            currency=final_doc_entity.currency,
+            executive_summary=final_doc_entity.executive_summary,
+            sections=final_doc_entity.sections,
+            generated_at=final_doc_entity.generated_at,
+        )
+
     return IntakeTicketDetailResponse(
         ticket_id=ticket.id,
         ticket_number=ticket.ticket_number,
@@ -300,6 +337,8 @@ def get_rfp_ticket_by_id(
         metadata=meta_response,
         department_sections=sections_response,
         handoff=handoff_response,
+        arbitration_logs=arb_logs_response,
+        final_document=final_doc_response,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
     )
@@ -469,4 +508,143 @@ def get_rfp_part3_handoff(
         rfp_metadata=part3_entity.rfp_metadata,
         department_sections=bundles,
         emitted_at=part3_entity.emitted_at,
+    )
+
+
+def get_rfp_approval_service(
+    repository: IntakeTicketRepositoryPort = Depends(get_rfp_repository),
+) -> RFPApprovalService:
+    """Dependency injection provider for Part 3 RFP Approval & Arbitration service."""
+    return RFPApprovalService(repository=repository)
+
+
+@router.post(
+    "/tickets/{ticket_id}/resume-approval",
+    response_model=ResumeDecisionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resume an interrupted department approval branch",
+    responses={
+        200: {"model": ResumeDecisionResponse},
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+    },
+)
+def resume_department_approval(
+    ticket_id: UUID,
+    payload: ResumeDecisionRequest,
+    approval_service: RFPApprovalService = Depends(get_rfp_approval_service),
+) -> ResumeDecisionResponse:
+    """Validate human reviewer decision and resume the paused department approval branch."""
+    try:
+        result = approval_service.resume_department_approval(
+            ticket_id=ticket_id,
+            department_id=payload.department_id,
+            decision=payload.decision,
+            approver=payload.approver,
+            feedback=payload.feedback,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ResumeValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except BranchNotInterruptedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    approved_at_raw = result.get("approved_at")
+    approved_at_dt: Optional[datetime] = None
+    if isinstance(approved_at_raw, str):
+        approved_at_dt = datetime.fromisoformat(approved_at_raw)
+    elif isinstance(approved_at_raw, datetime):
+        approved_at_dt = approved_at_raw
+
+    return ResumeDecisionResponse(
+        ticket_id=UUID(str(result["ticket_id"])),
+        department_id=result["department_id"],
+        approval_status=result["approval_status"],
+        ticket_status=result["ticket_status"],
+        message=result["message"],
+        approved_at=approved_at_dt,
+    )
+
+
+@router.get(
+    "/tickets/{ticket_id}/arbitration-logs",
+    response_model=ArbitrationLogListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve all deterministic arbitration records for a ticket",
+    responses={
+        200: {"model": ArbitrationLogListResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def get_ticket_arbitration_logs(
+    ticket_id: UUID,
+    approval_service: RFPApprovalService = Depends(get_rfp_approval_service),
+) -> ArbitrationLogListResponse:
+    """Retrieve all deterministic conflict arbitration audit log entries for a ticket."""
+    try:
+        logs = approval_service.list_arbitration_logs(ticket_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    items = [
+        ArbitrationLogResponse(
+            id=log.id,
+            ticket_id=log.ticket_id,
+            trigger_id=log.trigger_id,
+            arbiter=log.arbiter,
+            rule_applied=log.rule_applied,
+            resolution_details=log.resolution_details,
+            created_at=log.created_at,
+        )
+        for log in logs
+    ]
+    return ArbitrationLogListResponse(items=items, total=len(items))
+
+
+@router.get(
+    "/tickets/{ticket_id}/final-document",
+    response_model=FinalDocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve the finalized, synthesized commercial proposal document",
+    responses={
+        200: {"model": FinalDocumentResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def get_final_proposal_document(
+    ticket_id: UUID,
+    approval_service: RFPApprovalService = Depends(get_rfp_approval_service),
+) -> FinalDocumentResponse:
+    """Retrieve the consolidated final proposal document once 100% of active departments have approved."""
+    try:
+        doc = approval_service.get_final_document(ticket_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return FinalDocumentResponse(
+        id=doc.id,
+        ticket_id=doc.ticket_id,
+        title=doc.title,
+        client_name=doc.client_name,
+        currency=doc.currency,
+        executive_summary=doc.executive_summary,
+        sections=doc.sections,
+        generated_at=doc.generated_at,
     )

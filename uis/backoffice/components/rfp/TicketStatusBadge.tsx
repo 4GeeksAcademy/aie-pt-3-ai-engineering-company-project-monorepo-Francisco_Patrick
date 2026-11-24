@@ -40,6 +40,27 @@ export function TicketStatusBadge({ status }: TicketStatusBadgeProps): React.Rea
           Análisis Completo
         </span>
       );
+    case 'esperando_aprobación':
+      return (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse mr-1.5" />
+          Esperando Aprobación
+        </span>
+      );
+    case 'terminado':
+      return (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-400/30">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 mr-1.5" />
+          Terminado
+        </span>
+      );
+    case 'needs_human_review':
+      return (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-300 mr-1.5" />
+          Revisión Humana
+        </span>
+      );
     default:
       return (
         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/20">

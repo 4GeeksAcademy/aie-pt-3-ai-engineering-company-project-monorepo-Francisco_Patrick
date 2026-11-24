@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.ai/schemas/rfp/final-document.schema.json",
+  "title": "FinalProposalDocument",
+  "description": "Schema for the complete, consolidated commercial proposal document ready for client presentation.",
+  "type": "object",
+  "required": [
+    "id",
+    "ticket_id",
+    "title",
+    "client_name",
+    "currency",
+    "executive_summary",
+    "sections",
+    "generated_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier of the final synthesized document."
+    },
+    "ticket_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID of the originating RFP ticket."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 5,
+      "description": "Proposal document title."
+    },
+    "client_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Prospect client organization name."
+    },
+    "currency": {
+      "type": "string",
+      "enum": ["USD", "EUR"],
+      "description": "Operating currency determined by client country."
+    },
+    "executive_summary": {
+      "type": "string",
+      "minLength": 20,
+      "description": "Consolidated executive summary of the commercial offering."
+    },
+    "sections": {
+      "type": "object",
+      "description": "Map of department_id to final approved section content and metrics.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["department_name", "responsible_person", "approved_content", "approved_at"],
+        "properties": {
+          "department_name": { "type": "string" },
+          "responsible_person": { "type": "string" },
+          "approved_content": { "type": "string" },
+          "approved_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC ISO timestamp when the final document was synthesized."
+    }
+  },
+  "additionalProperties": false
+}

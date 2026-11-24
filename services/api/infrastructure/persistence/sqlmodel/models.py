@@ -207,6 +207,13 @@ class DepartmentSectionTable(SQLModel, table=True):
         default_factory=list,
         sa_column=SAColumn(JSON, nullable=False),
     )
+    approval_status: str = Field(default="pending", index=True, nullable=False)
+    approver: Optional[str] = Field(default=None, nullable=True)
+    review_feedback: Optional[str] = Field(default=None, nullable=True)
+    approved_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=SAColumn(DateTime(timezone=True), nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=SAColumn(DateTime(timezone=True), nullable=False),
@@ -275,8 +282,55 @@ class Part3HandoffPayloadTable(SQLModel, table=True):
     )
 
 
+class ArbitrationLogTable(SQLModel, table=True):
+    """Relational table model for deterministic conflict arbitration audit records (Part 3)."""
+
+    __tablename__ = "arbitration_logs"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", index=True, nullable=False
+    )
+    trigger_id: str = Field(index=True, nullable=False)
+    arbiter: str = Field(nullable=False)
+    rule_applied: str = Field(nullable=False)
+    resolution_details: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
+class FinalDocumentTable(SQLModel, table=True):
+    """Relational table model for synthesized final commercial proposal documents (Part 3)."""
+
+    __tablename__ = "final_documents"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", unique=True, index=True, nullable=False
+    )
+    title: str = Field(nullable=False)
+    client_name: str = Field(nullable=False)
+    currency: str = Field(nullable=False)
+    executive_summary: str = Field(nullable=False)
+    sections: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    generated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
 __all__ = [
+    "ArbitrationLogTable",
     "DepartmentSectionTable",
+    "FinalDocumentTable",
     "IntakeHandoffPayloadTable",
     "IntakeTicketTable",
     "Part3HandoffPayloadTable",

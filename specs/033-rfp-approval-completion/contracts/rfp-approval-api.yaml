@@ -1,0 +1,244 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow RFP Approval, Arbitration & Final Synthesis API
+  version: 3.0.0
+  description: >
+    REST API endpoints for Human-in-the-Loop (HITL) department approval workflows,
+    deterministic conflict arbitration audits, and final proposal document retrieval (Part 3 of 3).
+paths:
+  /api/v1/rfp/tickets/{ticket_id}/resume-approval:
+    post:
+      summary: Resume an interrupted department approval branch
+      operationId: resumeDepartmentApproval
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique UUID of the RFP ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeDecisionRequest'
+      responses:
+        '200':
+          description: Branch resumed and decision successfully recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeDecisionResponse'
+        '400':
+          description: Invalid request payload or validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ticket or department section not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Branch is not currently paused in an interrupt state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/tickets/{ticket_id}/arbitration-logs:
+    get:
+      summary: Retrieve all deterministic arbitration records for a ticket
+      operationId: getTicketArbitrationLogs
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique UUID of the RFP ticket
+      responses:
+        '200':
+          description: List of recorded conflict arbitrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArbitrationLogListResponse'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/tickets/{ticket_id}/final-document:
+    get:
+      summary: Retrieve the finalized, synthesized commercial proposal document
+      operationId: getFinalProposalDocument
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Unique UUID of the RFP ticket
+      responses:
+        '200':
+          description: Consolidated final proposal document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalDocumentResponse'
+        '404':
+          description: Final document not generated yet or ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ResumeDecisionRequest:
+      type: object
+      required:
+        - department_id
+        - decision
+        - approver
+      properties:
+        department_id:
+          type: string
+          enum: [warehouse, lastmile, reverse]
+          description: Department branch being resumed
+        decision:
+          type: string
+          enum: [approve, reject, request_changes]
+          description: Human reviewer operational decision
+        approver:
+          type: string
+          description: Name of responsible department lead (Ana Whitfield, Carlos Vega, Sofía Ramos)
+        feedback:
+          type: string
+          description: Mandatory feedback if decision is 'request_changes' or 'reject'
+
+    ResumeDecisionResponse:
+      type: object
+      required:
+        - ticket_id
+        - department_id
+        - approval_status
+        - ticket_status
+        - message
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          enum: [warehouse, lastmile, reverse]
+        approval_status:
+          type: string
+          enum: [approved, rejected, changes_requested]
+        ticket_status:
+          type: string
+          enum: [esperando_aprobación, terminado, needs_human_review]
+        message:
+          type: string
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ArbitrationLogResponse:
+      type: object
+      required:
+        - id
+        - ticket_id
+        - trigger_id
+        - arbiter
+        - rule_applied
+        - resolution_details
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticket_id:
+          type: string
+          format: uuid
+        trigger_id:
+          type: string
+          enum: [volume-vs-capacity, returns-sla-breach, currency-mismatch]
+        arbiter:
+          type: string
+          description: Named arbiter (Miguel Torres or Sofía Ramos)
+        rule_applied:
+          type: string
+          description: Description of the deterministic rule enforced
+        resolution_details:
+          type: object
+          description: Structured diff and resolution parameters
+        created_at:
+          type: string
+          format: date-time
+
+    ArbitrationLogListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArbitrationLogResponse'
+        total:
+          type: integer
+
+    FinalDocumentResponse:
+      type: object
+      required:
+        - id
+        - ticket_id
+        - title
+        - client_name
+        - currency
+        - executive_summary
+        - sections
+        - generated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticket_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        client_name:
+          type: string
+        currency:
+          type: string
+          enum: [USD, EUR]
+        executive_summary:
+          type: string
+        sections:
+          type: object
+          description: Map of department_id to approved markdown section text and metadata
+        generated_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Sanitized human-readable error description

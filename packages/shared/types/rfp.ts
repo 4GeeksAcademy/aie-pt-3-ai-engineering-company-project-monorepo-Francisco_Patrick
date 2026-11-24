@@ -13,7 +13,37 @@ export type TicketStatus =
   | "analisis_completo"
   | "generando_borrador"
   | "en_evaluación"
+  | "needs_human_review"
+  | "esperando_aprobación"
+  | "terminado";
+
+/**
+ * Human review approval status for an individual department section in Part 3.
+ */
+export type ApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "changes_requested"
   | "needs_human_review";
+
+/**
+ * Valid human reviewer operational decisions in Part 3.
+ */
+export type ApprovalDecision = "approve" | "reject" | "request_changes";
+
+/**
+ * Canonical conflict trigger identifiers evaluated by the deterministic arbitration node (§7).
+ */
+export type ArbitrationTriggerId =
+  | "volume-vs-capacity"
+  | "returns-sla-breach"
+  | "currency-mismatch";
+
+/**
+ * Named TrackFlow arbiters responsible for deterministic conflict resolution.
+ */
+export type ArbiterName = "Miguel Torres" | "Sofía Ramos";
 
 /**
  * Lifecycle statuses for an individual department proposal section in Part 2.
@@ -176,6 +206,146 @@ export interface DepartmentSectionDTO {
   draft_content?: string | null;
   /** Latest structured multi-dimensional evaluation result (Part 2). */
   latest_evaluation?: EvaluationResultDTO | null;
+  /** Full evaluation history across iterations. */
+  evaluation_results?: EvaluationResultDTO[];
+  /** Current human approval state in Part 3 ("pending" | "approved" | "rejected" | "changes_requested"). */
+  approval_status?: ApprovalStatus;
+  /** Name of the human approver recording the decision. */
+  approver?: string | null;
+  /** Optional revision feedback provided during human review. */
+  review_feedback?: string | null;
+  /** UTC ISO timestamp of final approval. */
+  approved_at?: string | null;
+}
+
+/**
+ * Request payload for resuming an interrupted department approval branch in Part 3.
+ */
+export interface ResumeDecisionRequestDTO {
+  /** Active department branch being resumed. */
+  department_id: DepartmentId;
+  /** Human reviewer operational decision. */
+  decision: ApprovalDecision;
+  /** Name of the responsible department lead (Ana Whitfield, Carlos Vega, Sofía Ramos). */
+  approver: string;
+  /** Mandatory feedback if decision is 'request_changes' or 'reject'. */
+  feedback?: string;
+}
+
+/**
+ * Response payload returned upon resuming an interrupted department approval branch.
+ */
+export interface ResumeDecisionResponseDTO {
+  /** Ticket UUID. */
+  ticket_id: string;
+  /** Resumed department identifier. */
+  department_id: DepartmentId;
+  /** Updated section approval status. */
+  approval_status: ApprovalStatus;
+  /** Current overall ticket status. */
+  ticket_status: TicketStatus;
+  /** Human-readable status summary. */
+  message: string;
+  /** UTC ISO approval timestamp if approved. */
+  approved_at?: string | null;
+}
+
+/**
+ * Structured metadata detailing before/after state diff and assigned remediation in arbitration.
+ */
+export interface ArbitrationResolutionDetailsDTO {
+  /** Affected departments involved in the conflict. */
+  affected_departments: DepartmentId[];
+  /** Action taken by the deterministic arbitration rule. */
+  action_taken: string;
+  /** Capped volume enforced when volume-vs-capacity triggers. */
+  capped_volume?: number | null;
+  /** Enforced canonical currency when currency-mismatch triggers. */
+  enforced_currency?: OperatingCurrency | null;
+  /** Additional rule context fields. */
+  [key: string]: unknown;
+}
+
+/**
+ * Audit log record produced by the deterministic conflict arbitration node (Part 3).
+ */
+export interface ArbitrationLogDTO {
+  /** Unique arbitration log record UUID. */
+  id: string;
+  /** Associated RFP ticket UUID. */
+  ticket_id: string;
+  /** Canonical conflict trigger ID. */
+  trigger_id: ArbitrationTriggerId;
+  /** Named authorized arbiter (Miguel Torres or Sofía Ramos). */
+  arbiter: ArbiterName;
+  /** Explicit statement of the business rule applied. */
+  rule_applied: string;
+  /** Structured diff and resolution parameters. */
+  resolution_details: ArbitrationResolutionDetailsDTO;
+  /** UTC ISO timestamp of arbitration execution. */
+  created_at: string;
+}
+
+/**
+ * List response wrapper for ticket arbitration log records.
+ */
+export interface ArbitrationLogListResponseDTO {
+  /** Recorded arbitration audit log entries. */
+  items: ArbitrationLogDTO[];
+  /** Total count of arbitration logs for the ticket. */
+  total: number;
+}
+
+/**
+ * Approved department section entry within the consolidated FinalDocument.
+ */
+export interface FinalDocumentSectionEntryDTO {
+  /** Display name of the department. */
+  department_name: string;
+  /** Responsible department lead. */
+  responsible_person: string;
+  /** Final approved Markdown proposal content. */
+  approved_content: string;
+  /** UTC ISO timestamp of section approval. */
+  approved_at: string;
+}
+
+/**
+ * Complete, consolidated commercial proposal document synthesized upon 100% department approval (Part 3).
+ */
+export interface FinalDocumentDTO {
+  /** Final document UUID. */
+  id: string;
+  /** Originating RFP ticket UUID. */
+  ticket_id: string;
+  /** Proposal document title. */
+  title: string;
+  /** Prospect client organization name. */
+  client_name: string;
+  /** Operating currency (USD or EUR). */
+  currency: OperatingCurrency;
+  /** Consolidated executive summary of the commercial offering. */
+  executive_summary: string;
+  /** Map of department_id to approved section content and sign-off metadata. */
+  sections: Partial<Record<DepartmentId, FinalDocumentSectionEntryDTO>>;
+  /** UTC ISO timestamp when the final document was synthesized. */
+  generated_at: string;
+}
+
+/**
+ * Node execution trace entry recorded in LangGraph state (Part 3).
+ */
+export interface ExecutionTraceEntryDTO {
+  /** Canonical graph node or agent name. */
+  node_name: string;
+  /** Optional department scope if executed on a parallel branch. */
+  department_id?: DepartmentId | null;
+  /** Serialized snapshot of relevant input data. */
+  input_state: Record<string, unknown>;
+  /** Serialized snapshot of node outputs. */
+  output_state: Record<string, unknown>;
+  /** UTC ISO execution timestamp. */
+  timestamp: string;
 }
 
 /**
@@ -353,6 +523,10 @@ export interface IntakeTicketDetailResponseDTO {
   department_sections: DepartmentSectionDTO[];
   /** Canonical handoff payload if analysis is complete. */
   handoff: IntakeHandoffPayloadDTO | null;
+  /** Deterministic arbitration audit logs recorded during Part 3. */
+  arbitration_logs?: ArbitrationLogDTO[];
+  /** Consolidated final proposal document if 100% approved in Part 3. */
+  final_document?: FinalDocumentDTO | null;
   /** UTC ISO creation timestamp. */
   created_at: string;
   /** UTC ISO last update timestamp. */

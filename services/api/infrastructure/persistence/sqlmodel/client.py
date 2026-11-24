@@ -188,6 +188,14 @@ class SQLModelClientManager:
                     alter_statements.append("ALTER TABLE department_sections ADD COLUMN status VARCHAR DEFAULT 'pending'")
                 if "evaluation_results" not in existing_cols:
                     alter_statements.append("ALTER TABLE department_sections ADD COLUMN evaluation_results JSON DEFAULT '[]'")
+                if "approval_status" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN approval_status VARCHAR DEFAULT 'pending'")
+                if "approver" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN approver VARCHAR DEFAULT NULL")
+                if "review_feedback" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN review_feedback TEXT DEFAULT NULL")
+                if "approved_at" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN approved_at TIMESTAMP DEFAULT NULL")
                 if "updated_at" not in existing_cols:
                     alter_statements.append("ALTER TABLE department_sections ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 
@@ -214,6 +222,8 @@ class SQLModelClientManager:
             DepartmentSectionTable,
             IntakeHandoffPayloadTable,
             Part3HandoffPayloadTable,
+            ArbitrationLogTable,
+            FinalDocumentTable,
         )
         from infrastructure.queue.models import DeadLetterQueueRecord  # noqa: F401
 

@@ -19,6 +19,7 @@ __pycache__/
 venv/
 *.egg-info/
 *.db
+*.sqlite
 .pytest_cache/
 .coverage
 guardrail_cli.py
