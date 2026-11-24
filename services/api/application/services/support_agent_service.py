@@ -26,6 +26,7 @@ from application.services.agent_guardrails import (
 )
 from application.services.agent_workflow import (
     REQUIRED_WORKFLOW_NODES,
+    build_agent_checkpoint_serializer,
     build_support_agent_graph,
 )
 from application.services.guardrail_observability import GuardrailObservabilityService
@@ -155,7 +156,9 @@ class SupportAgentService(SupportAgentServicePort):
             guardrail_observability or GuardrailObservabilityService()
         )
         self._checkpointer: BaseCheckpointSaver = (
-            checkpointer if checkpointer is not None else MemorySaver()
+            checkpointer
+            if checkpointer is not None
+            else MemorySaver(serde=build_agent_checkpoint_serializer())
         )
         self._compiled_graph: CompiledStateGraph = (
             compiled_graph

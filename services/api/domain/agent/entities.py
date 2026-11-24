@@ -29,10 +29,10 @@ GuardrailLayer = Literal[
     "context_sanitizer",
     "output_guard",
 ]
-GuardrailAction = Literal["allow", "redirect", "block"]
+GuardrailAction = Literal["allow", "redirect", "block", "deflect", "clarify"]
 GuardrailFailureCategory = Literal["none", "structural", "content", "security"]
 GuardrailFailureType = Literal["structural", "content", "security"]
-GuardrailDisposition = Literal["blocked", "redirected"]
+GuardrailDisposition = Literal["blocked", "redirected", "deflected", "clarified"]
 GuardrailInputCategory = Literal[
     "in_domain",
     "casual_trivia",
@@ -43,6 +43,8 @@ GuardrailInputCategory = Literal[
     "restricted_data_leak",
     "external_injection",
     "malformed_output",
+    "out_of_domain",
+    "needs_context",
 ]
 CustomerSegment = Literal["B2B", "B2C"]
 OperatingCountry = Literal["US", "ES"]
@@ -492,13 +494,21 @@ class GuardrailEvaluationResult:
     message: Optional[str] = None
     sanitized_text: Optional[str] = None
     resolved_country: Optional[OperatingCountry] = None
+    decision: Optional[GuardrailAction] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.decision is None:
+            object.__setattr__(self, "decision", self.action)
+        elif self.action is None:
+            object.__setattr__(self, "action", self.decision)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize evaluation result to a dictionary."""
         return {
             "layer": self.layer,
             "action": self.action,
+            "decision": self.decision or self.action,
             "failure_category": self.failure_category,
             "input_category": self.input_category,
             "reason_code": self.reason_code,

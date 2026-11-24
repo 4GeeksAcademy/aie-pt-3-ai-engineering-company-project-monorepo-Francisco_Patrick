@@ -152,9 +152,15 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
                 return None
 
             failure_type = cast(GuardrailFailureType, result.failure_category)
-            disposition: GuardrailDisposition = (
-                "blocked" if result.action == "block" else "redirected"
-            )
+            disposition: GuardrailDisposition
+            if result.action == "block":
+                disposition = "blocked"
+            elif result.action == "deflect":
+                disposition = "deflected"
+            elif result.action == "clarify":
+                disposition = "clarified"
+            else:
+                disposition = "redirected"
             mask_orders = result.input_category in (
                 "unauthorized_order",
                 "restricted_data_leak",
@@ -214,6 +220,8 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
             by_disposition: Dict[str, int] = {
                 "blocked": 0,
                 "redirected": 0,
+                "deflected": 0,
+                "clarified": 0,
             }
 
             for ev in matching:
