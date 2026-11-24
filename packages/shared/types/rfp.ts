@@ -5,9 +5,35 @@
  */
 
 /**
- * Standard processing lifecycle statuses for an RFP intake ticket.
+ * Standard processing lifecycle statuses for an RFP intake and proposal generation ticket.
  */
-export type TicketStatus = "analizando" | "descartado" | "analisis_completo";
+export type TicketStatus =
+  | "analizando"
+  | "descartado"
+  | "analisis_completo"
+  | "generando_borrador"
+  | "en_evaluación"
+  | "needs_human_review";
+
+/**
+ * Lifecycle statuses for an individual department proposal section in Part 2.
+ */
+export type DepartmentSectionStatus =
+  | "pending"
+  | "drafting"
+  | "under_evaluation"
+  | "passed"
+  | "needs_human_review";
+
+/**
+ * Canonical briefing compliance rule identifiers enforced in Part 2 (§5).
+ */
+export type ComplianceRuleId =
+  | "RULE-CURRENCY"
+  | "RULE-SLA"
+  | "RULE-RETURNS-TIME"
+  | "RULE-DISCOUNT-TIERS"
+  | "RULE-CARRIER-RATES";
 
 /**
  * Allowed client operating countries per TrackFlow briefing.
@@ -67,9 +93,69 @@ export interface RFPMetadataDTO {
 }
 
 /**
- * Department-specific operational analysis and zero-hallucination open questions.
+ * Readability dimension evaluation outcome for a generated department proposal section.
+ */
+export interface ReadabilityEvaluationDTO {
+  /** Whether the draft passed the readability threshold. */
+  pass_status: boolean;
+  /** Calculated Flesch Reading Ease score. */
+  score: number;
+  /** Qualitative diagnostics and grade level details. */
+  details: string;
+}
+
+/**
+ * Relevance dimension evaluation outcome verifying coverage of Part 1 key_aspects.
+ */
+export interface RelevanceEvaluationDTO {
+  /** Whether all required key aspects were addressed. */
+  pass_status: boolean;
+  /** List of required operational aspects missing from the draft. */
+  missing_aspects: string[];
+}
+
+/**
+ * Compliance dimension evaluation outcome enforcing the 5 TrackFlow briefing rules (§5).
+ */
+export interface ComplianceEvaluationDTO {
+  /** Whether the draft complied with all applicable briefing rules. */
+  pass_status: boolean;
+  /** Violated rule identifiers (empty when pass_status is true). */
+  rule_ids: ComplianceRuleId[];
+  /** Human-readable violation descriptions. */
+  violations: string[];
+}
+
+/**
+ * Multi-dimensional evaluation result emitted by a department evaluator for a draft iteration.
+ */
+export interface EvaluationResultDTO {
+  /** Evaluated department identifier. */
+  department_id: DepartmentId;
+  /** Draft attempt iteration number (1..3). */
+  iteration: number;
+  /** Readability evaluation outcome. */
+  readability: ReadabilityEvaluationDTO;
+  /** Requirement relevance evaluation outcome. */
+  relevance: RelevanceEvaluationDTO;
+  /** Commercial compliance evaluation outcome. */
+  compliance: ComplianceEvaluationDTO;
+  /** Overall pass flag (true only if readability, relevance, and compliance all pass). */
+  overall_pass: boolean;
+  /** Actionable feedback instructions passed back to the generator when overall_pass is false. */
+  feedback_for_generator: string;
+  /** UTC ISO timestamp when evaluation completed. */
+  evaluated_at: string;
+}
+
+/**
+ * Department-specific operational analysis, generated draft content, and evaluation status.
  */
 export interface DepartmentSectionDTO {
+  /** Optional section UUID. */
+  id?: string;
+  /** Optional parent ticket UUID. */
+  ticket_id?: string;
   /** Department identifier. */
   department_id: DepartmentId;
   /** Full department name (e.g. "Operaciones de Almacén"). */
@@ -82,6 +168,67 @@ export interface DepartmentSectionDTO {
   open_questions: string[];
   /** Warnings and policy caveats regarding customer requests. */
   policy_warnings: string[];
+  /** Current section drafting/evaluation lifecycle status (Part 2). */
+  status?: DepartmentSectionStatus;
+  /** Current draft generation attempt counter (0..3). */
+  iteration?: number;
+  /** Generated Markdown proposal draft section text (Part 2). */
+  draft_content?: string | null;
+  /** Latest structured multi-dimensional evaluation result (Part 2). */
+  latest_evaluation?: EvaluationResultDTO | null;
+}
+
+/**
+ * Immediate response payload returned when triggering Part 2 proposal generation (HTTP 202).
+ */
+export interface ProposalGenerationAcceptedResponseDTO {
+  /** UUID of the ticket entering proposal generation. */
+  ticket_id: string;
+  /** Updated ticket status ("generando_borrador"). */
+  status: TicketStatus;
+  /** Confirmation message. */
+  message: string;
+  /** Active departments queued for drafting and evaluation. */
+  active_departments: DepartmentId[];
+}
+
+/**
+ * Per-department section bundle packaged into the Part 3 handoff payload.
+ */
+export interface Part3DepartmentSectionBundleDTO {
+  /** Finalized or latest draft Markdown content. */
+  draft_content: string;
+  /** Final section outcome status ("passed" | "needs_human_review"). */
+  status: "passed" | "needs_human_review";
+  /** Total iterations executed for this section (1..3). */
+  iteration: number;
+  /** Final structured evaluation outcome. */
+  evaluation_result: EvaluationResultDTO;
+}
+
+/**
+ * Canonical Part 3 handoff payload emitted upon completion of Part 2 proposal generation.
+ */
+export interface Part3HandoffPayloadDTO {
+  /** UUID of the ticket. */
+  ticket_id: string;
+  /** Semantic schema version ("2.0.0"). */
+  schema_version: string;
+  /** Overall handoff status ("passed" if all active sections passed, else "needs_human_review"). */
+  overall_status: "passed" | "needs_human_review";
+  /** Snapshot of RFP metadata. */
+  rfp_metadata: {
+    client_name: string;
+    client_country: ClientCountry;
+    currency: OperatingCurrency;
+    monthly_volume?: number | null;
+    deadline?: string | null;
+    departments_needed: DepartmentId[];
+  };
+  /** Map of active department_id to its finalized section draft and evaluation bundle. */
+  department_sections: Partial<Record<DepartmentId, Part3DepartmentSectionBundleDTO>>;
+  /** UTC ISO timestamp when the Part 3 handoff payload was emitted. */
+  emitted_at: string;
 }
 
 /**

@@ -177,7 +177,7 @@ class RFPMetadataTable(SQLModel, table=True):
 
 
 class DepartmentSectionTable(SQLModel, table=True):
-    """Relational table model for department worker evaluations."""
+    """Relational table model for department worker evaluations and Part 2 drafts."""
 
     __tablename__ = "department_sections"
 
@@ -200,7 +200,18 @@ class DepartmentSectionTable(SQLModel, table=True):
         default_factory=list,
         sa_column=SAColumn(JSON, nullable=False),
     )
+    draft_content: Optional[str] = Field(default=None, nullable=True)
+    iteration: int = Field(default=0, nullable=False)
+    status: str = Field(default="pending", index=True, nullable=False)
+    evaluation_results: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
     created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+    updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=SAColumn(DateTime(timezone=True), nullable=False),
     )
@@ -239,10 +250,36 @@ class IntakeHandoffPayloadTable(SQLModel, table=True):
     )
 
 
+class Part3HandoffPayloadTable(SQLModel, table=True):
+    """Relational table model for canonical Part 3 proposal approval handoff payloads."""
+
+    __tablename__ = "part3_handoff_payloads"
+
+    id: UUID = Field(primary_key=True, index=True, nullable=False)
+    ticket_id: UUID = Field(
+        foreign_key="intake_tickets.id", unique=True, index=True, nullable=False
+    )
+    schema_version: str = Field(default="2.0.0", nullable=False)
+    overall_status: str = Field(index=True, nullable=False)
+    rfp_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    department_sections: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=SAColumn(JSON, nullable=False),
+    )
+    emitted_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=SAColumn(DateTime(timezone=True), nullable=False),
+    )
+
+
 __all__ = [
     "DepartmentSectionTable",
     "IntakeHandoffPayloadTable",
     "IntakeTicketTable",
+    "Part3HandoffPayloadTable",
     "RFPMetadataTable",
     "SKU",
     "StockEntry",

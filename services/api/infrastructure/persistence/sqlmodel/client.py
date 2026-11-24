@@ -178,6 +178,19 @@ class SQLModelClientManager:
                 if "tracking_number" not in existing_cols:
                     alter_statements.append("ALTER TABLE stock_exit ADD COLUMN tracking_number VARCHAR DEFAULT NULL")
 
+            if "department_sections" in table_names:
+                existing_cols = {c["name"] for c in insp.get_columns("department_sections")}
+                if "draft_content" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN draft_content TEXT DEFAULT NULL")
+                if "iteration" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN iteration INTEGER DEFAULT 0")
+                if "status" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN status VARCHAR DEFAULT 'pending'")
+                if "evaluation_results" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN evaluation_results JSON DEFAULT '[]'")
+                if "updated_at" not in existing_cols:
+                    alter_statements.append("ALTER TABLE department_sections ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
             if alter_statements:
                 with eng.connect() as conn:
                     for stmt in alter_statements:
@@ -200,6 +213,7 @@ class SQLModelClientManager:
             RFPMetadataTable,
             DepartmentSectionTable,
             IntakeHandoffPayloadTable,
+            Part3HandoffPayloadTable,
         )
         from infrastructure.queue.models import DeadLetterQueueRecord  # noqa: F401
 

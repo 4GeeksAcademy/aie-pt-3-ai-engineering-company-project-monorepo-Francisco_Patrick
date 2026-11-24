@@ -9,9 +9,11 @@ from sqlmodel import Session, select
 
 from domain.rfp.entities import (
     DepartmentSection,
+    EvaluationResult,
     IntakeHandoffPayload,
     IntakeTicket,
     InternalContact,
+    Part3HandoffPayload,
     ReadabilityScores,
     RFPMetadata,
     TicketStatus,
@@ -21,12 +23,13 @@ from infrastructure.persistence.sqlmodel.models import (
     DepartmentSectionTable,
     IntakeHandoffPayloadTable,
     IntakeTicketTable,
+    Part3HandoffPayloadTable,
     RFPMetadataTable,
 )
 
 
 class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
-    """Adapter persisting RFP intake entities into relational storage via SQLModel."""
+    """Adapter persisting RFP intake and Part 2 proposal generation entities via SQLModel."""
 
     def __init__(self, session: Session) -> None:
         """Initialize repository with active database session."""
@@ -43,7 +46,11 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             db_record = IntakeTicketTable(
                 id=ticket.id,
                 ticket_number=ticket.ticket_number,
-                status=ticket.status.value if isinstance(ticket.status, TicketStatus) else str(ticket.status),
+                status=(
+                    ticket.status.value
+                    if isinstance(ticket.status, TicketStatus)
+                    else str(ticket.status)
+                ),
                 raw_pdf_path=ticket.raw_pdf_path,
                 raw_pdf_filename=ticket.raw_pdf_filename,
                 file_size_bytes=ticket.file_size_bytes,
@@ -55,7 +62,9 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             self.session.add(db_record)
         else:
             db_record.status = (
-                ticket.status.value if isinstance(ticket.status, TicketStatus) else str(ticket.status)
+                ticket.status.value
+                if isinstance(ticket.status, TicketStatus)
+                else str(ticket.status)
             )
             db_record.rejection_reason = ticket.rejection_reason
             db_record.error_message = ticket.error_message
@@ -75,7 +84,9 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
 
     def get_ticket_by_number(self, ticket_number: str) -> Optional[IntakeTicket]:
         """Retrieve an intake ticket by human-readable reference code."""
-        statement = select(IntakeTicketTable).where(IntakeTicketTable.ticket_number == ticket_number)
+        statement = select(IntakeTicketTable).where(
+            IntakeTicketTable.ticket_number == ticket_number
+        )
         record = self.session.exec(statement).first()
         if record is None:
             return None
@@ -108,6 +119,11 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
     def save_metadata(self, metadata: RFPMetadata) -> RFPMetadata:
         """Persist or update extracted commercial metadata for a ticket."""
         db_record = self.session.get(RFPMetadataTable, metadata.id)
+        if db_record is None:
+            stmt = select(RFPMetadataTable).where(
+                RFPMetadataTable.ticket_id == metadata.ticket_id
+            )
+            db_record = self.session.exec(stmt).first()
         scores_dict = asdict(metadata.readability_scores)
         if db_record is None:
             db_record = RFPMetadataTable(
@@ -157,12 +173,12 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
 
     def save_department_section(self, section: DepartmentSection) -> DepartmentSection:
         """Persist or update a department analysis section."""
-        # Query existing by ticket_id and department_id
         statement = select(DepartmentSectionTable).where(
             DepartmentSectionTable.ticket_id == section.ticket_id,
             DepartmentSectionTable.department_id == section.department_id,
         )
         db_record = self.session.exec(statement).first()
+        now = datetime.now(timezone.utc)
         if db_record is None:
             db_record = DepartmentSectionTable(
                 id=section.id,
@@ -173,7 +189,12 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
                 key_aspects=section.key_aspects,
                 open_questions=list(section.open_questions),
                 policy_warnings=list(section.policy_warnings),
+                draft_content=section.draft_content,
+                iteration=section.iteration,
+                status=section.status,
+                evaluation_results=list(section.evaluation_results),
                 created_at=section.created_at,
+                updated_at=section.updated_at or now,
             )
             self.session.add(db_record)
         else:
@@ -182,8 +203,59 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             db_record.key_aspects = section.key_aspects
             db_record.open_questions = list(section.open_questions)
             db_record.policy_warnings = list(section.policy_warnings)
+            db_record.draft_content = section.draft_content
+            db_record.iteration = section.iteration
+            db_record.status = section.status
+            db_record.evaluation_results = list(section.evaluation_results)
+            db_record.updated_at = now
             self.session.add(db_record)
 
+        self.session.commit()
+        self.session.refresh(db_record)
+        return self._to_domain_section(db_record)
+
+    def get_department_section(
+        self, ticket_id: UUID, department_id: str
+    ) -> Optional[DepartmentSection]:
+        """Retrieve a specific department section by ticket_id and department_id."""
+        statement = select(DepartmentSectionTable).where(
+            DepartmentSectionTable.ticket_id == ticket_id,
+            DepartmentSectionTable.department_id == department_id,
+        )
+        record = self.session.exec(statement).first()
+        if record is None:
+            return None
+        return self._to_domain_section(record)
+
+    def update_department_section_draft(
+        self,
+        ticket_id: UUID,
+        department_id: str,
+        draft_content: Optional[str],
+        iteration: int,
+        status: str,
+        evaluation_result: Optional[EvaluationResult] = None,
+    ) -> Optional[DepartmentSection]:
+        """Update draft content, iteration counter, status, and evaluation history for a department section."""
+        statement = select(DepartmentSectionTable).where(
+            DepartmentSectionTable.ticket_id == ticket_id,
+            DepartmentSectionTable.department_id == department_id,
+        )
+        db_record = self.session.exec(statement).first()
+        if db_record is None:
+            return None
+
+        if draft_content is not None:
+            db_record.draft_content = draft_content
+        db_record.iteration = iteration
+        db_record.status = status
+        if evaluation_result is not None:
+            history = list(db_record.evaluation_results or [])
+            history.append(evaluation_result.to_schema_dict())
+            db_record.evaluation_results = history
+        db_record.updated_at = datetime.now(timezone.utc)
+
+        self.session.add(db_record)
         self.session.commit()
         self.session.refresh(db_record)
         return self._to_domain_section(db_record)
@@ -197,12 +269,17 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
         return [self._to_domain_section(r) for r in records]
 
     # ---------------------------------------------------------
-    # Handoff Payload Operations
+    # Handoff Payload Operations (Part 1 -> Part 2 & Part 2 -> Part 3)
     # ---------------------------------------------------------
 
     def save_handoff_payload(self, payload: IntakeHandoffPayload) -> IntakeHandoffPayload:
         """Persist or update the Part 2 handoff payload."""
         db_record = self.session.get(IntakeHandoffPayloadTable, payload.id)
+        if db_record is None:
+            stmt = select(IntakeHandoffPayloadTable).where(
+                IntakeHandoffPayloadTable.ticket_id == payload.ticket_id
+            )
+            db_record = self.session.exec(stmt).first()
         contacts_dict = [asdict(c) for c in payload.internal_contacts]
         if db_record is None:
             db_record = IntakeHandoffPayloadTable(
@@ -239,6 +316,45 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
         if record is None:
             return None
         return self._to_domain_handoff(record)
+
+    def save_part3_handoff_payload(self, payload: Part3HandoffPayload) -> Part3HandoffPayload:
+        """Persist or update the canonical Part 3 handoff payload."""
+        statement = select(Part3HandoffPayloadTable).where(
+            Part3HandoffPayloadTable.ticket_id == payload.ticket_id
+        )
+        db_record = self.session.exec(statement).first()
+        if db_record is None:
+            db_record = Part3HandoffPayloadTable(
+                id=payload.id,
+                ticket_id=payload.ticket_id,
+                schema_version=payload.schema_version,
+                overall_status=payload.overall_status,
+                rfp_metadata=dict(payload.rfp_metadata),
+                department_sections=dict(payload.department_sections),
+                emitted_at=payload.emitted_at,
+            )
+            self.session.add(db_record)
+        else:
+            db_record.schema_version = payload.schema_version
+            db_record.overall_status = payload.overall_status
+            db_record.rfp_metadata = dict(payload.rfp_metadata)
+            db_record.department_sections = dict(payload.department_sections)
+            db_record.emitted_at = payload.emitted_at
+            self.session.add(db_record)
+
+        self.session.commit()
+        self.session.refresh(db_record)
+        return self._to_domain_part3_handoff(db_record)
+
+    def get_part3_handoff_payload(self, ticket_id: UUID) -> Optional[Part3HandoffPayload]:
+        """Retrieve the canonical Part 3 handoff payload for a ticket."""
+        statement = select(Part3HandoffPayloadTable).where(
+            Part3HandoffPayloadTable.ticket_id == ticket_id
+        )
+        record = self.session.exec(statement).first()
+        if record is None:
+            return None
+        return self._to_domain_part3_handoff(record)
 
     # ---------------------------------------------------------
     # Entity Mapping Helpers
@@ -293,7 +409,12 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             key_aspects=record.key_aspects or {},
             open_questions=record.open_questions or [],
             policy_warnings=record.policy_warnings or [],
+            draft_content=getattr(record, "draft_content", None),
+            iteration=int(getattr(record, "iteration", 0) or 0),
+            status=str(getattr(record, "status", "pending") or "pending"),
+            evaluation_results=list(getattr(record, "evaluation_results", None) or []),
             created_at=record.created_at,
+            updated_at=getattr(record, "updated_at", None) or record.created_at,
         )
 
     def _to_domain_handoff(self, record: IntakeHandoffPayloadTable) -> IntakeHandoffPayload:
@@ -316,4 +437,15 @@ class SQLModelIntakeTicketRepository(IntakeTicketRepositoryPort):
             internal_contacts=contacts,
             full_handoff_json=record.full_handoff_json or {},
             created_at=record.created_at,
+        )
+
+    def _to_domain_part3_handoff(self, record: Part3HandoffPayloadTable) -> Part3HandoffPayload:
+        return Part3HandoffPayload(
+            id=record.id,
+            ticket_id=record.ticket_id,
+            schema_version=record.schema_version,
+            overall_status=record.overall_status,  # type: ignore
+            rfp_metadata=record.rfp_metadata or {},
+            department_sections=record.department_sections or {},
+            emitted_at=record.emitted_at,
         )

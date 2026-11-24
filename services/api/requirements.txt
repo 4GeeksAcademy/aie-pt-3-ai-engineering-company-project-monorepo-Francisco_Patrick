@@ -30,3 +30,4 @@ langchain-mcp-adapters>=0.3.2
 fastmcp>=3.4.11
 mcpauth>=0.1.1
 pyjwt>=2.15.1
+textstat>=0.7.3

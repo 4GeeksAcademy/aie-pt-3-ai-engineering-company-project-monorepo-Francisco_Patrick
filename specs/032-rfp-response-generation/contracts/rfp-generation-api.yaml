@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow RFP Response Generation API (Part 2 of 3)
+  version: 1.0.0
+  description: REST API endpoints for proposal draft generation, parallel multi-factor evaluation, and Part 3 handoff retrieval.
+paths:
+  /api/v1/rfp/{ticket_id}/generate-proposal:
+    post:
+      summary: Trigger Proposal Draft Generation & Evaluation
+      description: Initiates the asynchronous department proposal generator agents and parallel evaluation loop.
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Proposal generation accepted and queued for execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalGenerationAcceptedResponse'
+        '400':
+          description: Invalid ticket state (must be in analisis_completo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/{ticket_id}/sections:
+    get:
+      summary: Get Department Proposal Sections & Status
+      description: Returns the generated draft text, evaluation status, and iteration count for all active departments.
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of department sections with drafts and evaluations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DepartmentSectionResponse'
+        '404':
+          description: Ticket not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/rfp/{ticket_id}/part3-handoff:
+    get:
+      summary: Retrieve Part 3 Proposal Handoff Payload
+      description: Returns the compiled proposal package including all department drafts and evaluation outcomes ready for human review and approvals.
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Compiled Part 3 handoff payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Part3HandoffPayloadResponse'
+        '404':
+          description: Ticket or handoff payload not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    ProposalGenerationAcceptedResponse:
+      type: object
+      required:
+        - ticket_id
+        - status
+        - message
+        - active_departments
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: generando_borrador
+        message:
+          type: string
+          example: Proposal draft generation pipeline initiated.
+        active_departments:
+          type: array
+          items:
+            type: string
+            enum: [warehouse, lastmile, reverse]
+
+    ReadabilityEvaluationSchema:
+      type: object
+      required:
+        - pass_status
+        - score
+        - details
+      properties:
+        pass_status:
+          type: boolean
+        score:
+          type: number
+        details:
+          type: string
+
+    RelevanceEvaluationSchema:
+      type: object
+      required:
+        - pass_status
+        - missing_aspects
+      properties:
+        pass_status:
+          type: boolean
+        missing_aspects:
+          type: array
+          items:
+            type: string
+
+    ComplianceEvaluationSchema:
+      type: object
+      required:
+        - pass_status
+        - rule_ids
+        - violations
+      properties:
+        pass_status:
+          type: boolean
+        rule_ids:
+          type: array
+          items:
+            type: string
+        violations:
+          type: array
+          items:
+            type: string
+
+    EvaluationResultSchema:
+      type: object
+      required:
+        - department_id
+        - iteration
+        - readability
+        - relevance
+        - compliance
+        - overall_pass
+        - feedback_for_generator
+        - evaluated_at
+      properties:
+        department_id:
+          type: string
+          enum: [warehouse, lastmile, reverse]
+        iteration:
+          type: integer
+        readability:
+          $ref: '#/components/schemas/ReadabilityEvaluationSchema'
+        relevance:
+          $ref: '#/components/schemas/RelevanceEvaluationSchema'
+        compliance:
+          $ref: '#/components/schemas/ComplianceEvaluationSchema'
+        overall_pass:
+          type: boolean
+        feedback_for_generator:
+          type: string
+        evaluated_at:
+          type: string
+          format: date-time
+
+    DepartmentSectionResponse:
+      type: object
+      required:
+        - id
+        - ticket_id
+        - department_id
+        - department_name
+        - responsible_person
+        - status
+        - iteration
+      properties:
+        id:
+          type: string
+          format: uuid
+        ticket_id:
+          type: string
+          format: uuid
+        department_id:
+          type: string
+          enum: [warehouse, lastmile, reverse]
+        department_name:
+          type: string
+        responsible_person:
+          type: string
+        status:
+          type: string
+          enum: [pending, drafting, under_evaluation, passed, needs_human_review]
+        iteration:
+          type: integer
+        draft_content:
+          type: string
+          nullable: true
+        latest_evaluation:
+          $ref: '#/components/schemas/EvaluationResultSchema'
+          nullable: true
+
+    Part3HandoffPayloadResponse:
+      type: object
+      required:
+        - ticket_id
+        - schema_version
+        - overall_status
+        - rfp_metadata
+        - department_sections
+        - emitted_at
+      properties:
+        ticket_id:
+          type: string
+          format: uuid
+        schema_version:
+          type: string
+          example: "2.0.0"
+        overall_status:
+          type: string
+          enum: [passed, needs_human_review]
+        rfp_metadata:
+          type: object
+        department_sections:
+          type: object
+          additionalProperties:
+            type: object
+            required:
+              - draft_content
+              - status
+              - iteration
+              - evaluation_result
+            properties:
+              draft_content:
+                type: string
+              status:
+                type: string
+              iteration:
+                type: integer
+              evaluation_result:
+                $ref: '#/components/schemas/EvaluationResultSchema'
+        emitted_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.internal/schemas/rfp/evaluation-result.schema.json",
+  "title": "EvaluationResult",
+  "description": "Schema for structured multi-dimensional evaluation results emitted by department evaluators in Part 2.",
+  "type": "object",
+  "required": [
+    "department_id",
+    "iteration",
+    "readability",
+    "relevance",
+    "compliance",
+    "overall_pass",
+    "feedback_for_generator",
+    "evaluated_at"
+  ],
+  "properties": {
+    "department_id": {
+      "type": "string",
+      "enum": ["warehouse", "lastmile", "reverse"]
+    },
+    "iteration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "readability": {
+      "type": "object",
+      "required": ["pass_status", "score", "details"],
+      "properties": {
+        "pass_status": { "type": "boolean" },
+        "score": { "type": "number" },
+        "details": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "relevance": {
+      "type": "object",
+      "required": ["pass_status", "missing_aspects"],
+      "properties": {
+        "pass_status": { "type": "boolean" },
+        "missing_aspects": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "compliance": {
+      "type": "object",
+      "required": ["pass_status", "rule_ids", "violations"],
+      "properties": {
+        "pass_status": { "type": "boolean" },
+        "rule_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "RULE-CURRENCY",
+              "RULE-SLA",
+              "RULE-RETURNS-TIME",
+              "RULE-DISCOUNT-TIERS",
+              "RULE-CARRIER-RATES"
+            ]
+          }
+        },
+        "violations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "overall_pass": {
+      "type": "boolean"
+    },
+    "feedback_for_generator": {
+      "type": "string"
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
