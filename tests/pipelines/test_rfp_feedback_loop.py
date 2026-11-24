@@ -25,6 +25,14 @@ from data.pipelines.rfp_response_generation.pipeline import (  # noqa: E402
 )
 
 
+def _strip_revision_note(draft: str) -> str:
+    """Return the main draft body before Section 5 (Revision Note)."""
+    marker = "### 5. Revision Note"
+    if marker in draft:
+        return draft.split(marker, 1)[0].strip()
+    return draft.strip()
+
+
 class _SelfCorrectingReverseGenerator(BaseDepartmentGeneratorAgent):
     """Generator fixture that violates RULE-RETURNS-TIME on attempt 1 and fixes it on attempt 2."""
 
@@ -120,7 +128,7 @@ def test_feedback_loop_revises_failing_draft_and_passes_on_iteration_2() -> None
 
 
 def test_real_generators_actively_consume_feedback_on_revision() -> None:
-    """Verify real generator agents actively incorporate evaluator feedback into revision drafts (iteration > 1)."""
+    """Verify real generator agents actively mutate the main draft body (Sections 1-4) on iteration > 1."""
     rfp_metadata = {
         "client_name": "ModaViva, S.L.",
         "client_country": "ES",
@@ -129,65 +137,118 @@ def test_real_generators_actively_consume_feedback_on_revision() -> None:
         "departments_needed": ["warehouse", "lastmile", "reverse"],
     }
 
-    # Test Warehouse generator active feedback incorporation
+    # 1. Warehouse generator: compare iteration 1 body vs. iteration 2 body (minus Revision Note)
     wh_agent = WarehouseGeneratorAgent()
-    wh_draft_revised = wh_agent.generate(
-        rfp_metadata=rfp_metadata,
-        section_context={
-            "department_id": "warehouse",
-            "key_aspects": {
-                "warehouse_location_preference": "Zaragoza",
-                "pallet_storage_required": None,
-                "sku_count": 450,
-            },
-            "open_questions": [],
+    wh_ctx = {
+        "department_id": "warehouse",
+        "key_aspects": {
+            "warehouse_location_preference": "Zaragoza",
+            "pallet_storage_required": None,
+            "sku_count": 450,
+            "client_requested_quote": "$99.00 USD custom storage quote",
         },
-        feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing.",
+        "open_questions": [],
+    }
+    wh_draft_iter_1 = wh_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=wh_ctx,
+        iteration=1,
+    )
+    wh_draft_iter_2 = wh_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=wh_ctx,
+        feedback_for_generator=(
+            "[COMPLIANCE CRITICAL] Violates RULE-CURRENCY: draft contains USD ($) pricing. "
+            "[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing. "
+            "[RELEVANCE] Address the following missing Part 1 key aspects in the proposal section: "
+            "special_handling, open_questions_coverage."
+        ),
         iteration=2,
     )
-    assert "Revision Note (Attempt 2)" in wh_draft_revised
-    assert "90%" in wh_draft_revised
-    assert "16.00 EUR por m³" in wh_draft_revised
-    assert "Miguel Torres" in wh_draft_revised
-    assert "Pendiente" in wh_draft_revised
+    wh_body_1 = _strip_revision_note(wh_draft_iter_1)
+    wh_body_2 = _strip_revision_note(wh_draft_iter_2)
 
-    # Test Last Mile generator active feedback incorporation
+    assert wh_body_2 != wh_body_1
+    assert "USD" in wh_body_1  # Iteration 1 leaked the raw USD aspect value
+    assert "USD" not in wh_body_2  # Iteration 2 actively sanitized foreign currency in the body
+    assert "5% monthly tariff compensation" in wh_body_2
+    assert "Addressed operational parameter special handling" in wh_body_2
+    assert "### 4. Open Questions" in wh_body_2
+
+    # 2. Last Mile generator: compare iteration 1 body vs. iteration 2 body (minus Revision Note)
     lm_agent = LastMileGeneratorAgent()
-    lm_draft_revised = lm_agent.generate(
-        rfp_metadata=rfp_metadata,
-        section_context={
-            "department_id": "lastmile",
-            "key_aspects": {
-                "carrier_strategy": "TrackFlow Network",
-                "geographic_scope": "Domestic ES",
-            },
-            "open_questions": [],
+    lm_ctx = {
+        "department_id": "lastmile",
+        "key_aspects": {
+            "carrier_strategy": "TrackFlow Network",
+            "geographic_scope": "Domestic ES",
         },
-        feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing.",
+        "open_questions": [],
+    }
+    lm_draft_iter_1 = lm_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=lm_ctx,
+        iteration=1,
+    )
+    lm_draft_iter_2 = lm_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=lm_ctx,
+        feedback_for_generator=(
+            "[COMPLIANCE CRITICAL] Violates RULE-SLA: committed 90% SLA missing. "
+            "[COMPLIANCE CRITICAL] Violates RULE-CARRIER-RATES: never disclose internal carrier rates."
+        ),
         iteration=2,
     )
-    assert "Revision Note (Attempt 2)" in lm_draft_revised
-    assert "90%" in lm_draft_revised
-    assert "Miguel Torres" in lm_draft_revised
+    lm_body_1 = _strip_revision_note(lm_draft_iter_1)
+    lm_body_2 = _strip_revision_note(lm_draft_iter_2)
 
-    # Test Reverse Logistics generator active feedback incorporation
+    assert lm_body_2 != lm_body_1
+    assert "5% monthly tariff compensation" in lm_body_2
+    assert "Rate confidentiality update" in lm_body_2
+
+    # 3. Reverse Logistics generator: compare iteration 1 body vs. iteration 2 body
+    # Also test end-to-end pipeline self-correction using the REAL ReverseLogisticsGeneratorAgent
     rev_agent = ReverseLogisticsGeneratorAgent()
-    rev_draft_revised = rev_agent.generate(
-        rfp_metadata=rfp_metadata,
-        section_context={
-            "department_id": "reverse",
-            "key_aspects": {
-                "return_window_days": 30,
-                "estimated_return_rate": 0.15,
-                "inspection_required": True,
-                "disposition_flow": ["reventa", "reacondicionamiento", "descarte"],
-            },
-            "open_questions": [],
+    rev_ctx = {
+        "department_id": "reverse",
+        "key_aspects": {
+            "return_window_days": 30,
+            "estimated_return_rate": 0.15,
+            "inspection_required": True,
+            "disposition_flow": ["reventa", "reacondicionamiento", "descarte"],
+            "client_requested_turnaround": "return processing in 24 hours",
         },
+        "open_questions": [],
+    }
+    rev_draft_iter_1 = rev_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=rev_ctx,
+        iteration=1,
+    )
+    rev_draft_iter_2 = rev_agent.generate(
+        rfp_metadata=rfp_metadata,
+        section_context=rev_ctx,
         feedback_for_generator="[COMPLIANCE CRITICAL] Violates RULE-RETURNS-TIME: returns promised under 48h.",
         iteration=2,
     )
-    assert "Revision Note (Attempt 2)" in rev_draft_revised
-    assert "48 to 72 hours" in rev_draft_revised
-    assert "90%" in rev_draft_revised
-    assert "Miguel Torres" in rev_draft_revised
+    rev_body_1 = _strip_revision_note(rev_draft_iter_1)
+    rev_body_2 = _strip_revision_note(rev_draft_iter_2)
+
+    assert rev_body_2 != rev_body_1
+    assert "24 hours" in rev_body_1
+    assert "24 hours" not in rev_body_2
+    assert "Turnaround compliance update" in rev_body_2
+
+    # Verify the real ReverseLogisticsGeneratorAgent recovers in the pipeline from iteration 1 failure to iteration 2 pass
+    real_pipeline = RFPResponseGenerationPipeline(max_attempts=3)
+    outcome = real_pipeline.run_department_loop(
+        ticket_id=uuid4(),
+        department_id="reverse",
+        rfp_metadata=rfp_metadata,
+        section_context=rev_ctx,
+    )
+    assert outcome.iteration == 2
+    assert outcome.status == "passed"
+    assert outcome.evaluation_history[0].overall_pass is False
+    assert "RULE-RETURNS-TIME" in outcome.evaluation_history[0].compliance.rule_ids
+    assert outcome.evaluation_history[1].overall_pass is True

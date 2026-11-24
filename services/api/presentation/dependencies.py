@@ -347,12 +347,17 @@ def get_guardrail_observability_dep() -> GuardrailObservabilityPort:
 
 
 def get_input_guardrail_dep() -> InputGuardrailPort:
-    """Dependency provider for InputGuardrailPort (InputGuardrailValidator)."""
+    """Dependency provider for InputGuardrailPort (InputGuardrailValidator with Stage 2 Semantic Router)."""
     global _input_guardrail_singleton
     if _input_guardrail_singleton is None:
-        from application.services.agent_guardrails import InputGuardrailValidator
+        from application.services.agent_guardrails import (
+            FastIntentSemanticRouter,
+            InputGuardrailValidator,
+        )
 
-        _input_guardrail_singleton = InputGuardrailValidator()
+        _input_guardrail_singleton = InputGuardrailValidator(
+            semantic_router=FastIntentSemanticRouter()
+        )
     return _input_guardrail_singleton
 
 

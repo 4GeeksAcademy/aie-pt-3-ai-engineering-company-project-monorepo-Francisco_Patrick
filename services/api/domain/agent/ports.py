@@ -5,9 +5,11 @@ decoupling presentation controllers and LangGraph orchestration from operational
 tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace storage.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from domain.agent.entities import (
     AgentCheckpoint,
@@ -310,8 +312,10 @@ class InputGuardrailPort(ABC):
         self,
         query: str,
         language: str = "en",
+        conversation_history: Optional[Sequence[Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> GuardrailEvaluationResult:
-        """Evaluate user query against security (jailbreak) and content (scope) guardrails."""
+        """Evaluate user query against security (jailbreak) and content (scope) guardrails with conversational continuity support."""
 
 
 class AuthorizationGuardrailPort(ABC):

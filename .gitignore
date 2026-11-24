@@ -22,7 +22,8 @@ venv/
 *.sqlite
 .pytest_cache/
 .coverage
-
+guardrail_cli.py
+test_guardrail_cli.py
 # Database & local state
 db.json
 **/db.json
@@ -47,3 +48,6 @@ Thumbs.db
 .vscode/
 .idea/
 
+
+guardrail_cli.py
+test_guardrail_cli.py

@@ -269,6 +269,52 @@ class TestEndToEndGuardrailsAndMemoryCoordination:
         assert summary.by_layer["input_guard"] == 3
         assert summary.by_layer["authorization_guard"] == 2
 
+    def test_deflect_and_clarify_dispositions_and_observability(
+        self,
+        isolated_agent_env,
+    ) -> None:
+        """Verify AC-1, AC-4, AC-5: deflect and clarify are recorded with distinct dispositions and categories in observability."""
+        agent_service, _memory_service, observability = isolated_agent_env
+        thread_id = "thread_deflect_clarify_obs"
+
+        # 1. Deflect: Benign out-of-domain query
+        res_deflect = agent_service.query(
+            AgentQueryRequest(
+                query="weather in Los Angeles",
+                thread_id=thread_id,
+                language="en",
+            )
+        )
+        assert res_deflect.is_refusal is False
+        assert len(res_deflect.guardrail_interventions) >= 1
+        ev_deflect = res_deflect.guardrail_interventions[0]
+        assert ev_deflect.disposition == "deflected"
+        assert ev_deflect.input_category == "out_of_domain"
+        assert "TrackFlow" in res_deflect.answer
+        assert "essay" not in res_deflect.answer.lower()
+
+        # 2. Clarify: Ambiguous support inquiry
+        res_clarify = agent_service.query(
+            AgentQueryRequest(
+                query="I need help",
+                thread_id=thread_id,
+                language="en",
+            )
+        )
+        assert res_clarify.is_refusal is False
+        assert len(res_clarify.guardrail_interventions) >= 1
+        ev_clarify = res_clarify.guardrail_interventions[0]
+        assert ev_clarify.disposition == "clarified"
+        assert ev_clarify.input_category == "needs_context"
+        assert "TrackFlow" in res_clarify.answer
+
+        # Verify summary counts
+        summary = observability.get_summary(session_id=thread_id)
+        assert summary.by_disposition["deflected"] == 1
+        assert summary.by_disposition["clarified"] == 1
+        assert summary.by_input_category["out_of_domain"] == 1
+        assert summary.by_input_category["needs_context"] == 1
+
     def test_guardrail_block_discards_active_pending_memory_proposal(
         self,
         isolated_agent_env,
