@@ -1115,4 +1115,81 @@ class TestGuardrailLexicalIntentDecoupling:
         assert router.classify("What is the veterinary protocol when pharmaceutical crates containing equine vaccines arrive at an animal shelter?") == "OUT_OF_DOMAIN"
 
 
+class TestGuardrailTicketAndCarrierHistoryDomainScoping:
+    """Verify bugfix for guardrail-ticket-domain-scoping.
+
+    Validates:
+    1. Operational support ticket queries (e.g. 'can you check open tickets', 'what are my open tickets?',
+       'tickets abiertos') are classified as in_domain (action='allow').
+    2. Carrier corporate history, origins, and founding trivia queries (e.g. 'whats the history of FedEx',
+       'who founded FedEx', 'when was FedEx established') are deflected as out_of_domain (action='deflect').
+    3. Polysemic non-logistics ticket queries ('concert tickets', 'movie tickets', 'speeding ticket') remain deflected.
+    4. Legitimate operational carrier queries ('When was my FedEx order shipped?') remain allowed.
+    """
+
+    @pytest.mark.parametrize(
+        ("query", "language"),
+        [
+            ("can you check open tickets", "en"),
+            ("do I have any open tickets?", "en"),
+            ("what are my open tickets?", "en"),
+            ("show my open tickets", "en"),
+            ("open tickets", "en"),
+            ("check open tickets", "en"),
+            ("list my open tickets", "en"),
+            ("tickets abiertos", "es"),
+            ("consultar tickets abiertos", "es"),
+            ("¿tengo tickets abiertos?", "es"),
+            ("ver mis tickets pendientes", "es"),
+        ],
+    )
+    def test_open_and_pending_support_ticket_queries_are_allowed(
+        self,
+        input_guard: InputGuardrailValidator,
+        query: str,
+        language: str,
+    ) -> None:
+        """Operational support ticket inquiries must be allowed as in_domain."""
+        result = input_guard.evaluate_input(query=query, language=language)
+        assert result.action == "allow", f"Expected allow for '{query}', got {result.action} ({result.reason_code})"
+        assert result.decision == "allow"
+        assert result.input_category == "in_domain"
+        assert result.reason_code == "IN_DOMAIN_ALLOWED"
+
+        router = FastIntentSemanticRouter()
+        assert router.classify(query) == "IN_DOMAIN"
+
+    @pytest.mark.parametrize(
+        ("query", "language"),
+        [
+            ("whats the history of FedEx", "en"),
+            ("What is the history of FedEx?", "en"),
+            ("tell me the history of FedEx", "en"),
+            ("who founded FedEx", "en"),
+            ("when was FedEx established", "en"),
+            ("when was FedEx founded", "en"),
+            ("tell me about the origin of FedEx", "en"),
+            ("historia de FedEx", "es"),
+            ("¿cuándo se fundó FedEx?", "es"),
+            ("¿quién fundó DHL?", "es"),
+        ],
+    )
+    def test_carrier_history_and_founding_trivia_queries_are_deflected(
+        self,
+        input_guard: InputGuardrailValidator,
+        query: str,
+        language: str,
+    ) -> None:
+        """Corporate history and founding trivia about third-party carriers must deflect at Layer 1."""
+        result = input_guard.evaluate_input(query=query, language=language)
+        assert result.action == "deflect", f"Expected deflect for '{query}', got {result.action} ({result.reason_code})"
+        assert result.decision == "deflect"
+        assert result.failure_category == "content"
+        assert result.input_category == "out_of_domain"
+
+        router = FastIntentSemanticRouter()
+        assert router.classify(query) == "OUT_OF_DOMAIN"
+
+
+
 
