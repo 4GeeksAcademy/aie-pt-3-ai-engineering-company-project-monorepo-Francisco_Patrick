@@ -12,6 +12,7 @@ Implements `SupportAgentServicePort` (T036, T037):
 from datetime import datetime, timezone
 import asyncio
 import re
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -762,6 +763,9 @@ class SupportAgentService(SupportAgentServicePort):
 
         accumulated_parts: List[str] = []
         state: AgentState = {}
+        finalization_lock = threading.RLock()
+        turn_finalized = False
+        interrupted_result: Optional[ChatMessage] = None
 
         def _resolve_abort_reason() -> ChatInterruptedReason:
             if hasattr(active_broker, "get_abort_reason"):
@@ -777,70 +781,84 @@ class SupportAgentService(SupportAgentServicePort):
         def _persist_and_publish_interrupted(
             reason: ChatInterruptedReason,
         ) -> ChatMessage:
-            partial_text = "".join(accumulated_parts)
-            now_abort = datetime.now(timezone.utc)
-            elapsed_abort_ms = max(
-                0.01, round((time.perf_counter() - start_ns) * 1000.0, 3)
+            nonlocal turn_finalized, interrupted_result
+            with finalization_lock:
+                if turn_finalized and interrupted_result is not None:
+                    return interrupted_result
+                turn_finalized = True
+
+                partial_text = "".join(accumulated_parts)
+                now_abort = datetime.now(timezone.utc)
+                elapsed_abort_ms = max(
+                    0.01, round((time.perf_counter() - start_ns) * 1000.0, 3)
+                )
+                interrupted_event = active_broker.publish(
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    event_name="generation_interrupted",
+                    payload={
+                        "turn_id": resolved_assistant_turn_id,
+                        "partial_content": partial_text,
+                        "status": "interrupted",
+                        "reason": reason,
+                    },
+                )
+                interrupted_msg = ChatMessage(
+                    turn_id=resolved_assistant_turn_id,
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    role="assistant",
+                    content=partial_text,
+                    status="interrupted",
+                    parent_user_turn_id=resolved_user_turn_id,
+                    interrupted_reason=reason,
+                    is_refusal=bool(state.get("is_refusal", False)),
+                    fallback_triggered=bool(state.get("fallback_triggered", False)),
+                    trace_id=trace_id,
+                    node_sequence=list(state.get("node_history") or []),
+                    execution_time_ms=elapsed_abort_ms,
+                    sources=[],
+                    sources_consulted=[
+                        str(s) for s in (state.get("sources_consulted") or [])
+                    ],
+                    tool_calls=[],
+                    memory_proposal=None,
+                    recalled_memories=[
+                        str(m) for m in (state.get("recalled_memories") or [])
+                    ],
+                    guardrail_interventions=[
+                        ev
+                        for ev in (state.get("guardrail_events") or [])
+                        if isinstance(ev, GuardrailAuditEvent)
+                    ],
+                    resolved_country=(
+                        state.get("resolved_country")
+                        if state.get("resolved_country") in ("US", "ES")
+                        else None
+                    ),
+                    created_at=now_start,
+                    updated_at=now_abort,
+                )
+                active_repo.append_or_update_message(
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    owner_user_id=owner_user_id,
+                    owner_email=owner_email,
+                    message=interrupted_msg,
+                    latest_sequence_id=interrupted_event.sequence_id,
+                )
+                interrupted_result = interrupted_msg
+                return interrupted_msg
+
+        if hasattr(active_broker, "register_abort_finalizer"):
+            getattr(active_broker, "register_abort_finalizer")(
+                resolved_thread_id,
+                resolved_assistant_turn_id,
+                _persist_and_publish_interrupted,
             )
-            interrupted_event = active_broker.publish(
-                thread_id=resolved_thread_id,
-                session_id=resolved_session_id,
-                event_name="generation_interrupted",
-                payload={
-                    "turn_id": resolved_assistant_turn_id,
-                    "partial_content": partial_text,
-                    "status": "interrupted",
-                    "reason": reason,
-                },
-            )
-            interrupted_msg = ChatMessage(
-                turn_id=resolved_assistant_turn_id,
-                thread_id=resolved_thread_id,
-                session_id=resolved_session_id,
-                role="assistant",
-                content=partial_text,
-                status="interrupted",
-                parent_user_turn_id=resolved_user_turn_id,
-                interrupted_reason=reason,
-                is_refusal=bool(state.get("is_refusal", False)),
-                fallback_triggered=bool(state.get("fallback_triggered", False)),
-                trace_id=trace_id,
-                node_sequence=list(state.get("node_history") or []),
-                execution_time_ms=elapsed_abort_ms,
-                sources=[],
-                sources_consulted=[
-                    str(s) for s in (state.get("sources_consulted") or [])
-                ],
-                tool_calls=[],
-                memory_proposal=None,
-                recalled_memories=[
-                    str(m) for m in (state.get("recalled_memories") or [])
-                ],
-                guardrail_interventions=[
-                    ev
-                    for ev in (state.get("guardrail_events") or [])
-                    if isinstance(ev, GuardrailAuditEvent)
-                ],
-                resolved_country=(
-                    state.get("resolved_country")
-                    if state.get("resolved_country") in ("US", "ES")
-                    else None
-                ),
-                created_at=now_start,
-                updated_at=now_abort,
-            )
-            active_repo.append_or_update_message(
-                thread_id=resolved_thread_id,
-                session_id=resolved_session_id,
-                owner_user_id=owner_user_id,
-                owner_email=owner_email,
-                message=interrupted_msg,
-                latest_sequence_id=interrupted_event.sequence_id,
-            )
-            return interrupted_msg
 
         try:
-            if abort_event is not None and abort_event.is_set():
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
             state, candidate_answer, citations, structured_llm_candidate = (
@@ -853,35 +871,45 @@ class SupportAgentService(SupportAgentServicePort):
                 )
             )
 
-            if abort_event is not None and abort_event.is_set():
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
             tokens = self.tokenize_for_streaming(candidate_answer)
             for chunk_index, token_delta in enumerate(tokens):
-                if abort_event is not None and abort_event.is_set():
-                    return _persist_and_publish_interrupted(_resolve_abort_reason())
+                with finalization_lock:
+                    if turn_finalized or (
+                        abort_event is not None and abort_event.is_set()
+                    ):
+                        return _persist_and_publish_interrupted(
+                            _resolve_abort_reason()
+                        )
 
-                accumulated_parts.append(token_delta)
-                accumulated_text = "".join(accumulated_parts)
-                active_broker.publish(
-                    thread_id=resolved_thread_id,
-                    session_id=resolved_session_id,
-                    event_name="token_chunk",
-                    payload={
-                        "turn_id": resolved_assistant_turn_id,
-                        "chunk_index": chunk_index,
-                        "delta": token_delta,
-                        "accumulated_content": accumulated_text,
-                    },
-                )
+                    accumulated_parts.append(token_delta)
+                    accumulated_text = "".join(accumulated_parts)
+                    active_broker.publish(
+                        thread_id=resolved_thread_id,
+                        session_id=resolved_session_id,
+                        event_name="token_chunk",
+                        payload={
+                            "turn_id": resolved_assistant_turn_id,
+                            "chunk_index": chunk_index,
+                            "delta": token_delta,
+                            "accumulated_content": accumulated_text,
+                        },
+                    )
                 if effective_delay > 0:
                     await asyncio.sleep(effective_delay)
 
-            if abort_event is not None and abort_event.is_set():
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
         except asyncio.CancelledError:
             return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+        with finalization_lock:
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
+                return _persist_and_publish_interrupted(_resolve_abort_reason())
+            turn_finalized = True
 
         # Post-stream Layer 4 Output Guardrail validation before generation_completed (Clarification 3, FR-006)
         final_answer = "".join(accumulated_parts).strip() or candidate_answer

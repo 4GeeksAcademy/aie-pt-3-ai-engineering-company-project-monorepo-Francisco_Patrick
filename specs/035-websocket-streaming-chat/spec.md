@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-24
 
-**Status**: Draft
+**Status**: Complete
 
 **Input**: User description: "Core Ticket Acceptance Criteria: Bidirectional channel, Real-time token streaming, True generation abort, Live Token Rendering, JWT Authentication, Session / Thread Binding, Interrupt, Preserve & Redirect, Reconnect & Rehydrate, Pub/Sub & Structured Events, Domain Context Alignment."
 

@@ -404,6 +404,154 @@ def test_us2_websocket_idle_interrupt_is_safe_noop(
         assert pong["event"] == "pong"
 
 
+def test_us2_high_latency_abort_fallback_finalizer_prevents_race_and_duplicate_events() -> None:
+    """Verify that if a slow task exceeds the wait_for timeout during abort_active_generation, the idempotent fallback finalizer persists and publishes generation_interrupted before Turn 2 starts, with zero duplicate events when the slow task finally unwinds."""
+
+    async def _run_high_latency_abort_test() -> None:
+        agent_service = get_support_agent_service()
+        broker = AgentChatEventBroker()
+        repo = TinyDBAgentChatThreadRepository()
+        thread_id = "thr_us2_high_latency_abort"
+        session_id = "sess_us2_high_latency_abort"
+        owner_id = "usr_operator_1"
+
+        sub_queue = broker.subscribe(thread_id)
+        abort_event_1 = asyncio.Event()
+        uncooperative_io_started = asyncio.Event()
+
+        # Patch asyncio.sleep inside stream_query for Turn 1 after 2 chunks to simulate a slow (>300ms) shielded I/O wait
+        original_sleep = asyncio.sleep
+        chunk_sleeps = 0
+
+        async def _simulated_high_latency_sleep(delay: float) -> None:
+            nonlocal chunk_sleeps
+            chunk_sleeps += 1
+            if chunk_sleeps == 2:
+                uncooperative_io_started.set()
+                try:
+                    await original_sleep(delay)
+                except asyncio.CancelledError:
+                    # Simulate a slow threadpool/I/O operation taking 300ms (> 200ms abort wait budget) to unwind
+                    await original_sleep(0.30)
+                    raise
+            else:
+                await original_sleep(delay)
+
+        req_1 = AgentQueryRequest(
+            query="What is TrackFlow's standard return window and who covers return shipping costs?",
+            thread_id=thread_id,
+            language="en",
+        )
+
+        import application.services.support_agent_service as sas_mod
+
+        sas_mod.asyncio.sleep = _simulated_high_latency_sleep  # type: ignore[assignment]
+        try:
+            task_1 = asyncio.create_task(
+                agent_service.stream_query(  # type: ignore[attr-defined]
+                    request=req_1,
+                    owner_user_id=owner_id,
+                    session_id=session_id,
+                    user_turn_id="usr_turn_slow_1",
+                    assistant_turn_id="asst_turn_slow_1",
+                    abort_event=abort_event_1,
+                    broker=broker,
+                    thread_repository=repo,
+                    chunk_delay_seconds=0.05,
+                )
+            )
+            broker.register_generation_task(
+                thread_id=thread_id,
+                turn_id="asst_turn_slow_1",
+                task=task_1,
+                abort_event=abort_event_1,
+            )
+
+            await asyncio.wait_for(uncooperative_io_started.wait(), timeout=2.0)
+
+            # Abort Turn 1 while it will take 300ms to unwind (> 200ms wait_for timeout)
+            abort_start = time.perf_counter()
+            aborted = await broker.abort_active_generation(
+                thread_id=thread_id,
+                reason="redirect_new_message",
+            )
+            abort_elapsed_ms = (time.perf_counter() - abort_start) * 1000.0
+            assert aborted is True
+            assert abort_elapsed_ms < 250.0, (
+                f"High-latency abort took {abort_elapsed_ms:.2f}ms (exceeded 250ms SC-003 budget)"
+            )
+
+            # Immediately verify Turn 1 is ALREADY persisted as interrupted in TinyDB BEFORE Turn 2 starts
+            mid_thread = repo.get_thread(thread_id)
+            assert mid_thread is not None
+            assert [m.turn_id for m in mid_thread.messages] == [
+                "usr_turn_slow_1",
+                "asst_turn_slow_1",
+            ]
+            assert mid_thread.messages[1].status == "interrupted"
+            assert mid_thread.messages[1].interrupted_reason == "redirect_new_message"
+        finally:
+            sas_mod.asyncio.sleep = original_sleep  # type: ignore[assignment]
+
+        # Start Turn 2 immediately while Turn 1's slow task is still unwinding in the background
+        req_2 = AgentQueryRequest(
+            query="What are the standard delivery SLAs for domestic shipments?",
+            thread_id=thread_id,
+            language="en",
+        )
+        msg_2 = await agent_service.stream_query(  # type: ignore[attr-defined]
+            request=req_2,
+            owner_user_id=owner_id,
+            session_id=session_id,
+            user_turn_id="usr_turn_fast_2",
+            assistant_turn_id="asst_turn_fast_2",
+            abort_event=asyncio.Event(),
+            broker=broker,
+            thread_repository=repo,
+            chunk_delay_seconds=0.001,
+        )
+        assert msg_2.status == "completed"
+
+        # Wait for Turn 1's slow task to finish unwinding completely
+        await asyncio.gather(task_1, return_exceptions=True)
+
+        # Drain all broker events and verify deterministic ordering and ZERO duplicate generation_interrupted frames
+        all_events: List[Dict[str, Any]] = []
+        while not sub_queue.empty():
+            all_events.append(sub_queue.get_nowait().to_frame_dict())
+
+        interrupted_events = [
+            e for e in all_events if e["event"] == "generation_interrupted"
+        ]
+        assert len(interrupted_events) == 1, (
+            f"Expected exactly 1 generation_interrupted event, got {len(interrupted_events)}"
+        )
+        turn2_started_events = [
+            e
+            for e in all_events
+            if e["event"] == "generation_started"
+            and e.get("turn_id") == "asst_turn_fast_2"
+        ]
+        assert len(turn2_started_events) == 1
+        assert (
+            interrupted_events[0]["sequence_id"]
+            < turn2_started_events[0]["sequence_id"]
+        ), "Turn 1 generation_interrupted must be published before Turn 2 generation_started"
+
+        saved_thread = repo.get_thread(thread_id)
+        assert saved_thread is not None
+        assert [m.turn_id for m in saved_thread.messages] == [
+            "usr_turn_slow_1",
+            "asst_turn_slow_1",
+            "usr_turn_fast_2",
+            "asst_turn_fast_2",
+        ]
+        assert saved_thread.messages[1].status == "interrupted"
+        assert saved_thread.messages[3].status == "completed"
+
+    asyncio.run(_run_high_latency_abort_test())
+
+
 # =====================================================================
 # User Story 3: Backoffice JWT Auth & Session / Thread Binding (T023)
 # =====================================================================
@@ -481,6 +629,38 @@ def test_us3_first_frame_authenticate_and_cross_operator_thread_ownership_isolat
     # 4. Unauthenticated REST history request -> rejected with HTTP 401
     rest_unauth = client.get(f"/api/v1/agent/threads/{shared_thread_id}/history")
     assert rest_unauth.status_code == 401
+
+
+def test_us3_handshake_thread_and_session_id_validation_and_token_log_redaction(
+    client: Any, test_users: Dict[str, Any]
+) -> None:
+    """Verify handshake rejects connections omitting both thread_id and session_id (1008), accepts session_id-only connections, and redacts ?token= in log sanitizer."""
+    from presentation.api.v1.agent import _sanitize_websocket_query_for_logging
+
+    token = test_users["active_token"]
+
+    # 1. Omitting both thread_id and session_id -> rejected with close code 1008
+    with pytest.raises(WebSocketDisconnect) as exc_missing_ids:
+        with client.websocket_connect(f"/api/v1/agent/ws?token={token}") as ws_no_ids:
+            ws_no_ids.receive_json()
+    assert exc_missing_ids.value.code == 1008
+
+    # 2. Providing session_id without thread_id -> accepted and derives thread_id = session_id
+    with client.websocket_connect(
+        f"/api/v1/agent/ws?token={token}&session_id=sess_only_handshake_01"
+    ) as ws_sess_only:
+        rehydrated = ws_sess_only.receive_json()
+        assert rehydrated["event"] == "session_rehydrated"
+        assert rehydrated["session_id"] == "sess_only_handshake_01"
+        assert rehydrated["thread_id"] == "sess_only_handshake_01"
+
+    # 3. Verify query-string token redaction helper masks JWT tokens
+    raw_url = f"ws://localhost:8000/api/v1/agent/ws?thread_id=thr_1&token={token}&session_id=sess_1"
+    sanitized = _sanitize_websocket_query_for_logging(raw_url)
+    assert token not in sanitized
+    assert "token=[REDACTED]" in sanitized
+    assert "thread_id=thr_1" in sanitized
+    assert "session_id=sess_1" in sanitized
 
 
 # =====================================================================

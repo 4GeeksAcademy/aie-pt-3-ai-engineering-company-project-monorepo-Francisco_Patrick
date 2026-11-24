@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
+import re
 import uuid
 from fastapi import (
     APIRouter,
@@ -679,6 +680,22 @@ async def get_thread_history_endpoint(
     )
 
 
+def _sanitize_websocket_query_for_logging(raw_query_or_url: str) -> str:
+    """Redact any `?token=<jwt>` or `&token=<jwt>` parameter before diagnostic logging.
+
+    Note: Browser `new WebSocket(url)` cannot set custom `Authorization` headers, so FR-002
+    supports both `?token=<jwt>` handshake authentication and first-frame `authenticate` messages.
+    Reverse proxies and ASGI access loggers should redact `token` query parameters in production.
+    """
+    if not raw_query_or_url:
+        return ""
+    return re.sub(
+        r"(?i)(^|[?&])token=[^&\s]+",
+        r"\1token=[REDACTED]",
+        raw_query_or_url,
+    )
+
+
 def _extract_handshake_bearer_token(websocket: WebSocket) -> Optional[str]:
     """Extract JWT token from `?token=` query param or `Authorization: Bearer <token>` header."""
     query_token = websocket.query_params.get("token")
@@ -796,10 +813,14 @@ async def support_agent_websocket_endpoint(
     raw_thread_id = (
         auth_thread_id
         or websocket.query_params.get("thread_id")
+        or auth_session_id
         or websocket.query_params.get("session_id")
-        or f"thr_{uuid.uuid4().hex[:12]}"
+        or ""
     ).strip()
-    thread_id = raw_thread_id or f"thr_{uuid.uuid4().hex[:12]}"
+    if not raw_thread_id:
+        await websocket.close(code=1008, reason="MISSING_THREAD_OR_SESSION_ID")
+        return
+    thread_id = raw_thread_id
     raw_session_id = (
         auth_session_id
         or websocket.query_params.get("session_id")

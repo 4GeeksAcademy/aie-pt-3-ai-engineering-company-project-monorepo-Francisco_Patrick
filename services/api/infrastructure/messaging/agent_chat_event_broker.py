@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import logging
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from domain.agent.entities import (
     AgentChatEventName,
@@ -36,6 +36,8 @@ class _ActiveGenerationHandle:
     task: asyncio.Task[Any]
     abort_event: asyncio.Event
     abort_reason: ChatInterruptedReason = "client_interrupt"
+    on_abort_finalize: Optional[Callable[[ChatInterruptedReason], Any]] = None
+    finalized: bool = False
 
 
 class AgentChatEventBroker(AgentChatEventBrokerPort):
@@ -57,6 +59,9 @@ class AgentChatEventBroker(AgentChatEventBrokerPort):
             ],
         ] = {}
         self._active_tasks: Dict[str, _ActiveGenerationHandle] = {}
+        self._abort_finalizers: Dict[
+            Tuple[str, str], Callable[[ChatInterruptedReason], Any]
+        ] = {}
 
     def subscribe(self, thread_id: str) -> asyncio.Queue[AgentChatStreamEvent]:
         """Register a new subscriber queue for `thread_id` and return it."""
@@ -184,25 +189,53 @@ class AgentChatEventBroker(AgentChatEventBrokerPort):
         turn_id: str,
         task: asyncio.Task[Any],
         abort_event: asyncio.Event,
+        on_abort_finalize: Optional[Callable[[ChatInterruptedReason], Any]] = None,
     ) -> None:
         """Register an active generation asyncio.Task and cooperative abort_event for `thread_id`."""
         cleaned_thread = (thread_id or "").strip() or "default"
-        handle = _ActiveGenerationHandle(
-            thread_id=cleaned_thread,
-            turn_id=turn_id,
-            task=task,
-            abort_event=abort_event,
-        )
         with self._lock:
+            existing_finalizer = (
+                on_abort_finalize
+                or self._abort_finalizers.get((cleaned_thread, turn_id))
+            )
+            if existing_finalizer is not None:
+                self._abort_finalizers[(cleaned_thread, turn_id)] = existing_finalizer
+            handle = _ActiveGenerationHandle(
+                thread_id=cleaned_thread,
+                turn_id=turn_id,
+                task=task,
+                abort_event=abort_event,
+                on_abort_finalize=existing_finalizer,
+            )
             self._active_tasks[cleaned_thread] = handle
 
         def _cleanup_on_done(_DoneTask: asyncio.Future[Any]) -> None:
             with self._lock:
+                self._abort_finalizers.pop((cleaned_thread, turn_id), None)
                 current = self._active_tasks.get(cleaned_thread)
                 if current is not None and current.turn_id == turn_id:
                     self._active_tasks.pop(cleaned_thread, None)
 
         task.add_done_callback(_cleanup_on_done)
+
+    def register_abort_finalizer(
+        self,
+        thread_id: str,
+        turn_id: str,
+        finalizer: Callable[[ChatInterruptedReason], Any],
+    ) -> None:
+        """Register an idempotent synchronous finalizer callback for `(thread_id, turn_id)`.
+
+        Guarantees that if a cancelled task exceeds the `< 250ms` wait budget during
+        `abort_active_generation`, the broker still persists `status="interrupted"` and
+        emits `generation_interrupted` deterministically before any redirected turn begins.
+        """
+        cleaned_thread = (thread_id or "").strip() or "default"
+        with self._lock:
+            self._abort_finalizers[(cleaned_thread, turn_id)] = finalizer
+            handle = self._active_tasks.get(cleaned_thread)
+            if handle is not None and handle.turn_id == turn_id:
+                handle.on_abort_finalize = finalizer
 
     def get_abort_reason(self, thread_id: str) -> ChatInterruptedReason:
         """Return the recorded abort reason for the active generation on `thread_id`."""
@@ -216,7 +249,11 @@ class AgentChatEventBroker(AgentChatEventBrokerPort):
         cleaned_thread = (thread_id or "").strip() or "default"
         with self._lock:
             handle = self._active_tasks.get(cleaned_thread)
-            return handle is not None and not handle.task.done()
+            return (
+                handle is not None
+                and not handle.finalized
+                and not handle.task.done()
+            )
 
     async def abort_active_generation(
         self,
@@ -226,25 +263,56 @@ class AgentChatEventBroker(AgentChatEventBrokerPort):
     ) -> bool:
         """Signal cooperative abort and cancel any active generation task on `thread_id`.
 
-        Awaits task finalization so `generation_interrupted` and partial persistence complete
-        deterministically before any new redirected turn starts (FR-008, FR-010, SC-003).
+        Awaits task finalization up to 200ms (`< 250ms` SC-003 budget) and invokes any
+        registered idempotent abort finalizer if the underlying task is still unwinding
+        from slow I/O, guaranteeing `generation_interrupted` and partial persistence
+        complete deterministically before any new redirected turn starts (FR-008, FR-010, SC-003).
         """
         cleaned_thread = (thread_id or "").strip() or "default"
         with self._lock:
             handle = self._active_tasks.get(cleaned_thread)
-            if handle is None or handle.task.done():
+            if handle is None or handle.finalized or handle.task.done():
                 return False
             if turn_id is not None and turn_id.strip() and handle.turn_id != turn_id.strip():
                 return False
             handle.abort_reason = reason
             handle.abort_event.set()
             task = handle.task
+            active_turn_id = handle.turn_id
 
         task.cancel()
         try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=0.24)
+            await asyncio.wait_for(asyncio.shield(task), timeout=0.20)
         except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
             pass
+
+        finalizer: Optional[Callable[[ChatInterruptedReason], Any]] = None
+        with self._lock:
+            current = self._active_tasks.get(cleaned_thread)
+            if current is not None and current.turn_id == active_turn_id:
+                current.finalized = True
+                finalizer = (
+                    current.on_abort_finalize
+                    or self._abort_finalizers.pop(
+                        (cleaned_thread, active_turn_id), None
+                    )
+                )
+                self._active_tasks.pop(cleaned_thread, None)
+            else:
+                finalizer = self._abort_finalizers.pop(
+                    (cleaned_thread, active_turn_id), None
+                )
+
+        if finalizer is not None:
+            try:
+                finalizer(reason)
+            except Exception:
+                logger.debug(
+                    "Fallback abort finalizer raised for thread_id=%s turn_id=%s",
+                    cleaned_thread,
+                    active_turn_id,
+                )
+
         return True
 
     def reset(self) -> None:
@@ -252,6 +320,7 @@ class AgentChatEventBroker(AgentChatEventBrokerPort):
         with self._lock:
             handles = list(self._active_tasks.values())
             self._active_tasks.clear()
+            self._abort_finalizers.clear()
             self._subscribers.clear()
             self._sequence_counters.clear()
 
