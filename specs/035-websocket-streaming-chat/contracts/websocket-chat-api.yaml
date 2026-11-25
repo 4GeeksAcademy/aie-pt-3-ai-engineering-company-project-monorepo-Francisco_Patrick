@@ -246,7 +246,7 @@ components:
           type: string
         status:
           type: string
-          enum: ["active", "streaming", "interrupted", "disconnected", "closed"]
+          enum: ["active", "interrupted", "closed"]
         created_at:
           type: ["string", "null"]
           format: date-time
@@ -282,7 +282,7 @@ components:
           type: string
         status:
           type: string
-          enum: ["active", "streaming", "interrupted", "disconnected", "closed"]
+          enum: ["active", "interrupted", "closed"]
         session:
           $ref: "#/components/schemas/ChatSessionSchema"
         messages:

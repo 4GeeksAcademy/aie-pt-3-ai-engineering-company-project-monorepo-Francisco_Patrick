@@ -17,10 +17,11 @@
 |---|---|---|---|---|
 | `thread_id` | `string` | Yes | Non-empty unique thread identifier (`1..128` chars) used as LangGraph `configurable.thread_id` and pub/sub broker channel key. | `"thr_support_001"` |
 | `session_id` | `string` | Yes | Non-empty session identifier (`1..128` chars) correlated with `AuthenticatedSessionContext.session_id`. Defaults to `thread_id` if omitted. | `"sess_support_001"` |
-| `user_id` | `string` | Yes | Authenticated backoffice operator's user ID from JWT `sub` claim. Enforces strict per-operator thread ownership (Clarification 5). | `"usr_admin_01"` |
-| `agent_id` | `string` | Yes | Support agent identifier (`"trackflow-support-agent"`). | `"trackflow-support-agent"` |
+| `user_id` | `string` | Yes | Chatting client user ID resolved from `session_context.customer_id` (falls back to `"unassigned"` when no customer context is bound yet). | `"cust_brand_acme_42"` |
+| `owner_user_id` | `string \| null` | No | Authenticated backoffice operator's user ID from JWT `sub` claim. Enforces strict per-operator thread ownership (Clarification 5). | `"usr_admin_01"` |
+| `agent_id` | `string` | Yes | Support agent identifier (`"first_line_cx"`). | `"first_line_cx"` |
 | `client_id` | `string` | Yes | Client application identifier (`"trackflow-backoffice"`). | `"trackflow-backoffice"` |
-| `status` | `"active" \| "streaming" \| "interrupted" \| "disconnected" \| "closed"` | Yes | Current session lifecycle status. | `"active"` |
+| `status` | `"active" \| "interrupted" \| "closed"` | Yes | Current session lifecycle status. | `"active"` |
 | `session` | `ChatSession` | Yes | Canonical `ChatSession` metadata object (`session_id`, `thread_id`, `agent_id`, `client_id`, `user_id`, `status`). | `{"session_id": "sess_support_001", ...}` |
 | `owner_email` | `string` | No | Authenticated operator's email for audit attribution (never logged in plaintext). | `"operator@trackflow.com"` |
 | `messages` | `ChatMessage[]` | Yes | Chronologically ordered list of user and assistant turns (including `completed` and `interrupted` partial turns). | `[...]` |

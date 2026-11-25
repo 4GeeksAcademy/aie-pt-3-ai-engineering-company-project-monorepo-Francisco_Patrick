@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AgentAuthenticatedSessionContextDTO,
   AgentMemoryProposalDTO,
   AgentQueryResponseDTO,
   ChatMessageDTO,
@@ -39,6 +40,8 @@ export interface UseSupportAgentChatOptions {
   initialThreadId?: string;
   /** Optional explicit session_id override. */
   initialSessionId?: string;
+  /** Optional authenticated customer session context (`customer_id`, segment, operating country). */
+  sessionContext?: AgentAuthenticatedSessionContextDTO | null;
   /** Preferred response language ('en' or 'es', defaults to 'en'). */
   language?: 'en' | 'es';
   /** Whether to automatically connect the WebSocket on mount (defaults to true). */
@@ -72,7 +75,10 @@ export interface UseSupportAgentChatResult {
   /** Last monotonic event `sequence_id` received on the thread. */
   lastSequenceId: number;
   /** Submit a new user inquiry (or mid-stream redirecting inquiry) over the WebSocket. */
-  sendMessage: (query: string) => Promise<void>;
+  sendMessage: (
+    query: string,
+    sessionContextOverride?: AgentAuthenticatedSessionContextDTO | null
+  ) => Promise<void>;
   /** Immediately interrupt the active streaming assistant response (`{"event": "interrupt"}`). */
   interruptGeneration: () => void;
   /** Manually trigger an immediate WebSocket reconnection and thread rehydration. */
@@ -397,11 +403,18 @@ export function useSupportAgentChat(
   }, []);
 
   const sendMessage = useCallback(
-    async (rawQuery: string): Promise<void> => {
+    async (
+      rawQuery: string,
+      sessionContextOverride?: AgentAuthenticatedSessionContextDTO | null
+    ): Promise<void> => {
       const trimmed = rawQuery.trim();
       if (!trimmed) {
         return;
       }
+      const effectiveSessionContext =
+        sessionContextOverride !== undefined
+          ? sessionContextOverride
+          : (options.sessionContext ?? null);
       setErrorMessage(null);
       const nowIso = new Date().toISOString();
       const userTurnId = `usr_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
@@ -461,6 +474,9 @@ export function useSupportAgentChat(
             language,
             top_k: 3,
             min_score: 0.62,
+            ...(effectiveSessionContext
+              ? { session_context: effectiveSessionContext }
+              : {}),
           })
         );
         return;
@@ -490,6 +506,9 @@ export function useSupportAgentChat(
             language,
             top_k: 3,
             min_score: 0.62,
+            ...(effectiveSessionContext
+              ? { session_context: effectiveSessionContext }
+              : {}),
           }),
         });
         if (!response.ok) {
@@ -540,7 +559,7 @@ export function useSupportAgentChat(
         setActiveTurnId(null);
       }
     },
-    [apiUrl, language, sessionId, threadId]
+    [apiUrl, language, options.sessionContext, sessionId, threadId]
   );
 
   const reconnectNow = useCallback((): void => {

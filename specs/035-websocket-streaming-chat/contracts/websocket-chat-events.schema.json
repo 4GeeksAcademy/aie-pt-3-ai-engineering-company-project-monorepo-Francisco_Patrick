@@ -43,7 +43,7 @@
         "user_id": { "type": "string" },
         "status": {
           "type": "string",
-          "enum": ["active", "streaming", "interrupted", "disconnected", "closed"]
+          "enum": ["active", "interrupted", "closed"]
         },
         "created_at": { "type": ["string", "null"], "format": "date-time" },
         "updated_at": { "type": ["string", "null"], "format": "date-time" }
@@ -103,7 +103,7 @@
         "client_id": { "type": "string" },
         "status": {
           "type": "string",
-          "enum": ["active", "streaming", "interrupted", "disconnected", "closed"]
+          "enum": ["active", "interrupted", "closed"]
         },
         "session": { "$ref": "#/$defs/ChatSession" },
         "messages": { "type": "array", "items": { "type": "object" } },

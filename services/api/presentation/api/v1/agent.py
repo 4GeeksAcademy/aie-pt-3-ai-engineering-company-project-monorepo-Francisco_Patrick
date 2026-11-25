@@ -32,6 +32,7 @@ from domain.agent.entities import (
     ChatMessage,
     ChatThreadState,
     UNASSIGNED_CLIENT_USER_ID,
+    normalize_agent_id,
     resolve_client_user_id,
 )
 from domain.agent.exceptions import (
@@ -849,9 +850,7 @@ async def support_agent_websocket_endpoint(
         or thread_id
     ).strip()
     session_id = raw_session_id or thread_id
-    agent_id = (
-        websocket.query_params.get("agent_id") or "first_line_cx"
-    ).strip() or "first_line_cx"
+    agent_id = normalize_agent_id(websocket.query_params.get("agent_id"))
     client_id = (
         websocket.query_params.get("client_id") or "trackflow-backoffice"
     ).strip() or "trackflow-backoffice"

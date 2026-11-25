@@ -454,12 +454,13 @@ export function parseAgentChatStreamEvent(
               parsed['user_id'].trim().length > 0
             ? parsed['user_id'].trim()
             : UNASSIGNED_CLIENT_USER_ID;
-      const agentId =
-        typeof parsed['agent_id'] === 'string' && parsed['agent_id'].length > 0
-          ? parsed['agent_id']
+      const rawAgentCandidate =
+        typeof parsed['agent_id'] === 'string' && parsed['agent_id'].trim().length > 0
+          ? parsed['agent_id'].trim()
           : rawSession && typeof rawSession['agent_id'] === 'string'
-            ? rawSession['agent_id']
-            : FIRST_LINE_AGENT_ID;
+            ? rawSession['agent_id'].trim()
+            : '';
+      const agentId = normalizeAgentId(rawAgentCandidate);
       const clientId =
         typeof parsed['client_id'] === 'string' && parsed['client_id'].length > 0
           ? parsed['client_id']

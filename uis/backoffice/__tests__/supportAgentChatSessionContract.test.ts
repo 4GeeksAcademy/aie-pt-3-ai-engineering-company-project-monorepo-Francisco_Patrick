@@ -22,16 +22,23 @@ describe('session status/identity briefing contract', () => {
     expect(normalizeAgentId('first_line_cx')).toBe('first_line_cx');
   });
 
-  it('parseAgentChatStreamEvent normalizes legacy snapshot status and defaults agent_id', () => {
+  it('parseAgentChatStreamEvent normalizes legacy snapshot status and legacy/missing agent_id', () => {
     const event = parseAgentChatStreamEvent(
       JSON.stringify({
         event: 'session_snapshot',
         thread_id: 'thr_1',
         session_id: 'sess_1',
         user_id: 'usr_client_01',
+        agent_id: 'trackflow-support-agent',
         client_id: 'trackflow-backoffice',
         status: 'streaming',
-        session: { session_id: 'sess_1', thread_id: 'thr_1', user_id: 'usr_client_01', status: 'disconnected' },
+        session: {
+          session_id: 'sess_1',
+          thread_id: 'thr_1',
+          agent_id: 'trackflow-support-agent',
+          user_id: 'usr_client_01',
+          status: 'disconnected',
+        },
         messages: [],
         pending_proposal: null,
         latest_checkpoint_id: null,
@@ -44,6 +51,7 @@ describe('session status/identity briefing contract', () => {
     if (event?.event === 'session_snapshot') {
       expect(event.status).toBe('active');
       expect(event.session.status).toBe('active');
+      expect(event.agent_id).toBe('first_line_cx');
       expect(event.session.agent_id).toBe('first_line_cx');
       expect(event.user_id).toBe('usr_client_01');
     }
