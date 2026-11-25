@@ -1,0 +1,165 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TrackFlow NIST Security Governance & HITL Gates API",
+    "version": "1.0.0",
+    "description": "Public API contracts for TrackFlow NIST CSF 2.0 alignment, AI inventory, shared responsibility matrix, residual risks, and HITL gate reviews."
+  },
+  "paths": {
+    "/api/v1/security-audit/nist-csf": {
+      "get": {
+        "summary": "Retrieve 6-Function NIST CSF 2.0 Assessment Report",
+        "description": "Returns the complete cybersecurity framework assessment spanning Govern, Identify, Protect, Detect, Respond, and Recover with GDPR 72-hour SLA and CCPA compliance.",
+        "responses": {
+          "200": {
+            "description": "NIST CSF assessment report successfully retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./nist-security-schemas.json#/definitions/NISTAssessmentReport"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error loading or parsing assessment artifact."
+          }
+        }
+      }
+    },
+    "/api/v1/security-audit/ai-inventory": {
+      "get": {
+        "summary": "List Authoritative AI Systems Inventory",
+        "description": "Returns all active AI components with technical custodians, attack surfaces, and risk classifications.",
+        "responses": {
+          "200": {
+            "description": "AI systems inventory successfully retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "./nist-security-schemas.json#/definitions/AISystemRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/security-audit/shared-responsibility": {
+      "get": {
+        "summary": "List Third-Party AI Shared Responsibility Matrix",
+        "description": "Returns demarcated security obligations between TrackFlow and external model/infrastructure providers.",
+        "responses": {
+          "200": {
+            "description": "Shared responsibility matrix successfully retrieved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "./nist-security-schemas.json#/definitions/SharedResponsibilityRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/security-audit/residual-risks": {
+      "get": {
+        "summary": "List Residual Security Risks and Remediation Milestones",
+        "description": "Returns prioritized security gaps, compensatory controls, and scheduled remediation targets.",
+        "parameters": [
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+            }
+          },
+          {
+            "name": "function",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["GOVERN", "IDENTIFY", "PROTECT", "DETECT", "RESPOND", "RECOVER"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered list of residual risks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "./nist-security-schemas.json#/definitions/ResidualRiskRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/actions/review": {
+      "post": {
+        "summary": "Submit Human Supervisor Review Decision for HITL Gate",
+        "description": "Allows an authorized human supervisor to approve or reject an intercepted irreversible action.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["request_id", "decision", "reviewer_id"],
+                "properties": {
+                  "request_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": ["APPROVE", "REJECT"]
+                  },
+                  "reviewer_id": {
+                    "type": "string"
+                  },
+                  "decision_notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision successfully processed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./nist-security-schemas.json#/definitions/HITLApprovalRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid review parameters or request already finalized."
+          },
+          "404": {
+            "description": "Review request not found."
+          }
+        }
+      }
+    }
+  }
+}
