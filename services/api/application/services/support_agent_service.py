@@ -27,6 +27,7 @@ from application.services.agent_guardrails import (
     InputGuardrailValidator,
     OutputGuardrailValidator,
     TwoTierContextSanitizer,
+    wrap_untrusted_content,
 )
 from application.services.agent_workflow import (
     REQUIRED_WORKFLOW_NODES,

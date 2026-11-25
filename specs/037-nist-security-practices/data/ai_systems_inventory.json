@@ -1,0 +1,92 @@
+[
+  {
+    "system_id": "TF-AI-01-CX-AGENT",
+    "name": "24/7 CX Support Agent",
+    "description": "Autonomous conversational support agent orchestrating customer inquiries, delivery status, and return claims via LangGraph.",
+    "repository_path": "services/api/application/services/support_agent_service.py",
+    "architecture_type": "AUTONOMOUS_AGENT",
+    "custodian_team": "AI & Agent Systems Team",
+    "technical_lead": "Lead AI Engineer",
+    "data_classification": "RESTRICTED_PII",
+    "input_attack_surfaces": [
+      "Customer chat messages",
+      "WebSocket turn events",
+      "User intent queries"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-02-CARRIER-ENGINE",
+    "name": "Carrier Selection Decision Engine",
+    "description": "Automated logistics routing engine selecting optimal couriers across 8 carriers based on weight, SLA, and rates.",
+    "repository_path": "services/api/application/services/carrier_service.py",
+    "architecture_type": "DECISION_ENGINE",
+    "custodian_team": "Logistics Intelligence Team",
+    "technical_lead": "Lead Logistics Engineer",
+    "data_classification": "CONFIDENTIAL_B2B",
+    "input_attack_surfaces": [
+      "Order metadata",
+      "Warehouse shipping notes",
+      "Carrier webhook payloads"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": false,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-03-POLICIES-RAG",
+    "name": "Return Policies & SLA Knowledge RAG",
+    "description": "Vector-based semantic search and retrieval pipeline over SLA documents and return rules stored in Qdrant.",
+    "repository_path": "services/api/application/services/knowledge_service.py",
+    "architecture_type": "RAG_PIPELINE",
+    "custodian_team": "AI Knowledge Systems Team",
+    "technical_lead": "Knowledge Systems Architect",
+    "data_classification": "CONFIDENTIAL_B2B",
+    "input_attack_surfaces": [
+      "Natural language queries",
+      "Document chunk ingestions",
+      "Tenant policy uploads"
+    ],
+    "requires_hitl_gates": false,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-04-RETURN-ENGINE",
+    "name": "Automated Return Approval Policy Gate",
+    "description": "Deterministic decision engine evaluating return refund amounts and shipment status against autonomous thresholds.",
+    "repository_path": "services/api/application/services/agent_action_policies.py",
+    "architecture_type": "DECISION_ENGINE",
+    "custodian_team": "Reverse Logistics Team",
+    "technical_lead": "Reverse Logistics Lead",
+    "data_classification": "RESTRICTED_PII",
+    "input_attack_surfaces": [
+      "Agent tool call parameters",
+      "Supervisor review actions",
+      "Order return claims"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": false,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-05-MCP-SERVER",
+    "name": "Model Context Protocol Tool Server",
+    "description": "Standardized MCP integration server providing structured tool exposure to internal inventory and order adapters.",
+    "repository_path": "mcps/trackflow-server",
+    "architecture_type": "MCP_SERVER_TOOL",
+    "custodian_team": "Platform Architecture Team",
+    "technical_lead": "Principal Systems Architect",
+    "data_classification": "RESTRICTED_PII",
+    "input_attack_surfaces": [
+      "SSE client connections",
+      "MCP tool arguments",
+      "JWT authentication headers"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  }
+]

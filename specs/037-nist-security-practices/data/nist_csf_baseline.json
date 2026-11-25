@@ -1,0 +1,165 @@
+{
+  "report_id": "TF-NIST-CSF-2026-Q4",
+  "framework_version": "NIST CSF 2.0",
+  "created_at": "2026-11-25T10:00:00Z",
+  "executive_sponsor": "CTO & CISO Office (Los Angeles & Zaragoza)",
+  "functions": {
+    "GOVERN": [
+      {
+        "control_id": "GV.OC-01",
+        "category_code": "Organizational Context",
+        "title": "Authoritative AI Systems Inventory & Custodianship",
+        "concrete_operational_action": "Catalog all 5 production AI subsystems with assigned technical team leads, operational scope, and data tier classifications.",
+        "verification_mechanism": "Automated inventory schema tests asserting 100% of AI systems have designated custodians and repository paths.",
+        "implementation_location": "specs/037-nist-security-practices/data/ai_systems_inventory.json and services/api/presentation/api/v1/security_audit.py",
+        "priority": "P1"
+      },
+      {
+        "control_id": "GV.SC-01",
+        "category_code": "Supply Chain Risk Management",
+        "title": "Third-Party AI Provider Shared Responsibility Matrix",
+        "concrete_operational_action": "Establish demarcated security boundaries for Anthropic, Qdrant Cloud, and courier integrations with zero data retention verification.",
+        "verification_mechanism": "Automated contract tests asserting TLS 1.3 transit encryption and zero model training retention guarantees.",
+        "implementation_location": "specs/037-nist-security-practices/data/shared_responsibility_matrix.json",
+        "priority": "P1"
+      }
+    ],
+    "IDENTIFY": [
+      {
+        "control_id": "ID.AM-01",
+        "category_code": "Asset Management",
+        "title": "Input Attack Surface & Sensitive Data Tier Mapping",
+        "concrete_operational_action": "Map external attack surfaces (customer chat prompts, warehouse notes, carrier webhooks) to data classifications (RESTRICTED_PII, CONFIDENTIAL_B2B).",
+        "verification_mechanism": "AISystemRecord validation asserting non-empty input attack surfaces and explicit classification enum values.",
+        "implementation_location": "services/api/domain/agent/entities.py",
+        "priority": "P1"
+      },
+      {
+        "control_id": "ID.RA-01",
+        "category_code": "Risk Assessment",
+        "title": "Residual AI Risk Ledger & Compensatory Safeguards",
+        "concrete_operational_action": "Track prioritized technical and operational gaps with severity ratings, business impacts, and scheduled remediation targets.",
+        "verification_mechanism": "Residual risks query endpoint asserting all active entries have assigned owners and milestones.",
+        "implementation_location": "specs/037-nist-security-practices/data/residual_risks.json",
+        "priority": "P2"
+      }
+    ],
+    "PROTECT": [
+      {
+        "control_id": "PR.DS-01",
+        "category_code": "Data Security",
+        "title": "Prompt Boundary Delimiter Isolation",
+        "concrete_operational_action": "Envelop all untrusted external content within <<<EXTERNAL_UNTRUSTED_CONTENT>>> structural delimiters to prevent prompt injection overrides.",
+        "verification_mechanism": "Pytest injection regression suite verifying direct and indirect override neutralization.",
+        "implementation_location": "services/api/application/services/agent_guardrails.py",
+        "priority": "P1"
+      },
+      {
+        "control_id": "PR.AC-01",
+        "category_code": "Identity & Access Control",
+        "title": "Human-in-the-Loop Authorization Gates for Irreversible Actions",
+        "concrete_operational_action": "Intercept return refunds > 100 EUR, dispatches > 500 EUR, in-transit carrier changes, and cross-brand metric queries in a thread-safe supervisor queue.",
+        "verification_mechanism": "Policy evaluation tests asserting transition to PENDING_HUMAN_APPROVAL and fail-secure timeout handling.",
+        "implementation_location": "services/api/application/services/agent_action_policies.py",
+        "priority": "P1"
+      },
+      {
+        "control_id": "PR.PS-01",
+        "category_code": "Platform Security",
+        "title": "Zero Plaintext Credentials in Repository",
+        "concrete_operational_action": "Enforce 100% environment-driven configuration across all microservices with fail-fast initialization checks.",
+        "verification_mechanism": "Static git repository scanning asserting zero exposed tokens or private keys in tracked code.",
+        "implementation_location": ".env.example and services/api/infrastructure/config.py",
+        "priority": "P1"
+      }
+    ],
+    "DETECT": [
+      {
+        "control_id": "DE.CM-01",
+        "category_code": "Continuous Monitoring",
+        "title": "API Endpoint Rate Limiting & Denial-of-Wallet Defense",
+        "concrete_operational_action": "Enforce sliding-window rate limits (30 req/min) on LLM-invoking endpoints returning HTTP 429 with Retry-After header upon quota breach.",
+        "verification_mechanism": "Integration test triggering 31 rapid requests and asserting downstream LLM token consumption is capped.",
+        "implementation_location": "services/api/presentation/dependencies.py",
+        "priority": "P2"
+      },
+      {
+        "control_id": "DE.AE-01",
+        "category_code": "Adverse Event Analysis",
+        "title": "Tool Output Allowlist Gate & Guardrail Violation Logging",
+        "concrete_operational_action": "Validate agent tool proposals against registered Pydantic schemas and record sanitized SecurityAuditLogEntry telemetry.",
+        "verification_mechanism": "Unit tests verifying malformed tool arguments and unregistered tools trigger immediate execution refusal.",
+        "implementation_location": "services/api/application/services/agent_guardrails.py and guardrail_observability.py",
+        "priority": "P2"
+      }
+    ],
+    "RESPOND": [
+      {
+        "control_id": "RS.MA-01",
+        "category_code": "Incident Management",
+        "title": "GDPR 72-Hour AEPD Incident Response & Containment Protocol",
+        "concrete_operational_action": "Execute structured breach containment (T<=4h), PII impact assessment (T<=12h), DPO risk review (T<=36h), and AEPD formal submission (T<=72h).",
+        "verification_mechanism": "Incident SLA drill unit test validating containment timelines and formal notification payload generation.",
+        "implementation_location": "docs/cybersecurity-analysis/incident-response-gdpr-72h.md and services/api/tests/unit/test_nist_gdpr_incident_sla.py",
+        "priority": "P1"
+      },
+      {
+        "control_id": "RS.CO-01",
+        "category_code": "Incident Communications",
+        "title": "CCPA/CPRA Rapid Consumer Breach & Rights Response Runbook",
+        "concrete_operational_action": "Provide rapid consumer notification workflows and automated endpoints for Right to Access, Delete, and Opt-Out of data sale.",
+        "verification_mechanism": "Verification of privacy rights endpoint responses and consumer notice templates.",
+        "implementation_location": "docs/cybersecurity-analysis/incident-response-gdpr-72h.md",
+        "priority": "P2"
+      }
+    ],
+    "RECOVER": [
+      {
+        "control_id": "RC.RP-01",
+        "category_code": "Recovery Planning",
+        "title": "Deterministic State Reconstruction & Audit Trail Recovery",
+        "concrete_operational_action": "Replay tamper-evident security audit logs and LangGraph checkpoints to recover agent conversation state following node failure.",
+        "verification_mechanism": "State recovery tests asserting checkpoint integrity across interrupted workflows.",
+        "implementation_location": "services/api/application/services/agent_workflow.py",
+        "priority": "P2"
+      }
+    ]
+  },
+  "residual_risks": [
+    {
+      "risk_id": "RISK-NIST-PR-01",
+      "nist_function": "PROTECT",
+      "description": "Carrier API keys currently stored in environment variables rather than dedicated cloud HSM or HashiCorp Vault.",
+      "severity": "MEDIUM",
+      "business_impact": "Potential carrier credential leakage if host container filesystem or memory is compromised.",
+      "compensatory_controls": [
+        "Encrypted container environment variables at rest",
+        "Zero token logging in trace and observability adapters",
+        "Frequent credential rotation runbooks"
+      ],
+      "target_remediation_milestone": "2027-Q1 Vault KMS Integration",
+      "risk_owner": "Platform Architecture Team",
+      "status": "ACCEPTED_TEMPORARY"
+    },
+    {
+      "risk_id": "RISK-NIST-DE-01",
+      "nist_function": "DETECT",
+      "description": "Indirect prompt injection defense in warehouse notes relies on deterministic parameter extraction; novel semantic adversarial evasion possible.",
+      "severity": "LOW",
+      "business_impact": "Malicious shipping note could manipulate non-critical delivery notes or instructions.",
+      "compensatory_controls": [
+        "Complete segregation of notes from carrier routing logic",
+        "Delimiter bounding of all warehouse notes",
+        "Human review for high-value dispatches"
+      ],
+      "target_remediation_milestone": "2027-Q2 ML-based Adversarial Classifier",
+      "risk_owner": "AI & Agent Systems Team",
+      "status": "ACCEPTED_TEMPORARY"
+    }
+  ],
+  "regulatory_alignment": {
+    "gdpr_aepd_72h_sla_compliant": true,
+    "ccpa_cpra_rights_enforced": true,
+    "primary_dpo_office": "TrackFlow DPO Office Zaragoza, Spain"
+  }
+}

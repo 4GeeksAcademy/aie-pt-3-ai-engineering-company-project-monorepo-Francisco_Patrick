@@ -11,9 +11,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from presentation.schemas.security_audit import (
+    AISystemRecordSchema,
+    NISTAssessmentReportResponse,
     OWASPAuditMatrixResponse,
+    ResidualRiskRecordSchema,
     SecurityFindingSchema,
+    SharedResponsibilityRecordSchema,
 )
+from presentation.dependencies import get_nist_governance_repository_dep
+from infrastructure.adapters.nist_governance_repository import NISTGovernanceRepository
 
 router = APIRouter(tags=["Security Audit"])
 
@@ -116,3 +122,91 @@ async def get_security_finding_by_id(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Security finding '{finding_id}' not found.",
     )
+
+
+# ---------------------------------------------------------------------------
+# NIST CSF 2.0 & AI Governance Retrieval Endpoints (FR-001, FR-005, FR-006)
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/nist-csf",
+    response_model=NISTAssessmentReportResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve 6-Function NIST CSF 2.0 Assessment Report",
+)
+async def get_nist_csf_report(
+    repo: NISTGovernanceRepository = Depends(get_nist_governance_repository_dep),
+) -> NISTAssessmentReportResponse:
+    """Return the complete cybersecurity framework assessment across all 6 functions."""
+    try:
+        data = repo.get_csf_report()
+        return NISTAssessmentReportResponse.model_validate(data)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="NIST CSF baseline report artifact is missing.",
+        ) from exc
+
+
+@router.get(
+    "/ai-inventory",
+    response_model=List[AISystemRecordSchema],
+    status_code=status.HTTP_200_OK,
+    summary="List Authoritative AI Systems Inventory",
+)
+async def list_ai_systems_inventory(
+    repo: NISTGovernanceRepository = Depends(get_nist_governance_repository_dep),
+) -> List[AISystemRecordSchema]:
+    """Return all 5 operational AI components with internal custodians and attack surfaces."""
+    try:
+        data = repo.list_ai_inventory()
+        return [AISystemRecordSchema.model_validate(item) for item in data]
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="AI systems inventory catalog artifact is missing.",
+        ) from exc
+
+
+@router.get(
+    "/shared-responsibility",
+    response_model=List[SharedResponsibilityRecordSchema],
+    status_code=status.HTTP_200_OK,
+    summary="List Third-Party AI Shared Responsibility Matrix",
+)
+async def list_shared_responsibility_matrix(
+    repo: NISTGovernanceRepository = Depends(get_nist_governance_repository_dep),
+) -> List[SharedResponsibilityRecordSchema]:
+    """Return demarcated security obligations for external AI and courier providers."""
+    try:
+        data = repo.list_shared_responsibility()
+        return [SharedResponsibilityRecordSchema.model_validate(item) for item in data]
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Shared responsibility matrix artifact is missing.",
+        ) from exc
+
+
+@router.get(
+    "/residual-risks",
+    response_model=List[ResidualRiskRecordSchema],
+    status_code=status.HTTP_200_OK,
+    summary="List Residual Security Risks and Remediation Milestones",
+)
+async def list_residual_risks(
+    severity: Optional[str] = Query(None, description="Filter by severity: CRITICAL, HIGH, MEDIUM, LOW"),
+    function: Optional[str] = Query(
+        None, description="Filter by NIST function: GOVERN, IDENTIFY, PROTECT, DETECT, RESPOND, RECOVER"
+    ),
+    repo: NISTGovernanceRepository = Depends(get_nist_governance_repository_dep),
+) -> List[ResidualRiskRecordSchema]:
+    """Return filtered list of residual risks with compensatory controls and milestones."""
+    try:
+        data = repo.list_residual_risks(severity=severity, nist_function=function)
+        return [ResidualRiskRecordSchema.model_validate(item) for item in data]
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Residual risks ledger artifact is missing.",
+        ) from exc

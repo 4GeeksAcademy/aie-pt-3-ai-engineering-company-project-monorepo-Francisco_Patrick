@@ -232,3 +232,172 @@ class HumanApprovalGateResponse(BaseModel):
     decision_notes: Optional[str] = None
     created_at: str
     reviewed_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# NIST CSF 2.0 & AI Governance Schemas
+# ---------------------------------------------------------------------------
+
+class AISystemRecordSchema(BaseModel):
+    """Authoritative inventory schema of an operational AI component."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    system_id: str = Field(pattern=r"^TF-AI-[0-9]{2}-[A-Z0-9-]+$")
+    name: str
+    description: str
+    repository_path: str
+    architecture_type: Literal[
+        "AUTONOMOUS_AGENT",
+        "DECISION_ENGINE",
+        "RAG_PIPELINE",
+        "MCP_SERVER_TOOL",
+    ]
+    custodian_team: str
+    technical_lead: str
+    data_classification: Literal[
+        "RESTRICTED_PII",
+        "CONFIDENTIAL_B2B",
+        "INTERNAL_OPERATIONAL",
+        "PUBLIC_TRANSIT",
+    ]
+    input_attack_surfaces: List[str]
+    requires_hitl_gates: bool
+    rate_limiting_enabled: bool
+    last_audited_at: str
+
+
+class SharedResponsibilityRecordSchema(BaseModel):
+    """Demarcated security boundaries for external AI providers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    provider_name: str
+    vendor_category: Literal[
+        "FOUNDATION_MODEL_API",
+        "VECTOR_DATABASE_CLOUD",
+        "COURIER_CARRIER_INTEGRATION",
+    ]
+    service_scope: str
+    trackflow_responsibilities: List[str]
+    vendor_responsibilities: List[str]
+    zero_data_retention_active: bool
+    transit_encryption_enforced: bool
+    governing_dpa_reference: str
+
+
+class HITLApprovalRequestSchema(BaseModel):
+    """HITL action approval request schema matching NIST governance contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    action_type: Literal[
+        "RETURN_APPROVAL",
+        "HIGH_VALUE_DISPATCH",
+        "CARRIER_REASSIGNMENT",
+        "CROSS_BRAND_METRIC_SHARE",
+    ]
+    entity_id: str
+    requested_by_session: str
+    requested_by_agent: str
+    payload_snapshot: Dict[str, Any]
+    monetary_impact_eur: Optional[float] = None
+    status: Literal[
+        "PENDING_HUMAN_APPROVAL",
+        "HUMAN_APPROVED",
+        "HUMAN_REJECTED",
+        "EXPIRED_FAIL_SECURE",
+    ]
+    reviewer_id: Optional[str] = None
+    decision_notes: Optional[str] = None
+    created_at: str
+    expires_at: str
+    resolved_at: Optional[str] = None
+
+
+class HITLReviewDecisionRequest(BaseModel):
+    """Review decision payload submitted by supervisor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    decision: Literal["APPROVE", "REJECT"]
+    reviewer_id: str
+    decision_notes: Optional[str] = None
+
+
+class ResidualRiskRecordSchema(BaseModel):
+    """Documented residual risk record with severity and mitigation milestone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    risk_id: str = Field(pattern=r"^RISK-NIST-[A-Z]{2}-[0-9]{2}$")
+    nist_function: Literal[
+        "GOVERN",
+        "IDENTIFY",
+        "PROTECT",
+        "DETECT",
+        "RESPOND",
+        "RECOVER",
+    ]
+    description: str
+    severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    business_impact: str
+    compensatory_controls: List[str]
+    target_remediation_milestone: str
+    risk_owner: str
+    status: Literal["ACCEPTED_TEMPORARY", "REMEDIATION_SCHEDULED", "REMEDIATED"]
+
+
+class NISTControlActionSchema(BaseModel):
+    """Operational security control action mapped to a NIST CSF 2.0 category."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    control_id: str
+    category_code: str
+    title: str
+    concrete_operational_action: str
+    verification_mechanism: str
+    implementation_location: str
+    priority: Literal["P1", "P2", "P3"]
+
+
+class NISTRegulatoryAlignmentSchema(BaseModel):
+    """Regulatory privacy compliance indicators."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gdpr_aepd_72h_sla_compliant: bool
+    ccpa_cpra_rights_enforced: bool
+    primary_dpo_office: str
+
+
+class NISTFunctionsSchema(BaseModel):
+    """All 6 NIST CSF 2.0 functions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    GOVERN: List[NISTControlActionSchema]
+    IDENTIFY: List[NISTControlActionSchema]
+    PROTECT: List[NISTControlActionSchema]
+    DETECT: List[NISTControlActionSchema]
+    RESPOND: List[NISTControlActionSchema]
+    RECOVER: List[NISTControlActionSchema]
+
+
+class NISTAssessmentReportResponse(BaseModel):
+    """Top-level assessment report conforming to contracts/nist-security-schemas.json."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str
+    framework_version: str
+    created_at: str
+    executive_sponsor: str
+    functions: NISTFunctionsSchema
+    residual_risks: List[ResidualRiskRecordSchema]
+    regulatory_alignment: NISTRegulatoryAlignmentSchema
+

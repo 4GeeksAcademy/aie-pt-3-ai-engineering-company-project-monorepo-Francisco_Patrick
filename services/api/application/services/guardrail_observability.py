@@ -26,6 +26,7 @@ from domain.agent.entities import (
     GuardrailEvaluationResult,
     GuardrailFailureType,
     GuardrailSummaryReport,
+    SecurityAuditLogEntry,
 )
 from domain.agent.ports import GuardrailObservabilityPort
 
@@ -139,6 +140,25 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
         self._total_evaluations: int = 0
         self._evaluations_by_session: Dict[str, int] = {}
         self._events: List[GuardrailAuditEvent] = []
+        self._audit_logs: List[SecurityAuditLogEntry] = []
+
+    def record_security_audit_log(self, entry: SecurityAuditLogEntry) -> SecurityAuditLogEntry:
+        """Record a structured security audit log entry with thread safety."""
+        with self._lock:
+            self._audit_logs.append(entry)
+            return entry
+
+    def list_security_audit_logs(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[SecurityAuditLogEntry]:
+        """Retrieve recent security audit log entries, optionally filtered by session."""
+        with self._lock:
+            if session_id:
+                matching = [log for log in self._audit_logs if log.session_id == session_id]
+                return matching[-limit:]
+            return self._audit_logs[-limit:]
 
     def record_evaluation(
         self,

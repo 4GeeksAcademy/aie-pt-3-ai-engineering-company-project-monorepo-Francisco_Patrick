@@ -63,6 +63,7 @@ from presentation.dependencies import (
     get_security_adapter_dep,
     get_support_agent_service,
     get_user_service_dep,
+    verify_llm_rate_limit,
 )
 from presentation.schemas.security_audit import (
     HumanApprovalDecisionRequest,
@@ -82,6 +83,8 @@ from presentation.schemas.agent import (
     ClientUserMessageFrameSchema,
     GuardrailInterventionSchema,
     GuardrailResetResponseSchema,
+    HITLApprovalResponseSchema,
+    HITLReviewDecisionRequestSchema,
     GuardrailSummaryResponseSchema,
     KnowledgeSourceCitationSchema,
     MemoryProposalFeedbackRequestSchema,
@@ -116,6 +119,7 @@ router = APIRouter(tags=["Support Agent"])
 async def query_support_agent(
     payload: AgentQueryRequestSchema,
     agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
+    _rate_limit: None = Depends(verify_llm_rate_limit),
 ) -> AgentQueryResponseSchema | JSONResponse:
     """Execute the compiled LangGraph support agent workflow and return a grounded answer with trace metadata."""
     session_ctx: Optional[AuthenticatedSessionContext] = None
@@ -1167,6 +1171,58 @@ async def list_pending_agent_action_reviews(
         )
         for r in pending
     ]
+
+
+@router.post(
+    "/actions/review",
+    response_model=HumanApprovalGateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Submit Human Supervisor Review Decision for HITL Gate (NIST Contract)",
+)
+async def submit_supervisor_action_review(
+    review_req: HITLReviewDecisionRequestSchema = Body(...),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
+) -> HumanApprovalGateResponse:
+    """Submit human supervisor review decision conforming to contracts/nist-governance-api.openapi.json."""
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Supervisor or administrator role required.",
+        )
+    reviewer = current_user.email or current_user.id
+    try:
+        updated = await run_in_threadpool(
+            policy_service.review_pending_request,
+            request_id=review_req.request_id,
+            reviewer_id=reviewer,
+            approved=(review_req.decision == "APPROVE"),
+            decision_notes=review_req.decision_notes,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Review request '{review_req.request_id}' not found.",
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+
+    return HumanApprovalGateResponse(
+        request_id=updated.request_id,
+        action_type=updated.action_type,
+        entity_id=updated.entity_id,
+        requested_by_session=updated.requested_by_session,
+        payload_snapshot=updated.payload_snapshot,
+        requested_amount_eur=updated.requested_amount_eur,
+        status=updated.status,
+        reviewer_id=updated.reviewer_id,
+        decision_notes=updated.decision_notes,
+        created_at=updated.created_at.isoformat(),
+        reviewed_at=updated.reviewed_at.isoformat() if updated.reviewed_at else None,
+    )
 
 
 @router.post(

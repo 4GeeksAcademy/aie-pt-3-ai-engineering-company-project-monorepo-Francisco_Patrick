@@ -1,0 +1,65 @@
+[
+  {
+    "provider_id": "VEND-ANTHROPIC",
+    "provider_name": "Anthropic PBC",
+    "vendor_category": "FOUNDATION_MODEL_API",
+    "service_scope": "Claude 3.5 Sonnet / Haiku model inference API for CX support conversations",
+    "trackflow_responsibilities": [
+      "Input prompt sanitization and PII redaction before transmission",
+      "Prompt boundary isolation using <<<EXTERNAL_UNTRUSTED_CONTENT>>> delimiters",
+      "Rate limiting and abuse prevention on client-facing endpoints",
+      "Session authentication and authorization token management"
+    ],
+    "vendor_responsibilities": [
+      "Model inference infrastructure availability and physical datacenter security",
+      "Zero retention of API customer prompts for model training (Commercial DPA)",
+      "TLS 1.3 transit encryption and cryptographic key protection",
+      "Model weight safety and output alignment guardrails"
+    ],
+    "zero_data_retention_active": true,
+    "transit_encryption_enforced": true,
+    "governing_dpa_reference": "DPA-ANTHROPIC-TF-2025-01"
+  },
+  {
+    "provider_id": "VEND-QDRANT",
+    "provider_name": "Qdrant Solutions GmbH",
+    "vendor_category": "VECTOR_DATABASE_CLOUD",
+    "service_scope": "Managed vector database hosting SLA knowledge embeddings and policy collections",
+    "trackflow_responsibilities": [
+      "Tenant isolation enforcement via payload filter predicates",
+      "Deterministic ID hashing and avoidance of raw PII in vector payloads",
+      "Retrieval confidence threshold validation and source citation verification",
+      "Access token rotation and least-privilege API key management"
+    ],
+    "vendor_responsibilities": [
+      "High-availability vector cluster orchestration and auto-scaling",
+      "AES-256 encryption-at-rest for collection shards and snapshot backups",
+      "Dedicated network namespace isolation in EU (Frankfurt) region",
+      "Hardware failure recovery and vector indexing durability SLAs"
+    ],
+    "zero_data_retention_active": true,
+    "transit_encryption_enforced": true,
+    "governing_dpa_reference": "DPA-QDRANT-TF-2025-03"
+  },
+  {
+    "provider_id": "VEND-COURIERS",
+    "provider_name": "Couriers Multi-Carrier Gateway (UPS, FedEx, DHL, MRW, SEUR, Correos, GLS, Mondial Relay)",
+    "vendor_category": "COURIER_CARRIER_INTEGRATION",
+    "service_scope": "Automated logistics dispatch, rate calculation, and parcel tracking APIs across US and Spain",
+    "trackflow_responsibilities": [
+      "Vault-based carrier API credential management without plaintext logging",
+      "Human-in-the-loop authorization before in-transit carrier changes",
+      "Masking recipient phone numbers and full addresses in public webhook payloads",
+      "Validation of carrier shipping rate tables and SLA constraints"
+    ],
+    "vendor_responsibilities": [
+      "Physical parcel carriage and last-mile delivery execution",
+      "Real-time tracking event emission via secured webhooks (TLS 1.3)",
+      "Adherence to postal and transport confidentiality regulations",
+      "Accurate rate quoting based on weight, dimensions, and origin/destination"
+    ],
+    "zero_data_retention_active": true,
+    "transit_encryption_enforced": true,
+    "governing_dpa_reference": "DPA-MULTI-CARRIER-TF-2025-09"
+  }
+]

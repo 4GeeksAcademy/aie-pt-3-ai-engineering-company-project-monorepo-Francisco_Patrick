@@ -17,9 +17,9 @@
 
 **Purpose**: Project verification, baseline security checks, and initial schema artifact directories.
 
-- [ ] T001 Verify Python 3.11+ runtime dependencies and FastAPI/Pydantic packages in `services/api/pyproject.toml`
-- [ ] T002 [P] Verify environment variable configuration and zero plaintext credentials in `.env.example`
-- [ ] T003 [P] Create initial NIST CSF baseline seed data file in `specs/037-nist-security-practices/data/nist_csf_baseline.json`
+- [X] T001 Verify Python 3.11+ runtime dependencies and FastAPI/Pydantic packages in `services/api/pyproject.toml`
+- [X] T002 [P] Verify environment variable configuration and zero plaintext credentials in `.env.example`
+- [X] T003 [P] Create initial NIST CSF baseline seed data file in `specs/037-nist-security-practices/data/nist_csf_baseline.json`
 
 ---
 
@@ -29,11 +29,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Define AISystemRecord, SharedResponsibilityRecord, HITLApprovalRequest, and ResidualRiskRecord domain models in `services/api/domain/agent/entities.py`
-- [ ] T005 [P] Define SecurityGuardrailException and RateLimitExceededException domain exceptions in `services/api/domain/agent/exceptions.py`
-- [ ] T006 [P] Implement Pydantic v2 DTO serialization schemas matching contracts in `services/api/presentation/schemas/security_audit.py`
-- [ ] T007 [P] Implement Pydantic v2 request and response schemas for HITL review in `services/api/presentation/schemas/agent.py`
-- [ ] T008 Implement governance data loading and dependency injection providers in `services/api/presentation/dependencies.py`
+- [X] T004 Define AISystemRecord, SharedResponsibilityRecord, HITLApprovalRequest, and ResidualRiskRecord domain models in `services/api/domain/agent/entities.py`
+- [X] T005 [P] Define SecurityGuardrailException and RateLimitExceededException domain exceptions in `services/api/domain/agent/exceptions.py`
+- [X] T006 [P] Implement Pydantic v2 DTO serialization schemas matching contracts in `services/api/presentation/schemas/security_audit.py`
+- [X] T007 [P] Implement Pydantic v2 request and response schemas for HITL review in `services/api/presentation/schemas/agent.py`
+- [X] T008 Implement governance data loading and dependency injection providers in `services/api/presentation/dependencies.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel or sequence.
 
@@ -47,15 +47,15 @@
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Unit test for authoritative AI systems inventory parsing and custodian validation in `services/api/tests/unit/test_nist_ai_inventory.py`
-- [ ] T010 [P] [US1] Unit test for third-party AI provider shared responsibility matrix boundaries in `services/api/tests/unit/test_nist_shared_responsibility.py`
+- [X] T009 [P] [US1] Unit test for authoritative AI systems inventory parsing and custodian validation in `services/api/tests/unit/test_nist_ai_inventory.py`
+- [X] T010 [P] [US1] Unit test for third-party AI provider shared responsibility matrix boundaries in `services/api/tests/unit/test_nist_shared_responsibility.py`
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Create authoritative AI systems inventory catalog across all 5 components in `specs/037-nist-security-practices/data/ai_systems_inventory.json`
-- [ ] T012 [P] [US1] Create third-party provider shared responsibility matrix artifact in `specs/037-nist-security-practices/data/shared_responsibility_matrix.json`
-- [ ] T013 [US1] Implement JSON repository reader for AI inventory and shared responsibility in `services/api/infrastructure/adapters/nist_governance_repository.py`
-- [ ] T014 [US1] Implement `/api/v1/security-audit/ai-inventory` and `/api/v1/security-audit/shared-responsibility` endpoints in `services/api/presentation/api/v1/security_audit.py`
+- [X] T011 [US1] Create authoritative AI systems inventory catalog across all 5 components in `specs/037-nist-security-practices/data/ai_systems_inventory.json`
+- [X] T012 [P] [US1] Create third-party provider shared responsibility matrix artifact in `specs/037-nist-security-practices/data/shared_responsibility_matrix.json`
+- [X] T013 [US1] Implement JSON repository reader for AI inventory and shared responsibility in `services/api/infrastructure/adapters/nist_governance_repository.py`
+- [X] T014 [US1] Implement `/api/v1/security-audit/ai-inventory` and `/api/v1/security-audit/shared-responsibility` endpoints in `services/api/presentation/api/v1/security_audit.py`
 
 **Checkpoint**: User Story 1 fully functional as MVP. AI assets and vendor boundaries are auditable via REST APIs and unit tests.
 
@@ -69,15 +69,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T015 [P] [US2] Unit test for direct prompt injection override neutralization and address leak prevention in `services/api/tests/unit/test_agent_guardrails_input.py`
-- [ ] T016 [P] [US2] Unit test for indirect shipping note prompt injection neutralization in `services/api/tests/unit/test_carrier_indirect_injection.py`
+- [X] T015 [P] [US2] Unit test for direct prompt injection override neutralization and address leak prevention in `services/api/tests/unit/test_agent_guardrails_input.py`
+- [X] T016 [P] [US2] Unit test for indirect shipping note prompt injection neutralization in `services/api/tests/unit/test_carrier_indirect_injection.py`
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implement structural boundary marker wrapping (`<<<EXTERNAL_UNTRUSTED_CONTENT>>>`) and input sanitization in `services/api/application/services/agent_guardrails.py`
-- [ ] T018 [US2] Integrate prompt boundary delimiter into customer inquiry pipeline in `services/api/application/services/support_agent_service.py`
-- [ ] T019 [US2] Implement deterministic rule-based parameter extractor stripping embedded prompt directives from warehouse notes in `services/api/application/services/carrier_service.py`
-- [ ] T020 [P] [US2] Integrate tenant filtering and citation tracking to prevent context poisoning in RAG retriever in `services/api/application/services/knowledge_service.py`
+- [X] T017 [US2] Implement structural boundary marker wrapping (`<<<EXTERNAL_UNTRUSTED_CONTENT>>>`) and input sanitization in `services/api/application/services/agent_guardrails.py`
+- [X] T018 [US2] Integrate prompt boundary delimiter into customer inquiry pipeline in `services/api/application/services/support_agent_service.py`
+- [X] T019 [US2] Implement deterministic rule-based parameter extractor stripping embedded prompt directives from warehouse notes in `services/api/application/services/carrier_service.py`
+- [X] T020 [P] [US2] Integrate tenant filtering and citation tracking to prevent context poisoning in RAG retriever in `services/api/application/services/knowledge_service.py`
 
 **Checkpoint**: User Story 2 complete. Both direct chat prompt overrides and indirect warehouse note injections are neutralized.
 
@@ -91,15 +91,15 @@
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Unit test for tool execution allowlist schema validation and malformed tool call rejection in `services/api/tests/unit/test_agent_guardrails_output.py`
-- [ ] T022 [P] [US3] Integration test for LLM endpoint rate limiting enforcing HTTP 429 upon threshold breach in `services/api/tests/integration/test_rate_limiting_guardrail.py`
+- [X] T021 [P] [US3] Unit test for tool execution allowlist schema validation and malformed tool call rejection in `services/api/tests/unit/test_agent_guardrails_output.py`
+- [X] T022 [P] [US3] Integration test for LLM endpoint rate limiting enforcing HTTP 429 upon threshold breach in `services/api/tests/integration/test_rate_limiting_guardrail.py`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Implement tool schema allowlist validator and parameter boundary checks in `services/api/application/services/agent_guardrails.py`
-- [ ] T024 [US3] Implement sliding-window rate limiting filter with HTTP 429 and Retry-After header in `services/api/presentation/dependencies.py`
-- [ ] T025 [US3] Apply rate limiting dependency to LLM-invoking routes in `services/api/presentation/api/v1/agent.py` and `services/api/presentation/api/v1/knowledge.py`
-- [ ] T026 [US3] Implement security guardrail violation logging with PII/token redaction in `services/api/application/services/guardrail_observability.py`
+- [X] T023 [US3] Implement tool schema allowlist validator and parameter boundary checks in `services/api/application/services/agent_guardrails.py`
+- [X] T024 [US3] Implement sliding-window rate limiting filter with HTTP 429 and Retry-After header in `services/api/presentation/dependencies.py`
+- [X] T025 [US3] Apply rate limiting dependency to LLM-invoking routes in `services/api/presentation/api/v1/agent.py` and `services/api/presentation/api/v1/knowledge.py`
+- [X] T026 [US3] Implement security guardrail violation logging with PII/token redaction in `services/api/application/services/guardrail_observability.py`
 
 **Checkpoint**: User Story 3 complete. Model output cannot execute unapproved actions and API endpoints reject traffic over quota.
 
@@ -113,15 +113,15 @@
 
 ### Tests for User Story 4
 
-- [ ] T027 [P] [US4] Unit test for the 4 irreversible action policy gates and threshold evaluation in `services/api/tests/unit/test_agent_action_policies.py`
-- [ ] T028 [P] [US4] Contract test for HITL approval request/response serialization in `services/api/tests/unit/test_agent_guardrail_hitl_contract.py`
+- [X] T027 [P] [US4] Unit test for the 4 irreversible action policy gates and threshold evaluation in `services/api/tests/unit/test_agent_action_policies.py`
+- [X] T028 [P] [US4] Contract test for HITL approval request/response serialization in `services/api/tests/unit/test_agent_guardrail_hitl_contract.py`
 
 ### Implementation for User Story 4
 
-- [ ] T029 [US4] Implement thread-safe review queue and interception logic for the 4 irreversible actions in `services/api/application/services/agent_action_policies.py`
-- [ ] T030 [US4] Implement structured audit log event recording (`SecurityAuditLogEntry`) in `services/api/application/services/guardrail_observability.py`
-- [ ] T031 [US4] Implement supervisor review endpoint `POST /api/v1/agent/actions/review` in `services/api/presentation/api/v1/agent.py`
-- [ ] T032 [US4] Implement fail-secure expiration handling for timed-out approval requests in `services/api/application/services/agent_action_policies.py`
+- [X] T029 [US4] Implement thread-safe review queue and interception logic for the 4 irreversible actions in `services/api/application/services/agent_action_policies.py`
+- [X] T030 [US4] Implement structured audit log event recording (`SecurityAuditLogEntry`) in `services/api/application/services/guardrail_observability.py`
+- [X] T031 [US4] Implement supervisor review endpoint `POST /api/v1/agent/actions/review` in `services/api/presentation/api/v1/agent.py`
+- [X] T032 [US4] Implement fail-secure expiration handling for timed-out approval requests in `services/api/application/services/agent_action_policies.py`
 
 **Checkpoint**: User Story 4 complete. Irreversible actions cannot execute autonomously, and audit logs capture complete decision context.
 
@@ -135,14 +135,14 @@
 
 ### Tests for User Story 5
 
-- [ ] T033 [P] [US5] Integration test for 6-function NIST CSF report and residual risk query filtering in `services/api/tests/integration/test_nist_csf_report_api.py`
-- [ ] T034 [P] [US5] Unit test for GDPR 72-hour AEPD incident response containment and notification protocol in `services/api/tests/unit/test_nist_gdpr_incident_sla.py`
+- [X] T033 [P] [US5] Integration test for 6-function NIST CSF report and residual risk query filtering in `services/api/tests/integration/test_nist_csf_report_api.py`
+- [X] T034 [P] [US5] Unit test for GDPR 72-hour AEPD incident response containment and notification protocol in `services/api/tests/unit/test_nist_gdpr_incident_sla.py`
 
 ### Implementation for User Story 5
 
-- [ ] T035 [US5] Create residual risks ledger artifact with severity and remediation targets in `specs/037-nist-security-practices/data/residual_risks.json`
-- [ ] T036 [US5] Implement `/api/v1/security-audit/nist-csf` and `/api/v1/security-audit/residual-risks` endpoints in `services/api/presentation/api/v1/security_audit.py`
-- [ ] T037 [US5] Document GDPR 72-hour AEPD containment protocol and CCPA/CPRA rights response runbook in `docs/cybersecurity-analysis/incident-response-gdpr-72h.md`
+- [X] T035 [US5] Create residual risks ledger artifact with severity and remediation targets in `specs/037-nist-security-practices/data/residual_risks.json`
+- [X] T036 [US5] Implement `/api/v1/security-audit/nist-csf` and `/api/v1/security-audit/residual-risks` endpoints in `services/api/presentation/api/v1/security_audit.py`
+- [X] T037 [US5] Document GDPR 72-hour AEPD containment protocol and CCPA/CPRA rights response runbook in `docs/cybersecurity-analysis/incident-response-gdpr-72h.md`
 
 **Checkpoint**: User Story 5 complete. Complete NIST CSF report and transatlantic incident response procedures are fully accessible.
 
@@ -152,9 +152,9 @@
 
 **Purpose**: Documentation synchronization, end-to-end quickstart validation, and type/test integrity verification.
 
-- [ ] T038 [P] Update OWASP and NIST security audit documentation in `docs/cybersecurity-analysis/owasp-top10-security-audit-report.md`
-- [ ] T039 Execute quickstart validation scenarios 1 through 8 per `specs/037-nist-security-practices/quickstart.md`
-- [ ] T040 [P] Run static type checking and monorepo test suites in `services/api/` and `uis/` to ensure zero regressions
+- [X] T038 [P] Update OWASP and NIST security audit documentation in `docs/cybersecurity-analysis/owasp-top10-security-audit-report.md`
+- [X] T039 Execute quickstart validation scenarios 1 through 8 per `specs/037-nist-security-practices/quickstart.md`
+- [X] T040 [P] Run static type checking and monorepo test suites in `services/api/` and `uis/` to ensure zero regressions
 
 ---
 

@@ -307,3 +307,29 @@ services/api/tests/integration/test_host_hardening_verification.py ...... [100%]
 El monorepo de TrackFlow Tech y su infraestructura de host cumplen plenamente con las directrices de seguridad de **OWASP Top 10 (2021)**, los estándares de mitigación para agentes de IA de **OWASP Top 10 for LLMs**, las exigencias de reporte en 72 horas del **RGPD/AEPD** y las garantías de privacidad de **CCPA/CPRA**. 
 
 El PR correspondiente se encuentra en estado **APROBADO PARA MERGE A MAIN** tras haberse verificado el 100% de los criterios de aceptación y solventado todos los hallazgos de la revisión de seguridad.
+
+---
+
+## 11. Alineación con NIST CSF 2.0 y Gobernanza de IA (Especificación 037)
+
+Como extensión de la auditoría de ciberseguridad, TrackFlow Tech ha consolidado su línea base de seguridad y gobernanza de IA conforme al **NIST Cybersecurity Framework (CSF) 2.0**:
+
+### 11.1 Mapeo de las 6 Funciones de NIST CSF 2.0
+1. **Govern (GV)**: Inventario autoritativo de 5 sistemas de IA (`AISystemRecord`) y matriz de responsabilidad compartida (`SharedResponsibilityRecord`) con proveedores de modelos y cloud.
+2. **Identify (ID)**: Clasificación de datos sensibles (`RESTRICTED_PII`, `CONFIDENTIAL_B2B`), mapeo de superficies de ataque y registro de riesgos residuales (`specs/037-nist-security-practices/data/residual_risks.json`).
+3. **Protect (PR)**: Aislamiento estructural de prompts (`<<<EXTERNAL_UNTRUSTED_CONTENT>>>`), 100% secretos en variables de entorno, y compuertas HITL para las 4 acciones irreversibles.
+4. **Detect (DE)**: Limitación de tasa en endpoints LLM (HTTP 429 con `Retry-After`), validación de esquemas de herramientas y registro ofuscado de auditoría de seguridad (`SecurityAuditLogEntry`).
+5. **Respond (RS)**: Protocolo de respuesta a incidentes bajo RGPD con SLA de notificación de 72 horas a la AEPD y runbook de derechos CCPA/CPRA (`docs/cybersecurity-analysis/incident-response-gdpr-72h.md`).
+6. **Recover (RC)**: Recuperación determinista de estado mediante checkpoints de LangGraph y reconstrucción de trazas de auditoría.
+
+### 11.2 Verificación de los 8 Escenarios del Quickstart
+Todos los escenarios de validación descritos en `specs/037-nist-security-practices/quickstart.md` han sido ejecutados y validados mediante tests automatizados en `services/api/tests/`:
+- Escenario 1: Inventario de Sistemas de IA (`test_nist_ai_inventory.py`)
+- Escenario 2: Matriz de Responsabilidad Compartida (`test_nist_shared_responsibility.py`)
+- Escenario 3: Neutralización de Inyección Directa (`test_agent_guardrails_input.py`)
+- Escenario 4: Neutralización de Inyección Indirecta en Albaranes (`test_carrier_indirect_injection.py`)
+- Escenario 5: Rate Limiting & Denial-of-Wallet (HTTP 429) (`test_rate_limiting_guardrail.py`)
+- Escenario 6: Validación de Esquemas y Lista Blanca de Herramientas (`test_agent_guardrails_output.py`)
+- Escenario 7: 4 Compuertas HITL y Timeout Seguro (`test_agent_action_policies.py`, `test_agent_guardrail_hitl_contract.py`)
+- Escenario 8: Reporte de 6 Funciones NIST CSF y SLA RGPD 72h (`test_nist_csf_report_api.py`, `test_nist_gdpr_incident_sla.py`)
+

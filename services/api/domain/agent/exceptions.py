@@ -185,6 +185,32 @@ class ThreadOwnershipMismatchError(AgentDomainException):
         super().__init__(resolved_msg)
 
 
+class SecurityGuardrailException(AgentDomainException):
+    """Raised when an operation violates security guardrails (prompt injection, restricted data leak, unapproved tool)."""
+
+    def __init__(
+        self,
+        message: str = "Operation blocked by security guardrails.",
+        rule_code: Optional[str] = None,
+    ) -> None:
+        """Initialize security guardrail exception."""
+        self.rule_code = rule_code
+        super().__init__(message)
+
+
+class RateLimitExceededException(AgentDomainException):
+    """Raised when an API endpoint or agent tool invocation exceeds the allowed rate limit."""
+
+    def __init__(
+        self,
+        message: str = "Rate limit exceeded. Please retry later.",
+        retry_after_seconds: int = 60,
+    ) -> None:
+        """Initialize rate limit exceeded exception."""
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(message)
+
+
 __all__ = [
     "AgentDomainException",
     "GraphCompilationError",
@@ -192,6 +218,8 @@ __all__ = [
     "MemoryGuardrailViolationError",
     "MemoryNotFoundError",
     "MemoryStorageError",
+    "RateLimitExceededException",
+    "SecurityGuardrailException",
     "StateValidationError",
     "ThreadOwnershipMismatchError",
     "ToolExecutionTimeoutError",

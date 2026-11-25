@@ -438,6 +438,7 @@ class AuthenticatedSessionContext:
     primary_operating_country: OperatingCountry = "US"
     authorized_order_ids: Tuple[str, ...] = ()
     order_country_map: Dict[str, OperatingCountry] = field(default_factory=dict)
+    brand_id: Optional[str] = None
 
     @staticmethod
     def normalize_order_id(raw_order_id: str) -> str:
@@ -1000,24 +1001,62 @@ SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
 ApplicabilityVerdict = Literal["APPLIES", "DOES_NOT_APPLY"]
 VerificationStatus = Literal["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED"]
 DataClassification = Literal[
-    "RESTRICTED_PII", "CONFIDENTIAL_B2B", "INTERNAL_OPERATIONAL", "PUBLIC"
+    "RESTRICTED_PII",
+    "CONFIDENTIAL_B2B",
+    "INTERNAL_OPERATIONAL",
+    "PUBLIC",
+    "PUBLIC_TRANSIT",
 ]
 RegulatoryFramework = Literal["GDPR_EU", "CCPA_CPRA_US"]
 
 AgentActionType = Literal[
     "RETURN_APPROVAL",
+    "HIGH_VALUE_DISPATCH",
     "CARRIER_REASSIGNMENT",
     "ORDER_LOOKUP",
     "BRAND_METRIC_QUERY",
+    "CROSS_BRAND_METRIC_SHARE",
 ]
 ApprovalStatus = Literal[
     "AUTONOMOUSLY_APPROVED",
     "PENDING_HUMAN_APPROVAL",
     "HUMAN_APPROVED",
     "HUMAN_REJECTED",
+    "EXPIRED_FAIL_SECURE",
     "BLOCKED_SECURITY_VIOLATION",
     "REFUSED_OUT_OF_SCOPE",
 ]
+
+AISystemArchitecture = Literal[
+    "AUTONOMOUS_AGENT",
+    "DECISION_ENGINE",
+    "RAG_PIPELINE",
+    "MCP_SERVER_TOOL",
+]
+
+VendorCategory = Literal[
+    "FOUNDATION_MODEL_API",
+    "VECTOR_DATABASE_CLOUD",
+    "COURIER_CARRIER_INTEGRATION",
+]
+
+DataRetentionPolicy = Literal[
+    "ZERO_RETENTION_EPHEMERAL",
+    "PERSISTENT_ENCRYPTED_30_DAYS",
+    "TENANT_ISOLATED_INDEX",
+]
+
+NISTFunctionCategory = Literal[
+    "GOVERN",
+    "IDENTIFY",
+    "PROTECT",
+    "DETECT",
+    "RESPOND",
+    "RECOVER",
+]
+
+RiskSeverity = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+RiskStatus = Literal["ACCEPTED_TEMPORARY", "REMEDIATION_SCHEDULED", "REMEDIATED"]
 
 
 @dataclass(frozen=True)
@@ -1138,6 +1177,7 @@ class HumanApprovalGateRecord:
     decision_notes: Optional[str] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     reviewed_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert approval gate record to dictionary representation."""
@@ -1153,10 +1193,111 @@ class HumanApprovalGateRecord:
             "decision_notes": self.decision_notes,
             "created_at": self.created_at.isoformat(),
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }
 
 
+@dataclass(frozen=True)
+class SecurityAuditLogEntry:
+    """Structured, tamper-evident audit record capturing agent decisions and guardrail outcomes."""
+
+    event_id: str
+    timestamp: datetime
+    agent_id: str
+    session_id: str
+    tenant_id: str
+    event_category: str
+    action_attempted: str
+    input_parameters_redacted: Dict[str, Any]
+    policy_rules_evaluated: List[str]
+    decision_outcome: str
+    reasoning_rationale: str
+    client_ip: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AISystemRecord:
+    """Authoritative inventory record of an operational AI component."""
+
+    system_id: str
+    name: str
+    description: str
+    repository_path: str
+    architecture_type: AISystemArchitecture
+    custodian_team: str
+    technical_lead: str
+    data_classification: DataClassification
+    input_attack_surfaces: List[str]
+    requires_hitl_gates: bool
+    rate_limiting_enabled: bool
+    last_audited_at: datetime
+
+
+@dataclass(frozen=True)
+class SharedResponsibilityRecord:
+    """Security boundary definition between TrackFlow and a third-party AI provider."""
+
+    provider_id: str
+    provider_name: str
+    vendor_category: VendorCategory
+    service_scope: str
+    trackflow_responsibilities: List[str]
+    vendor_responsibilities: List[str]
+    zero_data_retention_active: bool
+    transit_encryption_enforced: bool
+    governing_dpa_reference: str
+
+
+@dataclass(frozen=True)
+class HITLApprovalRequest:
+    """Irreversible action intercepted for operational human-in-the-loop review."""
+
+    request_id: str
+    action_type: str
+    entity_id: str
+    requested_by_session: str
+    requested_by_agent: str
+    payload_snapshot: Dict[str, Any]
+    status: ApprovalStatus
+    created_at: datetime
+    expires_at: datetime
+    monetary_impact_eur: Optional[float] = None
+    reviewer_id: Optional[str] = None
+    decision_notes: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class ResidualRiskRecord:
+    """Documented security limitation with compensatory controls and remediation milestone."""
+
+    risk_id: str
+    nist_function: NISTFunctionCategory
+    description: str
+    severity: RiskSeverity
+    business_impact: str
+    compensatory_controls: List[str]
+    target_remediation_milestone: str
+    risk_owner: str
+    status: RiskStatus
+
+
+@dataclass(frozen=True)
+class NISTControlAction:
+    """Concrete operational security control mapped to a NIST CSF 2.0 category."""
+
+    control_id: str
+    category_code: str
+    title: str
+    concrete_operational_action: str
+    verification_mechanism: str
+    implementation_location: str
+    priority: Literal["P1", "P2", "P3"]
+
+
 __all__ = [
+    "AISystemArchitecture",
+    "AISystemRecord",
     "AgentActionPolicy",
     "AgentActionType",
     "AgentChatEventName",
@@ -1180,6 +1321,7 @@ __all__ = [
     "ConsolidatedCarrierProfile",
     "CustomerSegment",
     "DataClassification",
+    "DataRetentionPolicy",
     "GuardrailAction",
     "GuardrailAuditEvent",
     "GuardrailDisposition",
@@ -1189,6 +1331,7 @@ __all__ = [
     "GuardrailInputCategory",
     "GuardrailLayer",
     "GuardrailSummaryReport",
+    "HITLApprovalRequest",
     "HumanApprovalGateRecord",
     "IntentOutcome",
     "InventoryRecordDTO",
@@ -1199,19 +1342,27 @@ __all__ = [
     "MemoryCategory",
     "MemoryGuardrailVerdict",
     "MemoryProposal",
+    "NISTControlAction",
+    "NISTFunctionCategory",
     "OperatingCountry",
     "OWASPCategory",
     "PersistentMemoryRecord",
     "ProposalStatus",
     "RegulatoryFramework",
+    "ResidualRiskRecord",
     "RetrievedContext",
+    "RiskSeverity",
+    "RiskStatus",
+    "SecurityAuditLogEntry",
     "SecurityFinding",
     "SeverityLevel",
+    "SharedResponsibilityRecord",
     "SourceCitation",
     "TicketRecordDTO",
     "TicketToolInput",
     "TicketToolOutput",
     "ToolCallStatus",
     "UserIntentClassification",
+    "VendorCategory",
     "VerificationStatus",
 ]

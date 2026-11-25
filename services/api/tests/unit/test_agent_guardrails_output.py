@@ -173,3 +173,44 @@ class TestOutputGuardrailValidation:
         assert result.sanitized_text is not None
         assert "TrackFlow" in result.sanitized_text
         assert "devolución" in result.sanitized_text.lower() or "tracking" in result.sanitized_text.lower()
+
+    def test_tool_execution_allowlist_gate(
+        self,
+        output_guard: OutputGuardrailValidator,
+    ) -> None:
+        """Verify that unregistered or malformed tool generation is intercepted prior to execution (Scenario 6, FR-009)."""
+        # 1. Unregistered dangerous tool proposal
+        res_unregistered = output_guard.validate_tool_execution(
+            tool_name="execute_arbitrary_sql",
+            arguments={"query": "DROP TABLE users;"},
+        )
+        assert res_unregistered.action == "block"
+        assert res_unregistered.failure_category == "security"
+        assert res_unregistered.reason_code == "SECURITY_GUARDRAIL_VIOLATION"
+        assert "execute_arbitrary_sql" in res_unregistered.message
+
+        res_delete_db = output_guard.validate_tool_execution(
+            tool_name="delete_database",
+            arguments={"target": "production"},
+        )
+        assert res_delete_db.action == "block"
+        assert res_delete_db.reason_code == "SECURITY_GUARDRAIL_VIOLATION"
+
+        # 2. Malformed parameters on registered tool (missing order_id)
+        res_malformed = output_guard.validate_tool_execution(
+            tool_name="lookup_order",
+            arguments={"wrong_key": "12345"},
+        )
+        assert res_malformed.action == "block"
+        assert res_malformed.failure_category == "structural"
+        assert res_malformed.reason_code == "SECURITY_GUARDRAIL_VIOLATION"
+
+        # 3. Approved registered tool with valid schema
+        res_approved = output_guard.validate_tool_execution(
+            tool_name="lookup_order",
+            arguments={"order_id": "10492"},
+        )
+        assert res_approved.action == "allow"
+        assert res_approved.failure_category == "none"
+        assert res_approved.reason_code == "TOOL_CALL_APPROVED"
+

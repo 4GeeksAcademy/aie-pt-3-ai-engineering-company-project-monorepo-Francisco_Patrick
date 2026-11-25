@@ -162,3 +162,48 @@ def test_actions_review_endpoints_supervisor_decision_and_anti_spoofing(hitl_tes
     assert approved_record["reviewer_id"] == "supervisor.ops@trackflow.io"
     assert approved_record["decision_notes"] == "Approved by operational supervisor after inspection."
 
+
+def test_nist_governance_actions_review_post_endpoint(hitl_test_app) -> None:
+    """Verify POST /api/v1/agent/actions/review conforms to contracts/nist-governance-api.openapi.json."""
+    app, policy_svc = hitl_test_app
+    supervisor_user = User(
+        id="sup_user_02",
+        email="lead.ops@trackflow.io",
+        hashed_password="hashed_pw",
+        role="admin",
+        created_at="2026-01-01T00:00:00Z",
+    )
+    app.dependency_overrides[get_current_user] = lambda: supervisor_user
+    client = TestClient(app)
+
+    session_ctx = AuthenticatedSessionContext(
+        session_id="sess_nist_01",
+        customer_id="cust_es_02",
+        authorized_order_ids=("ORD-5501",),
+    )
+    eval_result = policy_svc.evaluate_return_approval(
+        session_context=session_ctx,
+        order_id="ORD-5501",
+        refund_amount_eur=180.00,
+        shipment_status="DELIVERED",
+    )
+    req_id = eval_result.human_review_queue_id
+    assert req_id is not None
+
+    # Submit decision via POST /api/v1/agent/actions/review
+    resp = client.post(
+        "/api/v1/agent/actions/review",
+        json={
+            "request_id": req_id,
+            "decision": "APPROVE",
+            "reviewer_id": "lead.ops@trackflow.io",
+            "decision_notes": "NIST CSF review authorized by admin lead.",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["request_id"] == req_id
+    assert data["status"] == "HUMAN_APPROVED"
+    assert data["reviewer_id"] == "lead.ops@trackflow.io"
+
+

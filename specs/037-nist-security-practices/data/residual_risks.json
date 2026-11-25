@@ -1,0 +1,32 @@
+[
+  {
+    "risk_id": "RISK-NIST-PR-01",
+    "nist_function": "PROTECT",
+    "description": "Carrier API keys currently stored in environment variables rather than dedicated cloud HSM or HashiCorp Vault.",
+    "severity": "MEDIUM",
+    "business_impact": "Potential carrier credential leakage if host container filesystem or memory is compromised.",
+    "compensatory_controls": [
+      "Encrypted container environment variables at rest",
+      "Zero token logging in trace and observability adapters",
+      "Frequent credential rotation runbooks"
+    ],
+    "target_remediation_milestone": "2027-Q1 Vault KMS Integration",
+    "risk_owner": "Platform Architecture Team",
+    "status": "ACCEPTED_TEMPORARY"
+  },
+  {
+    "risk_id": "RISK-NIST-DE-01",
+    "nist_function": "DETECT",
+    "description": "Indirect prompt injection defense in warehouse notes relies on deterministic parameter extraction; novel semantic adversarial evasion possible.",
+    "severity": "LOW",
+    "business_impact": "Malicious shipping note could manipulate non-critical delivery notes or instructions.",
+    "compensatory_controls": [
+      "Complete segregation of notes from carrier routing logic",
+      "Delimiter bounding of all warehouse notes",
+      "Human review for high-value dispatches"
+    ],
+    "target_remediation_milestone": "2027-Q2 ML-based Adversarial Classifier",
+    "risk_owner": "AI & Agent Systems Team",
+    "status": "ACCEPTED_TEMPORARY"
+  }
+]

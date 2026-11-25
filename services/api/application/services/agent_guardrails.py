@@ -183,6 +183,19 @@ def _is_spanish(query: str, language: str = "en") -> bool:
     return (language or "").strip().lower().startswith("es")
 
 
+BOUNDARY_DELIMITER_START = "<<<EXTERNAL_UNTRUSTED_CONTENT>>>"
+BOUNDARY_DELIMITER_END = "<<</EXTERNAL_UNTRUSTED_CONTENT>>>"
+
+
+def wrap_untrusted_content(content: str) -> str:
+    """Envelop untrusted external input within structural prompt boundary markers.
+
+    Neutralizes embedded delimiter escaping and encapsulates raw user or document content.
+    """
+    clean_text = (content or "").replace(BOUNDARY_DELIMITER_START, "").replace(BOUNDARY_DELIMITER_END, "")
+    return f"{BOUNDARY_DELIMITER_START}\n{clean_text}\n{BOUNDARY_DELIMITER_END}"
+
+
 def build_hardened_system_prompt(
     language: str = "en",
     resolved_country: Optional[OperatingCountry] = None,
@@ -2003,9 +2016,92 @@ class OutputGuardrailValidator(OutputGuardrailPort):
             sanitized_text=cleaned,
         )
 
+    def validate_tool_execution(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> GuardrailEvaluationResult:
+        """Validate proposed tool call and arguments against the execution allowlist."""
+        validator = ToolExecutionAllowlistValidator()
+        return validator.validate_tool_call(tool_name, arguments)
+
+
+APPROVED_TOOL_ALLOWLIST: Dict[str, Dict[str, Any]] = {
+    "lookup_order": {"order_id": str},
+    "get_inventory": {"sku": str},
+    "request_return_approval": {
+        "order_id": str,
+        "refund_amount_eur": (int, float),
+        "shipment_status": str,
+    },
+    "select_carrier": {
+        "order_id": str,
+        "weight_kg": (int, float),
+        "destination_country": str,
+    },
+}
+
+
+class ToolExecutionAllowlistValidator:
+    """Intermediate execution gate validating proposed tool calls against allowlist schemas."""
+
+    def __init__(self, allowlist: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+        """Initialize allowlist validator with registered tool schemas."""
+        self.allowlist = allowlist or APPROVED_TOOL_ALLOWLIST
+
+    def validate_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> GuardrailEvaluationResult:
+        """Verify tool name and parameter types prior to adapter execution."""
+        if tool_name not in self.allowlist:
+            return GuardrailEvaluationResult(
+                layer="output_guard",
+                action="block",
+                failure_category="security",
+                input_category="malformed_output",
+                reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                message=f"Unauthorized tool invocation: '{tool_name}' is not in the execution allowlist.",
+            )
+
+        expected_schema = self.allowlist[tool_name]
+        for field_name, expected_type in expected_schema.items():
+            if field_name not in arguments:
+                return GuardrailEvaluationResult(
+                    layer="output_guard",
+                    action="block",
+                    failure_category="structural",
+                    input_category="malformed_output",
+                    reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                    message=f"Missing required parameter '{field_name}' for tool '{tool_name}'.",
+                )
+            val = arguments[field_name]
+            if not isinstance(val, expected_type):
+                return GuardrailEvaluationResult(
+                    layer="output_guard",
+                    action="block",
+                    failure_category="structural",
+                    input_category="malformed_output",
+                    reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                    message=f"Parameter '{field_name}' must be of type {expected_type}, got {type(val)}.",
+                )
+
+        return GuardrailEvaluationResult(
+            layer="output_guard",
+            action="allow",
+            failure_category="none",
+            input_category="in_domain",
+            reason_code="TOOL_CALL_APPROVED",
+            message="Tool invocation validated against allowlist.",
+        )
+
 
 __all__ = [
+    "APPROVED_TOOL_ALLOWLIST",
     "AuthorizationGuardrailValidator",
+    "BOUNDARY_DELIMITER_END",
+    "BOUNDARY_DELIMITER_START",
     "FastIntentSemanticRouter",
     "InputGuardrailValidator",
     "JAILBREAK_REFUSAL_EN",
@@ -2017,6 +2113,7 @@ __all__ = [
     "PERSONAL_TASK_REFUSAL_ES",
     "SAFE_OUTPUT_FALLBACK_EN",
     "SAFE_OUTPUT_FALLBACK_ES",
+    "ToolExecutionAllowlistValidator",
     "TwoTierContextSanitizer",
     "build_casual_trivia_response",
     "build_hardened_system_prompt",
@@ -2024,4 +2121,5 @@ __all__ = [
     "extract_referenced_order_ids",
     "strip_external_context_tags",
     "wrap_passive_external_context",
+    "wrap_untrusted_content",
 ]
