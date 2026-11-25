@@ -76,6 +76,8 @@ uv run --project services/api pytest services/api/tests/unit/test_security_cors_
 - Leaked internal Supabase connection URLs and database schema internals.
 
 #### Post-Remediation State (`services/api/core/exceptions.py`):
+> *Note on Diff*: The exception handler sanitization logic was already pre-existing in `services/api/core/exceptions.py` on `main`. Under specification 036, compliance was pinned down and audited by introducing the new verification test suite `test_error_handling_sanitization.py`.
+
 ```python
 async def generic_exception_handler(
     request: Request, exc: Exception

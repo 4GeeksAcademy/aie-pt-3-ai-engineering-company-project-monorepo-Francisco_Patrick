@@ -57,3 +57,16 @@ def test_verify_hardening_script(repo_root: Path) -> None:
     
     assert "PermitRootLogin" in content or "permitrootlogin" in content
     assert "ufw" in content
+
+
+def test_verify_hardening_strictly_checks_system_without_false_positives(repo_root: Path) -> None:
+    """Verify verify_hardening.sh does not falsely pass unhardened hosts by falling back to repo templates."""
+    verify_file = repo_root / "infra" / "host" / "verify_hardening.sh"
+    content = verify_file.read_text(encoding="utf-8")
+
+    # Strict mode must require actual /etc/ssh/sshd_config on host
+    assert "/etc/ssh/sshd_config" in content
+    # Ensure there is no unconditional inline || grep fallback to templates in the host check
+    assert "|| grep -Eqi \"^\\s*PermitRootLogin\\s+no\" infra/host/sshd_config.hardened" not in content
+    # Ensure explicit --template-check flag is supported for CI/offline use
+    assert "--template-check" in content

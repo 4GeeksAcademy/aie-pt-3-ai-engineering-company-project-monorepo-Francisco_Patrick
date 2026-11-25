@@ -92,7 +92,7 @@ All findings, applicability verdicts, severity levels, and remediation blueprint
 - **Applicability**: `APPLIES`
 - **Severity**: `CRITICAL`
 - **Description**: Unhandled exceptions exposed raw internal details (`str(e)`) in HTTP 500 error responses, potentially leaking database schema and stack traces to clients. Additionally, log outputs lacked masking for carrier secrets (UPS, FedEx, DHL, MRW, SEUR) and customer PII.
-- **Remediation Plan**: Refactor FastAPI exception handlers to return sanitized error messages, and implement regex-based redaction in logging middleware.
+- **Remediation Plan**: Refactor FastAPI exception handlers to return sanitized error messages (verified via `test_error_handling_sanitization.py` against base implementation), and implement regex-based redaction in logging middleware.
 - **Verification Proof**: Unit tests `test_error_handling_sanitization.py` and `test_guardrail_observability_redaction.py`.
 
 ### SEC-BK-010: A10 Server-Side Request Forgery (SSRF)

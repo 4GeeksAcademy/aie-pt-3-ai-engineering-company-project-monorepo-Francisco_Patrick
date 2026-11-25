@@ -1469,10 +1469,73 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                     message=msg,
                 )
 
+        # 3. Agent Action Policies (HITL gates for high-impact/irreversible actions - FR-004, FR-007)
+        normalized_tool = tool_name.strip().lower()
+        if normalized_tool in ("return_approval", "return_tool") or "refund_amount_eur" in parameters:
+            from application.services.agent_action_policies import (
+                get_agent_action_policies_service,
+            )
+
+            policy_svc = get_agent_action_policies_service()
+            refund_amount = float(parameters.get("refund_amount_eur") or 0.0)
+            status_param = str(parameters.get("shipment_status") or "DELIVERED")
+            eval_res = policy_svc.evaluate_return_approval(
+                session_context=session_context,
+                order_id=str(order_id or "unknown"),
+                refund_amount_eur=refund_amount,
+                shipment_status=status_param,
+            )
+            if eval_res.decision == "PENDING_HUMAN_APPROVAL":
+                msg = (
+                    f"La devolución del pedido #{order_id} por {refund_amount:.2f} € requiere aprobación de un supervisor humano (límite superado)."
+                    if use_es
+                    else f"Return for order #{order_id} of {refund_amount:.2f} EUR requires human supervisor approval (threshold exceeded)."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="policy_mismatch",
+                    reason_code=eval_res.reason_code or "HIGH_VALUE_RETURN_REQUIRES_HUMAN_APPROVAL",
+                    message=msg,
+                    metadata={"human_review_queue_id": eval_res.human_review_queue_id},
+                )
+
+        if normalized_tool in ("carrier_reassignment", "carrier_tool") or "target_carrier" in parameters:
+            from application.services.agent_action_policies import (
+                get_agent_action_policies_service,
+            )
+
+            policy_svc = get_agent_action_policies_service()
+            target_carrier = str(parameters.get("target_carrier") or "")
+            shipment_status = str(parameters.get("shipment_status") or "IN_TRANSIT")
+            eval_res = policy_svc.evaluate_carrier_reassignment(
+                session_context=session_context,
+                order_id=str(order_id or "unknown"),
+                target_carrier=target_carrier,
+                shipment_status=shipment_status,
+            )
+            if eval_res.decision == "PENDING_HUMAN_APPROVAL":
+                msg = (
+                    f"El cambio de transportista a '{target_carrier}' para el pedido #{order_id} requiere revisión humana porque el paquete está en tránsito."
+                    if use_es
+                    else f"Carrier reassignment to '{target_carrier}' for order #{order_id} requires human review because parcel is in transit."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="policy_mismatch",
+                    reason_code=eval_res.reason_code or "IN_TRANSIT_CARRIER_REASSIGNMENT_REQUIRES_HUMAN_APPROVAL",
+                    message=msg,
+                    metadata={"human_review_queue_id": eval_res.human_review_queue_id},
+                )
+
         return GuardrailEvaluationResult(
             layer="authorization_guard",
             action="allow",
             failure_category="none",
+            input_category="in_domain",
             reason_code="TOOL_AUTHORIZATION_VERIFIED",
         )
 

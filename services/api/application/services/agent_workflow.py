@@ -713,6 +713,7 @@ def ticket_tool_node(
     ticket_tool: SupportTicketToolPort,
     context_sanitizer: Optional[ContextSanitizerPort] = None,
     observability: Optional[GuardrailObservabilityPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
 ) -> AgentState:
     """Single-responsibility node executing the read-only Support Ticket Query Tool (`ticket_tool`).
 
@@ -721,6 +722,7 @@ def ticket_tool_node(
         ticket_tool: SupportTicketToolPort adapter.
         context_sanitizer: Optional ContextSanitizerPort enforcing two-tier anti-injection on tool payloads.
         observability: Optional GuardrailObservabilityPort for recording security events.
+        authorization_guard: Optional AuthorizationGuardrailPort enforcing session authorization on tool calls.
 
     Returns:
         Updated AgentState with sanitized `ticket_tool_output`, `"ticket_tool"` appended to `sources_consulted`,
@@ -731,6 +733,69 @@ def ticket_tool_node(
     tool_input = state.get("ticket_tool_input")
     if tool_input is None:
         tool_input = _extract_ticket_tool_input(state.get("query") or "")
+
+    tool_params = tool_input.to_dict() if tool_input else {}
+    if not tool_params.get("order_id"):
+        from application.services.agent_guardrails import extract_referenced_order_ids
+
+        ref_orders = extract_referenced_order_ids(state.get("query") or "")
+        if ref_orders:
+            tool_params["order_id"] = ref_orders[0]
+            tool_params.setdefault("entity_id", ref_orders[0])
+
+    # Enforce authorization guardrail if provided (OWASP A01 / FR-007)
+    if authorization_guard is not None:
+        auth_eval = authorization_guard.validate_tool_call_authorization(
+            session_context=state.get("session_context"),
+            tool_name="ticket_tool",
+            parameters=tool_params,
+            language=state.get("language") or "en",
+        )
+        if auth_eval.action == "block":
+            guardrail_events = list(state.get("guardrail_events") or [])
+            if observability is not None:
+                session_ctx = state.get("session_context")
+                session_id = (
+                    session_ctx.session_id
+                    if session_ctx and session_ctx.session_id
+                    else (state.get("thread_id") or state.get("trace_id") or "default")
+                )
+                ev = observability.record_evaluation(
+                    result=auth_eval,
+                    session_id=session_id,
+                    raw_preview=str(tool_params),
+                    trace_id=state.get("trace_id"),
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
+
+            sources_consulted = list(state.get("sources_consulted") or [])
+            if "ticket_tool" not in sources_consulted:
+                sources_consulted.append("ticket_tool")
+            node_history = list(state.get("node_history") or [])
+            node_history.append("ticket_tool")
+
+            return {
+                "ticket_tool_input": tool_input,
+                "ticket_tool_output": TicketToolOutput(
+                    status="error",
+                    records=[],
+                    total_matched=0,
+                    latency_ms=max(0.01, round((time.perf_counter() - start_ns) * 1000.0, 3)),
+                    error_message=auth_eval.message or "Access denied.",
+                    queried_criteria=tool_params,
+                ),
+                "is_refusal": True,
+                "guardrail_action": "block",
+                "guardrail_failure_category": auth_eval.failure_category,
+                "guardrail_reason_code": auth_eval.reason_code,
+                "guardrail_message": auth_eval.message,
+                "answer": auth_eval.message or "Access denied.",
+                "fallback_triggered": True,
+                "sources_consulted": sources_consulted,
+                "node_history": node_history,
+                "guardrail_events": guardrail_events,
+            }
 
     try:
         output: TicketToolOutput = ticket_tool.query_tickets(tool_input)
@@ -816,6 +881,7 @@ def inventory_tool_node(
     inventory_tool: InventoryStockToolPort,
     context_sanitizer: Optional[ContextSanitizerPort] = None,
     observability: Optional[GuardrailObservabilityPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
 ) -> AgentState:
     """Single-responsibility node executing the read-only Inventory Stock Query Tool (`inventory_tool`).
 
@@ -824,6 +890,7 @@ def inventory_tool_node(
         inventory_tool: InventoryStockToolPort adapter.
         context_sanitizer: Optional ContextSanitizerPort enforcing two-tier anti-injection on tool payloads.
         observability: Optional GuardrailObservabilityPort for recording security events.
+        authorization_guard: Optional AuthorizationGuardrailPort enforcing session authorization on tool calls.
 
     Returns:
         Updated AgentState with sanitized `inventory_tool_output`, `"inventory_tool"` appended to `sources_consulted`,
@@ -834,6 +901,62 @@ def inventory_tool_node(
     tool_input = state.get("inventory_tool_input")
     if tool_input is None:
         tool_input = _extract_inventory_tool_input(state.get("query") or "")
+
+    tool_params = tool_input.to_dict() if tool_input else {}
+
+    # Enforce authorization guardrail if provided (OWASP A01 / FR-007)
+    if authorization_guard is not None:
+        auth_eval = authorization_guard.validate_tool_call_authorization(
+            session_context=state.get("session_context"),
+            tool_name="inventory_tool",
+            parameters=tool_params,
+            language=state.get("language") or "en",
+        )
+        if auth_eval.action == "block":
+            guardrail_events = list(state.get("guardrail_events") or [])
+            if observability is not None:
+                session_ctx = state.get("session_context")
+                session_id = (
+                    session_ctx.session_id
+                    if session_ctx and session_ctx.session_id
+                    else (state.get("thread_id") or state.get("trace_id") or "default")
+                )
+                ev = observability.record_evaluation(
+                    result=auth_eval,
+                    session_id=session_id,
+                    raw_preview=str(tool_params),
+                    trace_id=state.get("trace_id"),
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
+
+            sources_consulted = list(state.get("sources_consulted") or [])
+            if "inventory_tool" not in sources_consulted:
+                sources_consulted.append("inventory_tool")
+            node_history = list(state.get("node_history") or [])
+            node_history.append("inventory_tool")
+
+            return {
+                "inventory_tool_input": tool_input,
+                "inventory_tool_output": InventoryToolOutput(
+                    status="error",
+                    records=[],
+                    total_matched=0,
+                    latency_ms=max(0.01, round((time.perf_counter() - start_ns) * 1000.0, 3)),
+                    error_message=auth_eval.message or "Access denied.",
+                    queried_criteria=tool_params,
+                ),
+                "is_refusal": True,
+                "guardrail_action": "block",
+                "guardrail_failure_category": auth_eval.failure_category,
+                "guardrail_reason_code": auth_eval.reason_code,
+                "guardrail_message": auth_eval.message,
+                "answer": auth_eval.message or "Access denied.",
+                "fallback_triggered": True,
+                "sources_consulted": sources_consulted,
+                "node_history": node_history,
+                "guardrail_events": guardrail_events,
+            }
 
     try:
         output: InventoryToolOutput = inventory_tool.query_inventory(tool_input)
@@ -1719,12 +1842,13 @@ def route_after_intake(
 
 def route_after_ticket_tool(
     state: AgentState,
-) -> Literal["inventory_tool", "retrieval", "tool_fallback", "generation"]:
+) -> Literal["inventory_tool", "retrieval", "tool_fallback", "generation", "refusal"]:
     """Conditional routing edge evaluated immediately after `ticket_tool_node`.
 
     Advances along the canonical plan (`ticket_tool` -> `inventory_tool` -> `retrieval`).
     When no further sources remain, routes to `tool_fallback` if the tool degraded/failed/not_found,
-    or to `generation` if it succeeded.
+    or to `generation` if it succeeded. If tool execution was blocked by authorization guardrail,
+    routes directly to `refusal`.
 
     Args:
         state: AgentState emitted by `ticket_tool_node`.
@@ -1732,6 +1856,9 @@ def route_after_ticket_tool(
     Returns:
         Target node identifier.
     """
+    if state.get("guardrail_action") == "block" or state.get("is_refusal") is True:
+        return "refusal"
+
     selected = list(state.get("selected_sources") or [])
     if "inventory_tool" in selected:
         return "inventory_tool"
@@ -1750,12 +1877,13 @@ def route_after_ticket_tool(
 
 def route_after_inventory_tool(
     state: AgentState,
-) -> Literal["retrieval", "tool_fallback", "generation"]:
+) -> Literal["retrieval", "tool_fallback", "generation", "refusal"]:
     """Conditional routing edge evaluated immediately after `inventory_tool_node`.
 
     Advances to `retrieval` if `"rag"` is in `selected_sources`; otherwise routes to
     `tool_fallback` if any consulted operational tool failed/timed out/not_found, or
-    to `generation` when all consulted tools succeeded.
+    to `generation` when all consulted tools succeeded. If tool execution was blocked by
+    authorization guardrail, routes directly to `refusal`.
 
     Args:
         state: AgentState emitted by `inventory_tool_node`.
@@ -1763,6 +1891,9 @@ def route_after_inventory_tool(
     Returns:
         Target node identifier.
     """
+    if state.get("guardrail_action") == "block" or state.get("is_refusal") is True:
+        return "refusal"
+
     selected = list(state.get("selected_sources") or [])
     if "rag" in selected:
         return "retrieval"
@@ -1852,6 +1983,7 @@ def create_ticket_tool_node(
     ticket_tool: SupportTicketToolPort,
     context_sanitizer: Optional[ContextSanitizerPort] = None,
     observability: Optional[GuardrailObservabilityPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument ticket_tool node function for LangGraph registration."""
 
@@ -1861,6 +1993,7 @@ def create_ticket_tool_node(
             ticket_tool=ticket_tool,
             context_sanitizer=context_sanitizer,
             observability=observability,
+            authorization_guard=authorization_guard,
         )
 
     return _bound_ticket_tool
@@ -1870,6 +2003,7 @@ def create_inventory_tool_node(
     inventory_tool: InventoryStockToolPort,
     context_sanitizer: Optional[ContextSanitizerPort] = None,
     observability: Optional[GuardrailObservabilityPort] = None,
+    authorization_guard: Optional[AuthorizationGuardrailPort] = None,
 ) -> Callable[[AgentState], AgentState]:
     """Create a bound single-argument inventory_tool node function for LangGraph registration."""
 
@@ -1879,6 +2013,7 @@ def create_inventory_tool_node(
             inventory_tool=inventory_tool,
             context_sanitizer=context_sanitizer,
             observability=observability,
+            authorization_guard=authorization_guard,
         )
 
     return _bound_inventory_tool
@@ -2113,6 +2248,7 @@ def build_support_agent_graph(
             ticket_tool=resolved_ticket_tool,
             context_sanitizer=context_sanitizer,
             observability=observability,
+            authorization_guard=authorization_guard,
         ),
     )
     workflow.add_node(
@@ -2121,6 +2257,7 @@ def build_support_agent_graph(
             inventory_tool=resolved_inventory_tool,
             context_sanitizer=context_sanitizer,
             observability=observability,
+            authorization_guard=authorization_guard,
         ),
     )
     workflow.add_node(
@@ -2172,6 +2309,7 @@ def build_support_agent_graph(
             "retrieval": "retrieval",
             "tool_fallback": "tool_fallback",
             "generation": "generation",
+            "refusal": "refusal",
         },
     )
     workflow.add_conditional_edges(
@@ -2181,6 +2319,7 @@ def build_support_agent_graph(
             "retrieval": "retrieval",
             "tool_fallback": "tool_fallback",
             "generation": "generation",
+            "refusal": "refusal",
         },
     )
     workflow.add_conditional_edges(

@@ -27,6 +27,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from typing import Any, Dict, List, Optional, Tuple
+from application.services.agent_action_policies import (
+    get_agent_action_policies_service,
+)
 from application.services.user_service import UserService
 from domain.agent.entities import (
     AgentQueryRequest,
@@ -61,7 +64,10 @@ from presentation.dependencies import (
     get_support_agent_service,
     get_user_service_dep,
 )
-from presentation.schemas.security_audit import HumanApprovalGateResponse
+from presentation.schemas.security_audit import (
+    HumanApprovalDecisionRequest,
+    HumanApprovalGateResponse,
+)
 from presentation.schemas.agent import (
     AgentHealthResponseSchema,
     AgentQueryRequestSchema,
@@ -1135,11 +1141,15 @@ async def support_agent_websocket_endpoint(
 )
 async def list_pending_agent_action_reviews(
     limit: int = Query(50, ge=1, le=100),
-    policy_service: Any = Depends(
-        lambda: __import__("application.services.agent_action_policies", fromlist=["get_agent_action_policies_service"]).get_agent_action_policies_service()
-    ),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
 ) -> List[HumanApprovalGateResponse]:
     """Retrieve all high-impact or irreversible agent actions waiting for operational review."""
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Supervisor or administrator role required.",
+        )
     pending = await run_in_threadpool(policy_service.list_pending_reviews, limit)
     return [
         HumanApprovalGateResponse(
@@ -1167,19 +1177,24 @@ async def list_pending_agent_action_reviews(
 )
 async def review_agent_action(
     request_id: str,
-    decision_req: Any = Body(...),
-    policy_service: Any = Depends(
-        lambda: __import__("application.services.agent_action_policies", fromlist=["get_agent_action_policies_service"]).get_agent_action_policies_service()
-    ),
+    decision_req: HumanApprovalDecisionRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
 ) -> HumanApprovalGateResponse:
     """Submit human supervisor decision on a queued agent action."""
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Supervisor or administrator role required.",
+        )
+    reviewer_id = current_user.email or current_user.id
     try:
         updated = await run_in_threadpool(
             policy_service.review_pending_request,
             request_id=request_id,
-            reviewer_id=decision_req.get("reviewer_id", "supervisor"),
-            approved=bool(decision_req.get("approved", False)),
-            decision_notes=decision_req.get("decision_notes"),
+            reviewer_id=reviewer_id,
+            approved=bool(decision_req.approved),
+            decision_notes=decision_req.decision_notes,
         )
     except KeyError:
         raise HTTPException(

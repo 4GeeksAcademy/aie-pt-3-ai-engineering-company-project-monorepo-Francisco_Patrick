@@ -213,7 +213,7 @@ class HumanApprovalDecisionRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    reviewer_id: str
+    reviewer_id: Optional[str] = None
     approved: bool
     decision_notes: Optional[str] = None
 
