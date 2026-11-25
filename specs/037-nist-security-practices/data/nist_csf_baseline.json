@@ -9,7 +9,7 @@
         "control_id": "GV.OC-01",
         "category_code": "Organizational Context",
         "title": "Authoritative AI Systems Inventory & Custodianship",
-        "concrete_operational_action": "Catalog all 5 production AI subsystems with assigned technical team leads, operational scope, and data tier classifications.",
+        "concrete_operational_action": "Catalog all 9 production AI subsystems (including CX Agent, Carrier Engine, Policies RAG, Return Engine, MCP Server, RFP Workflow, WebSocket Chat, Agent Memory, and Sales Forecast) with assigned technical team leads, operational scope, and data tier classifications.",
         "verification_mechanism": "Automated inventory schema tests asserting 100% of AI systems have designated custodians and repository paths.",
         "implementation_location": "specs/037-nist-security-practices/data/ai_systems_inventory.json and services/api/presentation/api/v1/security_audit.py",
         "priority": "P1"

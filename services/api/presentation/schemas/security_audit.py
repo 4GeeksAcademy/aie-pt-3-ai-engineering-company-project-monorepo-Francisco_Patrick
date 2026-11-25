@@ -175,10 +175,24 @@ class ActionParametersSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     entity_id: str
+    parcel_id: Optional[str] = None
+    declared_value_eur: Optional[float] = Field(default=None, ge=0)
+    address_verified: Optional[bool] = None
     refund_amount_eur: Optional[float] = Field(default=None, ge=0)
     target_carrier: Optional[str] = None
     shipment_status: Optional[str] = None
     return_reason: Optional[str] = None
+
+
+class HighValueDispatchEvaluationRequest(BaseModel):
+    """Request payload for runtime high-value dispatch HITL gate evaluation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    parcel_id: str = Field(..., min_length=1, description="Target parcel or shipment identifier")
+    declared_value_eur: float = Field(..., ge=0, description="Declared monetary value of the parcel in EUR")
+    address_verified: bool = Field(default=True, description="Whether destination delivery address is verified")
+    order_id: Optional[str] = Field(default=None, description="Optional parent order identifier")
 
 
 class EvaluationResultSchema(BaseModel):
@@ -204,6 +218,7 @@ class AgentGuardrailHITLPayload(BaseModel):
 
     action_type: Literal[
         "RETURN_APPROVAL",
+        "HIGH_VALUE_DISPATCH",
         "CARRIER_REASSIGNMENT",
         "ORDER_LOOKUP",
         "BRAND_METRIC_QUERY",

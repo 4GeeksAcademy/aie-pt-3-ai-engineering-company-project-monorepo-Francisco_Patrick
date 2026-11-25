@@ -42,7 +42,7 @@ class NISTGovernanceRepository:
         return self._read_json_file("nist_csf_baseline.json")
 
     def list_ai_inventory(self) -> List[Dict[str, Any]]:
-        """Load the authoritative AI systems inventory catalog across all 5 operational components."""
+        """Load the authoritative AI systems inventory catalog across all 9 operational components."""
         return self._read_json_file("ai_systems_inventory.json")
 
     def list_shared_responsibility(self) -> List[Dict[str, Any]]:

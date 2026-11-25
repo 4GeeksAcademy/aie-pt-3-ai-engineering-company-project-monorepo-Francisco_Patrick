@@ -157,7 +157,7 @@ async def get_nist_csf_report(
 async def list_ai_systems_inventory(
     repo: NISTGovernanceRepository = Depends(get_nist_governance_repository_dep),
 ) -> List[AISystemRecordSchema]:
-    """Return all 5 operational AI components with internal custodians and attack surfaces."""
+    """Return all 9 operational AI components with internal custodians and attack surfaces."""
     try:
         data = repo.list_ai_inventory()
         return [AISystemRecordSchema.model_validate(item) for item in data]

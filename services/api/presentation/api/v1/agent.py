@@ -69,6 +69,8 @@ from presentation.dependencies import (
     verify_llm_rate_limit,
 )
 from presentation.schemas.security_audit import (
+    EvaluationResultSchema,
+    HighValueDispatchEvaluationRequest,
     HumanApprovalDecisionRequest,
     HumanApprovalGateResponse,
 )
@@ -1351,5 +1353,36 @@ async def review_agent_action(
         created_at=updated.created_at.isoformat(),
         reviewed_at=updated.reviewed_at.isoformat() if updated.reviewed_at else None,
     )
+
+
+@router.post(
+    "/actions/dispatch",
+    response_model=EvaluationResultSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Evaluate and gate high-value or unverified parcel dispatch (HITL Gate FR-012)",
+)
+async def evaluate_high_value_dispatch_action(
+    dispatch_req: HighValueDispatchEvaluationRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
+) -> EvaluationResultSchema:
+    """Evaluate a parcel dispatch confirmation against the high-value (> 500 EUR) and address verification HITL gate."""
+    session_ctx = AuthenticatedSessionContext(
+        session_id=f"sess_{current_user.id}",
+        customer_id=str(current_user.id),
+        authorized_order_ids=(
+            (dispatch_req.order_id,)
+            if dispatch_req.order_id
+            else (dispatch_req.parcel_id,)
+        ),
+    )
+    return await run_in_threadpool(
+        policy_service.evaluate_high_value_dispatch,
+        session_context=session_ctx,
+        parcel_id=dispatch_req.parcel_id,
+        declared_value_eur=dispatch_req.declared_value_eur,
+        address_verified=dispatch_req.address_verified,
+    )
+
 
 

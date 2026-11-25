@@ -14,6 +14,7 @@
       "type": "string",
       "enum": [
         "RETURN_APPROVAL",
+        "HIGH_VALUE_DISPATCH",
         "CARRIER_REASSIGNMENT",
         "ORDER_LOOKUP",
         "BRAND_METRIC_QUERY"
@@ -37,6 +38,9 @@
       "required": ["entity_id"],
       "properties": {
         "entity_id": { "type": "string" },
+        "parcel_id": { "type": "string" },
+        "declared_value_eur": { "type": "number", "minimum": 0 },
+        "address_verified": { "type": "boolean" },
         "refund_amount_eur": { "type": "number", "minimum": 0 },
         "target_carrier": { "type": "string" },
         "shipment_status": { "type": "string" },

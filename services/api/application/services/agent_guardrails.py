@@ -1468,6 +1468,16 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
         if brand_id and session_context:
             session_brand = getattr(session_context, "brand_id", None)
             if session_brand and session_brand != brand_id:
+                from application.services.agent_action_policies import (
+                    get_agent_action_policies_service,
+                )
+
+                policy_svc = get_agent_action_policies_service()
+                eval_res = policy_svc.evaluate_cross_brand_metric_share(
+                    session_context=session_context,
+                    target_brand_id=str(brand_id),
+                    metric_name=str(parameters.get("metric_name") or tool_name),
+                )
                 msg = (
                     f"Acceso denegado a métricas de la marca '{brand_id}'."
                     if use_es
@@ -1478,11 +1488,11 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                     action="block",
                     failure_category="security",
                     input_category="unauthorized_order",
-                    reason_code="CROSS_BRAND_METRIC_ACCESS_DENIED",
+                    reason_code=eval_res.reason_code or "CROSS_BRAND_METRIC_ACCESS_DENIED",
                     message=msg,
                 )
 
-        # 3. Agent Action Policies (HITL gates for high-impact/irreversible actions - FR-004, FR-007)
+        # 3. Agent Action Policies (HITL gates for high-impact/irreversible actions - FR-004, FR-007, FR-012)
         normalized_tool = tool_name.strip().lower()
         if normalized_tool in ("return_approval", "return_tool") or "refund_amount_eur" in parameters:
             from application.services.agent_action_policies import (
@@ -1510,6 +1520,45 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                     failure_category="security",
                     input_category="policy_mismatch",
                     reason_code=eval_res.reason_code or "HIGH_VALUE_RETURN_REQUIRES_HUMAN_APPROVAL",
+                    message=msg,
+                    metadata={"human_review_queue_id": eval_res.human_review_queue_id},
+                )
+
+        if (
+            normalized_tool in ("high_value_dispatch", "dispatch_tool", "confirm_dispatch", "parcel_dispatch")
+            or "declared_value_eur" in parameters
+            or "address_verified" in parameters
+        ):
+            from application.services.agent_action_policies import (
+                get_agent_action_policies_service,
+            )
+
+            policy_svc = get_agent_action_policies_service()
+            parcel_id = str(parameters.get("parcel_id") or order_id or "unknown")
+            declared_value_eur = float(parameters.get("declared_value_eur") or 0.0)
+            address_verified = (
+                bool(parameters["address_verified"])
+                if "address_verified" in parameters and parameters["address_verified"] is not None
+                else True
+            )
+            eval_res = policy_svc.evaluate_high_value_dispatch(
+                session_context=session_context,
+                parcel_id=parcel_id,
+                declared_value_eur=declared_value_eur,
+                address_verified=address_verified,
+            )
+            if eval_res.decision == "PENDING_HUMAN_APPROVAL":
+                msg = (
+                    f"El despacho del envío #{parcel_id} (valor declarado {declared_value_eur:.2f} €, dirección verificada={address_verified}) requiere aprobación de un supervisor humano."
+                    if use_es
+                    else f"Dispatch for parcel #{parcel_id} (declared value {declared_value_eur:.2f} EUR, address_verified={address_verified}) requires human supervisor approval."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="policy_mismatch",
+                    reason_code=eval_res.reason_code or "HIGH_VALUE_DISPATCH_REQUIRES_HUMAN_APPROVAL",
                     message=msg,
                     metadata={"human_review_queue_id": eval_res.human_review_queue_id},
                 )

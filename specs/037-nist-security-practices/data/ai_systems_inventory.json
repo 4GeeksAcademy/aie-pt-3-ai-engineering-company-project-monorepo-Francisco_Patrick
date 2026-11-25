@@ -88,5 +88,77 @@
     "requires_hitl_gates": true,
     "rate_limiting_enabled": true,
     "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-06-RFP-WORKFLOW",
+    "name": "RFP Multi-Agent Workflow (Intake, Generation & Approval)",
+    "description": "End-to-end B2B RFP automation pipeline orchestrating document intake parsing, grounded proposal generation, and human approval completion.",
+    "repository_path": "services/api/presentation/api/v1/rfp.py",
+    "architecture_type": "AUTONOMOUS_AGENT",
+    "custodian_team": "B2B Commercial AI Team",
+    "technical_lead": "Commercial AI Lead",
+    "data_classification": "CONFIDENTIAL_B2B",
+    "input_attack_surfaces": [
+      "Uploaded RFP tender documents",
+      "Requirement extraction prompts",
+      "Approval reviewer feedback notes"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-07-WEBSOCKET-CHAT",
+    "name": "WebSocket Streaming Chat & Event Broker",
+    "description": "Real-time bidirectional WebSocket chat transport with short-lived ticket authentication, token streaming, mid-turn interruption, and session rehydration.",
+    "repository_path": "services/api/infrastructure/messaging/agent_chat_event_broker.py",
+    "architecture_type": "AUTONOMOUS_AGENT",
+    "custodian_team": "AI & Agent Systems Team",
+    "technical_lead": "Realtime Systems Lead",
+    "data_classification": "RESTRICTED_PII",
+    "input_attack_surfaces": [
+      "WebSocket JSON frames",
+      "Short-lived ws-ticket tokens",
+      "Concurrent client interrupt commands"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-08-AGENT-MEMORY",
+    "name": "Agent Memory & Self-Improvement Subsystem",
+    "description": "Governed cross-session operational memory engine with anti-poisoning guardrails, operator proposal confirmation, and immutable audit logging.",
+    "repository_path": "services/api/application/services/memory_service.py",
+    "architecture_type": "AUTONOMOUS_AGENT",
+    "custodian_team": "AI Knowledge Systems Team",
+    "technical_lead": "Agent Memory Architect",
+    "data_classification": "INTERNAL_OPERATIONAL",
+    "input_attack_surfaces": [
+      "Conversational memory rule proposals",
+      "Operator confirmation/rejection turns",
+      "Cross-session memory recall queries"
+    ],
+    "requires_hitl_gates": true,
+    "rate_limiting_enabled": true,
+    "last_audited_at": "2026-11-25T10:00:00Z"
+  },
+  {
+    "system_id": "TF-AI-09-SALES-FORECAST",
+    "name": "Sales Forecasting & Demand Prediction Pipeline",
+    "description": "Supervised machine learning regression pipeline predicting B2B/B2C order volume and seasonal logistics demand.",
+    "repository_path": "data/pipelines/sales_forecast/model.py",
+    "architecture_type": "DECISION_ENGINE",
+    "custodian_team": "Data Science & Forecasting Team",
+    "technical_lead": "Lead ML Scientist",
+    "data_classification": "CONFIDENTIAL_B2B",
+    "input_attack_surfaces": [
+      "Historical sales timeseries datasets",
+      "Feature engineering pipelines",
+      "Forecast inference parameters"
+    ],
+    "requires_hitl_gates": false,
+    "rate_limiting_enabled": false,
+    "last_audited_at": "2026-11-25T10:00:00Z"
   }
 ]
