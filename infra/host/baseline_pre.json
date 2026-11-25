@@ -1,7 +1,9 @@
 {
-  "profile_id": "HOST-BASE-PRE-001",
+  "profile_id": "HOST-BASE-PRE-001-ILLUSTRATIVE",
   "captured_at": "2026-11-25T00:00:00Z",
   "phase": "PRE_REMEDIATION",
+  "provenance": "illustrative",
+  "commit_hash": "8f4091add62f74d3e578cc5d60f605e75df9d789",
   "ssh_config": {
     "permit_root_login": true,
     "password_authentication": true,
@@ -39,14 +41,21 @@
     {
       "port": 8000,
       "protocol": "tcp",
-      "process": "uvicorn",
+      "process": "docker-proxy (trackflow-backend)",
       "bind_address": "0.0.0.0",
       "is_allowed_public": true
     },
     {
       "port": 6379,
       "protocol": "tcp",
-      "process": "redis-server",
+      "process": "docker-proxy (trackflow-redis)",
+      "bind_address": "0.0.0.0",
+      "is_allowed_public": true
+    },
+    {
+      "port": 5555,
+      "protocol": "tcp",
+      "process": "docker-proxy (trackflow-flower)",
       "bind_address": "0.0.0.0",
       "is_allowed_public": true
     }
@@ -79,6 +88,12 @@
     {
       "direction": "IN",
       "port": 6379,
+      "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 5555,
       "action": "ALLOW",
       "is_active": true
     }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Automated Jest unit and integration test suite for Real-Time Bidirectional WebSocket Streaming Chat
  * with True Generation Abort (Part 2).
  *
@@ -571,6 +571,52 @@ describe('Support Agent Bidirectional WebSocket Streaming Chat (US1 - US5)', () 
         session_id: 'sess_1',
         language: 'en',
       });
+
+      const interruptCmd = serializeClientCommand({
+        event: 'interrupt_requested',
+        turn_id: 'turn_asst_1',
+        reason: 'client_interrupt',
+      });
+      expect(JSON.parse(interruptCmd)).toEqual({
+        event: 'interrupt_requested',
+        turn_id: 'turn_asst_1',
+        reason: 'client_interrupt',
+      });
+
+      const snapshotEvent = parseAgentChatStreamEvent(
+        JSON.stringify({
+          event: 'session_snapshot',
+          thread_id: 'thr_1',
+          session_id: 'sess_1',
+          user_id: 'usr_operator_01',
+          agent_id: 'first_line_cx',
+          client_id: 'trackflow-backoffice',
+          status: 'active',
+          session: {
+            session_id: 'sess_1',
+            thread_id: 'thr_1',
+            agent_id: 'first_line_cx',
+            client_id: 'trackflow-backoffice',
+            user_id: 'usr_operator_01',
+            status: 'active',
+          },
+          messages: [],
+          pending_proposal: null,
+          latest_checkpoint_id: null,
+          checkpoint_count: 0,
+          sequence_id: 0,
+          timestamp: '2026-11-24T21:00:00Z',
+        })
+      );
+      expect(snapshotEvent).not.toBeNull();
+      expect(snapshotEvent?.event).toBe('session_snapshot');
+      if (snapshotEvent?.event === 'session_snapshot') {
+        expect(snapshotEvent.user_id).toBe('usr_operator_01');
+        expect(snapshotEvent.session.agent_id).toBe('first_line_cx');
+        expect(snapshotEvent.session.client_id).toBe('trackflow-backoffice');
+        expect(snapshotEvent.session.user_id).toBe('usr_operator_01');
+        expect(snapshotEvent.session.status).toBe('active');
+      }
     });
   });
 });

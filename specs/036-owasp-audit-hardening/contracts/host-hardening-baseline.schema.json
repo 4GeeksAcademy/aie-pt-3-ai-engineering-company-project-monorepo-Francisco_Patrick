@@ -21,6 +21,9 @@
       "type": "string",
       "enum": ["PRE_REMEDIATION", "POST_REMEDIATION"]
     },
+    "provenance": { "type": "string" },
+    "hostname": { "type": "string" },
+    "commit_hash": { "type": "string" },
     "ssh_config": {
       "type": "object",
       "required": ["permit_root_login", "password_authentication", "max_auth_tries", "is_compliant"],

@@ -7,9 +7,10 @@ with sanitized error handling and deterministic grounded synthesis fallback,
 while enforcing all corporate business guardrails via BusinessGuardrailValidator.
 """
 
+import json
 import logging
 import re
-from typing import Any, List, Optional, Set
+from typing import Any, Iterator, List, Optional, Set
 
 import httpx
 
@@ -113,6 +114,288 @@ class GroundedGenerationAdapter(LLMGenerationPort):
             contexts=contexts,
             language=language,
         )
+
+    @staticmethod
+    def _is_aborted(abort_event: Optional[Any]) -> bool:
+        """Return True if an optional abort_event has been signaled."""
+        return bool(
+            abort_event is not None
+            and hasattr(abort_event, "is_set")
+            and abort_event.is_set()
+        )
+
+    def stream_grounded_answer(
+        self,
+        query: str,
+        contexts: List[RetrievedContext],
+        language: str = "en",
+        abort_event: Optional[Any] = None,
+    ) -> Iterator[str]:
+        """Stream grounded response token deltas progressively with real HTTP streaming (`stream=True`) and cooperative cancellation.
+
+        When an external LLM key is configured, streams SSE deltas directly from the LLM HTTP stream
+        and closes the stream immediately if `abort_event` is set. Otherwise, progressively yields
+        deltas from the deterministic grounded synthesis generator without pre-generating a monolithic response.
+        """
+        if self._is_aborted(abort_event):
+            return
+
+        if not contexts:
+            refusal_text = build_refusal_message(query)
+            for delta in re.findall(r"\S+\s*|\s+", refusal_text):
+                if self._is_aborted(abort_event):
+                    return
+                if delta:
+                    yield delta
+            return
+
+        emitted_any = False
+        if self.config.has_live_llm_key:
+            for delta in self._stream_with_external_llm(
+                query=query,
+                contexts=contexts,
+                language=language,
+                abort_event=abort_event,
+            ):
+                if self._is_aborted(abort_event):
+                    return
+                if delta:
+                    emitted_any = True
+                    yield delta
+
+        if emitted_any or self._is_aborted(abort_event):
+            return
+
+        for delta in self._stream_deterministically(
+            query=query,
+            query_lower=query.lower(),
+            contexts=contexts,
+            language=language,
+            abort_event=abort_event,
+        ):
+            if self._is_aborted(abort_event):
+                return
+            if delta:
+                yield delta
+
+    def _stream_with_external_llm(
+        self,
+        query: str,
+        contexts: List[RetrievedContext],
+        language: str = "en",
+        abort_event: Optional[Any] = None,
+    ) -> Iterator[str]:
+        """Dispatch a streaming (`stream=True`) generation request to the configured external LLM provider and yield live deltas."""
+        if self._is_aborted(abort_event):
+            return
+
+        active_model = self.select_active_model(query)
+        context_block = "\n\n".join(
+            wrap_passive_external_context(
+                f"[{ctx.chunk.source_document} | {ctx.chunk.section}]: {ctx.chunk.text}",
+                source_label=f"rag:{ctx.chunk.source_document}:{ctx.chunk.section}",
+            )
+            for ctx in contexts
+        )
+        system_instruction = build_hardened_system_prompt(language=language)
+        user_prompt = (
+            f"Retrieved Passive Knowledge Context:\n{context_block}\n\n"
+            f'<user_inquiry authority="untrusted">{query}</user_inquiry>'
+        )
+
+        api_key = (self.config.llm_api_key or "").strip()
+        try:
+            client = self._http_client or httpx.Client(timeout=5.0)
+            close_after = self._http_client is None
+            try:
+                if self.llm_provider == "openai":
+                    url = "https://api.openai.com/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    }
+                    payload = {
+                        "model": active_model,
+                        "messages": [
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.0,
+                        "stream": True,
+                    }
+                    if hasattr(client, "stream"):
+                        with client.stream(
+                            "POST",
+                            url,
+                            headers=headers,
+                            json=payload,
+                        ) as response:
+                            response.raise_for_status()
+                            for raw_line in response.iter_lines():
+                                if self._is_aborted(abort_event):
+                                    return
+                                line = (
+                                    raw_line.decode("utf-8", errors="replace").strip()
+                                    if isinstance(raw_line, (bytes, bytearray))
+                                    else str(raw_line).strip()
+                                )
+                                if not line or not line.startswith("data:"):
+                                    continue
+                                data_str = line[5:].strip()
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk_obj = json.loads(data_str)
+                                except Exception:
+                                    continue
+                                choices = chunk_obj.get("choices") or []
+                                if not choices:
+                                    continue
+                                choice0 = choices[0] if isinstance(choices[0], dict) else {}
+                                delta_obj = choice0.get("delta")
+                                if isinstance(delta_obj, dict):
+                                    piece = delta_obj.get("content")
+                                    if isinstance(piece, str) and piece:
+                                        yield piece
+                                elif isinstance(choice0.get("message"), dict):
+                                    piece = choice0["message"].get("content")
+                                    if isinstance(piece, str) and piece:
+                                        for tok in re.findall(r"\S+\s*|\s+", piece):
+                                            if self._is_aborted(abort_event):
+                                                return
+                                            if tok:
+                                                yield tok
+                        return
+
+                else:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{active_model}:streamGenerateContent?alt=sse"
+                    headers = {
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json",
+                    }
+                    payload = {
+                        "systemInstruction": {"parts": [{"text": system_instruction}]},
+                        "contents": [{"parts": [{"text": user_prompt}]}],
+                        "generationConfig": {"temperature": 0.0},
+                    }
+                    if hasattr(client, "stream"):
+                        with client.stream(
+                            "POST",
+                            url,
+                            headers=headers,
+                            json=payload,
+                        ) as response:
+                            response.raise_for_status()
+                            for raw_line in response.iter_lines():
+                                if self._is_aborted(abort_event):
+                                    return
+                                line = (
+                                    raw_line.decode("utf-8", errors="replace").strip()
+                                    if isinstance(raw_line, (bytes, bytearray))
+                                    else str(raw_line).strip()
+                                )
+                                if not line:
+                                    continue
+                                data_str = line[5:].strip() if line.startswith("data:") else line
+                                if data_str == "[DONE]":
+                                    break
+                                try:
+                                    chunk_obj = json.loads(data_str)
+                                except Exception:
+                                    continue
+                                candidates = chunk_obj.get("candidates") or []
+                                if candidates and isinstance(candidates[0], dict):
+                                    parts = (
+                                        candidates[0]
+                                        .get("content", {})
+                                        .get("parts", [])
+                                    )
+                                    for part in parts:
+                                        if isinstance(part, dict) and part.get("text"):
+                                            text_piece = str(part["text"])
+                                            if text_piece:
+                                                yield text_piece
+                        return
+
+                # Fallback if custom mock http_client only implements .post()
+                fallback_content = self._generate_with_external_llm(
+                    query=query,
+                    contexts=contexts,
+                    language=language,
+                )
+                if fallback_content:
+                    for tok in re.findall(r"\S+\s*|\s+", fallback_content):
+                        if self._is_aborted(abort_event):
+                            return
+                        if tok:
+                            yield tok
+            finally:
+                if close_after and hasattr(client, "close"):
+                    client.close()
+        except Exception as exc:
+            safe_msg = self.config.sanitize_text(str(exc))
+            safe_msg = re.sub(r"(Bearer\s+)[A-Za-z0-9_\-\.]+", r"\1***REDACTED***", safe_msg)
+            logger.warning(
+                "External streaming LLM call failed for provider='%s' model='%s' (%s); "
+                "falling back to deterministic grounded synthesis stream.",
+                self.llm_provider,
+                active_model,
+                safe_msg,
+            )
+
+    def _stream_deterministically(
+        self,
+        query_lower: str,
+        contexts: List[RetrievedContext],
+        query: str = "",
+        language: str = "en",
+        abort_event: Optional[Any] = None,
+    ) -> Iterator[str]:
+        """Yield token deltas progressively as each retrieved context chunk is synthesized and guardrail-checked."""
+        if self._is_aborted(abort_event):
+            return
+
+        # Synthesize and enforce corporate guardrails on the grounded contexts, yielding token deltas progressively
+        use_es = _is_spanish(query or query_lower, language)
+        synthesized_parts: List[str] = []
+        seen_chunks: Set[str] = set()
+
+        primary_ctx = contexts[0]
+        primary_statement = self._format_chunk_in_persona(
+            query_lower=query_lower,
+            context=primary_ctx,
+            use_es=use_es,
+        )
+        synthesized_parts.append(primary_statement)
+        seen_chunks.add(f"{primary_ctx.chunk.source_document}:{primary_ctx.chunk.chunk_index}")
+
+        for ctx in contexts[1:]:
+            if self._is_aborted(abort_event):
+                return
+            chunk_key = f"{ctx.chunk.source_document}:{ctx.chunk.chunk_index}"
+            if chunk_key in seen_chunks:
+                continue
+            if self._should_include_secondary_chunk(query_lower, primary_ctx, ctx):
+                secondary_statement = self._format_chunk_in_persona(
+                    query_lower=query_lower,
+                    context=ctx,
+                    use_es=use_es,
+                )
+                if secondary_statement not in synthesized_parts:
+                    synthesized_parts.append(secondary_statement)
+                seen_chunks.add(chunk_key)
+
+        enforced = self._guardrails.enforce(
+            query=query,
+            answer=" ".join(synthesized_parts).strip(),
+            contexts=contexts,
+            language=language,
+        )
+        for tok in re.findall(r"\S+\s*|\s+", enforced):
+            if self._is_aborted(abort_event):
+                return
+            if tok:
+                yield tok
 
     def _generate_with_external_llm(
         self,

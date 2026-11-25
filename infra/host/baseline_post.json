@@ -1,7 +1,10 @@
 {
-  "profile_id": "HOST-BASE-POST-001",
-  "captured_at": "2026-11-25T01:00:00Z",
+  "profile_id": "HOST-BASE-POST-trackflow-ci",
+  "captured_at": "2026-11-25T10:53:00Z",
   "phase": "POST_REMEDIATION",
+  "provenance": "captured_config_verification",
+  "hostname": "trackflow-ci",
+  "commit_hash": "602e55cf3a85a53af25eade50fbbe7fde8dc1b54",
   "ssh_config": {
     "permit_root_login": false,
     "password_authentication": false,
@@ -39,14 +42,21 @@
     {
       "port": 8000,
       "protocol": "tcp",
-      "process": "uvicorn",
+      "process": "docker-proxy (trackflow-backend)",
       "bind_address": "127.0.0.1",
       "is_allowed_public": false
     },
     {
       "port": 6379,
       "protocol": "tcp",
-      "process": "redis-server",
+      "process": "docker-proxy (trackflow-redis)",
+      "bind_address": "127.0.0.1",
+      "is_allowed_public": false
+    },
+    {
+      "port": 5555,
+      "protocol": "tcp",
+      "process": "docker-proxy (trackflow-flower)",
       "bind_address": "127.0.0.1",
       "is_allowed_public": false
     }
@@ -68,6 +78,30 @@
       "direction": "IN",
       "port": 443,
       "action": "ALLOW",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 8000,
+      "action": "DENY",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 6379,
+      "action": "DENY",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 6333,
+      "action": "DENY",
+      "is_active": true
+    },
+    {
+      "direction": "IN",
+      "port": 5555,
+      "action": "DENY",
       "is_active": true
     }
   ],
