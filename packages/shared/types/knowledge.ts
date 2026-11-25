@@ -72,6 +72,43 @@ export type ChatTurnRole = "user" | "assistant";
 export type ChatTurnStatus = "streaming" | "completed" | "interrupted" | "error";
 
 /**
+ * Lifecycle state of a Support Agent chat session (`ChatSession`).
+ */
+export type ChatSessionStatus =
+  | "active"
+  | "streaming"
+  | "interrupted"
+  | "disconnected"
+  | "closed";
+
+/**
+ * Canonical Support Agent chat session metadata (`ChatSession`).
+ */
+export interface ChatSessionDTO {
+  /** Bound session identifier. */
+  session_id: string;
+  /** Bound conversation thread identifier. */
+  thread_id: string;
+  /** Support agent identifier (e.g. "trackflow-support-agent"). */
+  agent_id: string;
+  /** Connected client application identifier (e.g. "trackflow-backoffice"). */
+  client_id: string;
+  /** Authenticated operator user ID owning the session. */
+  user_id: string;
+  /** Current lifecycle status of the chat session. */
+  status: ChatSessionStatus;
+  /** ISO-8601 UTC creation timestamp. */
+  created_at?: string | null | undefined;
+  /** ISO-8601 UTC last-updated timestamp. */
+  updated_at?: string | null | undefined;
+}
+
+/**
+ * Alias for `ChatSessionDTO` matching the `ChatSession` domain entity name.
+ */
+export type ChatSession = ChatSessionDTO;
+
+/**
  * Cause of a server-side generation interruption.
  */
 export type ChatInterruptedReason =
@@ -271,7 +308,15 @@ export interface ChatThreadHistoryResponseDTO {
   /** Bound session identifier. */
   session_id: string;
   /** Authenticated operator's user ID owning this thread. */
-  owner_user_id: string;
+  user_id: string;
+  /** Support agent identifier. */
+  agent_id: string;
+  /** Client application identifier. */
+  client_id: string;
+  /** Current chat session status. */
+  status: ChatSessionStatus;
+  /** Canonical ChatSession metadata object. */
+  session: ChatSessionDTO;
   /** Chronologically ordered list of user and assistant turns (including interrupted partial turns). */
   messages: ChatMessageDTO[];
   /** Active unconfirmed MemoryProposal on this thread, if any. */
@@ -291,15 +336,23 @@ export interface ChatThreadHistoryResponseDTO {
 /**
  * Server-to-client WebSocket event emitted upon initial connection, reconnection, or explicit `rehydrate` command.
  */
-export interface ServerSessionRehydratedEventDTO {
+export interface ServerSessionSnapshotEventDTO {
   /** Discriminator event name. */
-  event: "session_rehydrated";
+  event: "session_snapshot";
   /** Bound conversation thread identifier. */
   thread_id: string;
   /** Bound session identifier. */
   session_id: string;
   /** Authenticated operator's user ID owning this thread. */
-  owner_user_id: string;
+  user_id: string;
+  /** Support agent identifier. */
+  agent_id: string;
+  /** Client application identifier. */
+  client_id: string;
+  /** Current chat session status. */
+  status: ChatSessionStatus;
+  /** Canonical ChatSession metadata object. */
+  session: ChatSessionDTO;
   /** Chronologically ordered list of user and assistant turns. */
   messages: ChatMessageDTO[];
   /** Active unconfirmed MemoryProposal on this thread, if any. */
@@ -313,6 +366,8 @@ export interface ServerSessionRehydratedEventDTO {
   /** ISO-8601 UTC emission timestamp. */
   timestamp: string;
 }
+
+export type ServerSessionRehydratedEventDTO = ServerSessionSnapshotEventDTO;
 
 /**
  * Server-to-client WebSocket event emitted when an assistant generation turn starts executing.
@@ -474,7 +529,7 @@ export interface ServerPongEventDTO {
  * Discriminated union of all structured server-to-client Support Agent WebSocket streaming events.
  */
 export type AgentChatStreamEventDTO =
-  | ServerSessionRehydratedEventDTO
+  | ServerSessionSnapshotEventDTO
   | ServerGenerationStartedEventDTO
   | ServerTokenChunkEventDTO
   | ServerGenerationInterruptedEventDTO
@@ -523,17 +578,19 @@ export interface ClientUserMessageCommandDTO {
 /**
  * Client-to-server command requesting immediate server-side abort of the active streaming assistant turn.
  */
-export interface ClientInterruptCommandDTO {
+export interface ClientInterruptRequestedCommandDTO {
   /** Discriminator event name. */
-  event: "interrupt";
+  event: "interrupt_requested";
   /** Optional target assistant turn_id to interrupt. */
   turn_id?: string | null | undefined;
   /** Optional human-readable interruption reason. */
   reason?: string | null | undefined;
 }
 
+export type ClientInterruptCommandDTO = ClientInterruptRequestedCommandDTO;
+
 /**
- * Client-to-server command requesting an immediate `session_rehydrated` snapshot.
+ * Client-to-server command requesting an immediate `session_snapshot` snapshot.
  */
 export interface ClientRehydrateCommandDTO {
   /** Discriminator event name. */
@@ -558,6 +615,6 @@ export interface ClientPingCommandDTO {
 export type AgentChatClientCommandDTO =
   | ClientAuthenticateCommandDTO
   | ClientUserMessageCommandDTO
-  | ClientInterruptCommandDTO
+  | ClientInterruptRequestedCommandDTO
   | ClientRehydrateCommandDTO
   | ClientPingCommandDTO;

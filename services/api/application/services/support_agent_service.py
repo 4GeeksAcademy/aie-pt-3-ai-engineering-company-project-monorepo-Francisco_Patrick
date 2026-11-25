@@ -15,7 +15,7 @@ import re
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from fastapi.concurrency import run_in_threadpool
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -50,7 +50,11 @@ from application.services.agent_workflow import (
 from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.trace_registry import TraceRegistry
-from data.pipelines.rag_pipeline import generate_answer as rag_generate_answer
+from data.pipelines.rag_pipeline import (
+    build_citations_from_context,
+    generate_answer as rag_generate_answer,
+    stream_generate_answer as rag_stream_generate_answer,
+)
 from domain.agent.entities import (
     AgentCheckpoint,
     AgentQueryRequest,
@@ -59,6 +63,8 @@ from domain.agent.entities import (
     AgentTrace,
     ChatInterruptedReason,
     ChatMessage,
+    ChatSession,
+    ChatSessionStatus,
     ChatThreadState,
     GuardrailAuditEvent,
     InventoryToolOutput,
@@ -285,17 +291,20 @@ class SupportAgentService(SupportAgentServicePort):
         self,
         thread_id: str,
         session_id: str,
-        owner_user_id: str,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
+        agent_id: str = "trackflow-support-agent",
+        client_id: str = "trackflow-backoffice",
     ) -> ChatThreadState:
-        """Load or initialize a ChatThreadState bound to `owner_user_id`, raising ThreadOwnershipMismatchError on mismatch."""
+        """Load or initialize a ChatThreadState bound to `user_id`, raising ThreadOwnershipMismatchError on mismatch."""
         cleaned_thread = (thread_id or "").strip() or str(uuid.uuid4())
         cleaned_session = (session_id or "").strip() or cleaned_thread
-        cleaned_owner = str(owner_user_id).strip()
+        cleaned_owner = str(user_id or owner_user_id or "").strip()
 
         existing = self._chat_thread_repository.get_thread(cleaned_thread)
         if existing is not None:
-            if existing.owner_user_id and existing.owner_user_id != cleaned_owner:
+            if existing.user_id and existing.user_id != cleaned_owner:
                 raise ThreadOwnershipMismatchError(
                     thread_id=cleaned_thread,
                     requester_user_id=cleaned_owner,
@@ -317,8 +326,11 @@ class SupportAgentService(SupportAgentServicePort):
         initial_thread = ChatThreadState(
             thread_id=cleaned_thread,
             session_id=cleaned_session,
-            owner_user_id=cleaned_owner,
+            user_id=cleaned_owner,
             owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
+            status="active",
             messages=[],
             pending_proposal=pending if isinstance(pending, MemoryProposal) else None,
             session_context=None,
@@ -336,13 +348,15 @@ class SupportAgentService(SupportAgentServicePort):
         thread_id: str,
         requester_user_id: str,
         session_id: Optional[str] = None,
+        agent_id: str = "trackflow-support-agent",
+        client_id: str = "trackflow-backoffice",
     ) -> Tuple[ChatThreadState, int]:
         """Return persisted thread history and checkpoint count, validating per-user thread ownership."""
         cleaned_thread = (thread_id or "").strip()
         cleaned_requester = str(requester_user_id).strip()
         existing = self._chat_thread_repository.get_thread(cleaned_thread)
         if existing is not None:
-            if existing.owner_user_id and existing.owner_user_id != cleaned_requester:
+            if existing.user_id and existing.user_id != cleaned_requester:
                 raise ThreadOwnershipMismatchError(
                     thread_id=cleaned_thread,
                     requester_user_id=cleaned_requester,
@@ -352,7 +366,9 @@ class SupportAgentService(SupportAgentServicePort):
             thread_state = self.get_or_create_thread_state(
                 thread_id=cleaned_thread,
                 session_id=session_id or cleaned_thread,
-                owner_user_id=cleaned_requester,
+                user_id=cleaned_requester,
+                agent_id=agent_id,
+                client_id=client_id,
             )
 
         checkpoints = self.get_checkpoints(cleaned_thread)
@@ -378,11 +394,21 @@ class SupportAgentService(SupportAgentServicePort):
         )
         self._chat_event_broker.sync_sequence_id(cleaned_thread, latest_seq)
 
+        is_currently_generating = self._chat_event_broker.is_generating(cleaned_thread)
+        session_status: ChatSessionStatus = (
+            "streaming"
+            if is_currently_generating
+            else thread_state.session.status
+        )
+
         reconciled = ChatThreadState(
             thread_id=thread_state.thread_id,
             session_id=session_id or thread_state.session_id,
-            owner_user_id=thread_state.owner_user_id,
+            user_id=thread_state.user_id,
             owner_email=thread_state.owner_email,
+            agent_id=thread_state.agent_id or agent_id,
+            client_id=thread_state.client_id or client_id,
+            status=session_status,
             messages=list(thread_state.messages),
             pending_proposal=resolved_pending,
             session_context=thread_state.session_context,
@@ -402,23 +428,36 @@ class SupportAgentService(SupportAgentServicePort):
         self,
         thread_id: str,
         session_id: str,
-        owner_user_id: str,
+        user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        agent_id: str = "trackflow-support-agent",
+        client_id: str = "trackflow-backoffice",
     ) -> Dict[str, Any]:
-        """Build a session_rehydrated event payload from durable TinyDB history and LangGraph checkpoints."""
+        """Build a session_snapshot event payload from durable TinyDB history and LangGraph checkpoints."""
+        resolved_user_id = str(user_id or owner_user_id or "").strip()
         self.get_or_create_thread_state(
             thread_id=thread_id,
             session_id=session_id,
-            owner_user_id=owner_user_id,
+            user_id=resolved_user_id,
             owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
         )
         thread_state, checkpoint_count = self.get_thread_history(
             thread_id=thread_id,
-            requester_user_id=owner_user_id,
+            requester_user_id=resolved_user_id,
             session_id=session_id,
+            agent_id=agent_id,
+            client_id=client_id,
         )
+        session_obj = thread_state.session
         return {
-            "owner_user_id": thread_state.owner_user_id,
+            "user_id": thread_state.user_id,
+            "agent_id": session_obj.agent_id,
+            "client_id": session_obj.client_id,
+            "status": session_obj.status,
+            "session": session_obj.to_dict(),
             "messages": [m.to_dict() for m in thread_state.messages],
             "pending_proposal": (
                 thread_state.pending_proposal.to_dict()
@@ -435,8 +474,13 @@ class SupportAgentService(SupportAgentServicePort):
         thread_id: str,
         trace_id: str,
         conversation_history: List[Dict[str, Any]],
-    ) -> Tuple[AgentState, str, List[SourceCitation], Optional[Dict[str, Any]]]:
-        """Execute pre-stream workflow stages (Layer 1-3 guardrails, memory recall, tools, RAG, and candidate synthesis)."""
+        abort_event: Optional[Any] = None,
+    ) -> Tuple[AgentState, List[str], List[SourceCitation], bool]:
+        """Execute pre-generation workflow nodes ONLY (intake, guardrails, tools, retrieval, fallback, or refusal).
+
+        Does NOT execute LLM/RAG answer synthesis so that `stream_query` can stream token deltas
+        directly from the live generation generator with true mid-generation cancellation.
+        """
         effective_min_score = (
             request.min_score
             if request.min_score is not None
@@ -485,6 +529,16 @@ class SupportAgentService(SupportAgentServicePort):
         if conversation_history:
             state["conversation_history"] = conversation_history  # type: ignore[typeddict-unknown-key]
 
+        def _is_aborted() -> bool:
+            return bool(
+                abort_event is not None
+                and hasattr(abort_event, "is_set")
+                and abort_event.is_set()
+            )
+
+        if _is_aborted():
+            return (state, [], [], False)
+
         # 1. Intake node (Layer 1 Input Guardrail + Layer 2 Auth Guardrail + Memory Proposal Resolution & Recall)
         state.update(
             intake_node(
@@ -495,9 +549,14 @@ class SupportAgentService(SupportAgentServicePort):
                 observability=self._guardrail_observability,
             )
         )
+        if _is_aborted():
+            return (state, [], [], False)
+
         next_node = route_after_intake(state)
 
         while next_node not in ("generation", "refusal", "__end__"):
+            if _is_aborted():
+                return (state, [], [], False)
             if next_node == "ticket_tool":
                 state.update(
                     ticket_tool_node(
@@ -537,6 +596,9 @@ class SupportAgentService(SupportAgentServicePort):
             else:
                 break
 
+        if _is_aborted():
+            return (state, [], [], False)
+
         if next_node == "refusal":
             state.update(
                 refusal_node(
@@ -545,12 +607,15 @@ class SupportAgentService(SupportAgentServicePort):
                     observability=self._guardrail_observability,
                 )
             )
-            return (state, str(state.get("answer") or ""), [], None)
+            refusal_ans = str(state.get("answer") or "")
+            return (state, [refusal_ans] if refusal_ans else [], [], False)
 
         if next_node == "__end__":
-            return (state, str(state.get("answer") or ""), [], None)
+            end_ans = str(state.get("answer") or "")
+            return (state, [end_ans] if end_ans else [], [], False)
 
-        # Synthesize candidate answer text before token-by-token streaming
+        # Assemble pre-generation context prefixes (memory acknowledgments, recalled rules, tool summaries)
+        # while deferring RAG / LLM answer generation to the live streaming iterator
         query = state.get("query") or ""
         language = state.get("language") or "en"
         contexts: List[RetrievedContext] = list(state.get("contexts") or [])
@@ -562,9 +627,9 @@ class SupportAgentService(SupportAgentServicePort):
         casual_redirect_required = bool(state.get("casual_redirect_required", False))
         guardrail_message = state.get("guardrail_message")
 
-        segments: List[str] = []
+        prefix_segments: List[str] = []
         citations: List[SourceCitation] = []
-        structured_llm_candidate: Optional[Dict[str, Any]] = None
+        requires_rag_stream = False
 
         pure_proposal_turn = False
         if proposal_resolution is not None:
@@ -575,12 +640,12 @@ class SupportAgentService(SupportAgentServicePort):
                 intent in ("approve", "reject", "edit")
                 or (intent == "unrelated_or_ambiguous" and not has_residual)
             ):
-                segments.append(str(ack_text))
+                prefix_segments.append(str(ack_text))
             if not has_residual:
                 pure_proposal_turn = True
 
         if casual_redirect_required and guardrail_message:
-            segments.append(str(guardrail_message))
+            prefix_segments.append(str(guardrail_message))
         else:
             if recalled_memories and not pure_proposal_turn:
                 recalled_text = (
@@ -590,7 +655,7 @@ class SupportAgentService(SupportAgentServicePort):
                         for mem in recalled_memories
                     )
                 )
-                segments.append(recalled_text)
+                prefix_segments.append(recalled_text)
 
             if not pure_proposal_turn:
                 if (
@@ -598,7 +663,7 @@ class SupportAgentService(SupportAgentServicePort):
                     and ticket_out.status == "success"
                     and ticket_out.records
                 ):
-                    segments.append(
+                    prefix_segments.append(
                         _format_ticket_records_summary(
                             ticket_out,
                             query=query,
@@ -606,44 +671,79 @@ class SupportAgentService(SupportAgentServicePort):
                         )
                     )
                 if inv_out is not None and inv_out.status == "success" and inv_out.records:
-                    segments.append(_format_inventory_records_summary(inv_out))
+                    prefix_segments.append(_format_inventory_records_summary(inv_out))
                 if fallback_messages:
-                    segments.append(" ".join(fallback_messages))
+                    prefix_segments.append(" ".join(fallback_messages))
 
-                if contexts or not segments:
-                    enforced_rag_answer, rag_citations = rag_generate_answer(
-                        question=query,
-                        context=contexts,
-                        llm_generator=self._llm_generator,
-                        guardrail_validator=self._guardrails,
-                        language=language,
-                    )
-                    parsed_answer, parsed_candidate = _parse_structured_llm_output(
-                        enforced_rag_answer
-                    )
-                    if parsed_candidate is not None:
-                        structured_llm_candidate = parsed_candidate
-                        enforced_rag_answer = self._guardrails.enforce(
-                            query=query,
-                            answer=parsed_answer,
-                            contexts=contexts,
-                        )
-                    segments.append(enforced_rag_answer)
-                    citations = list(rag_citations)
+                if contexts or not prefix_segments:
+                    requires_rag_stream = True
+                    citations = build_citations_from_context(contexts)
 
-        candidate_answer = "\n\n".join(seg for seg in segments if seg).strip()
         node_history = list(state.get("node_history") or [])
         if "generation" not in node_history:
             node_history.append("generation")
         state["node_history"] = node_history
-        return (state, candidate_answer, citations, structured_llm_candidate)
+        return (state, prefix_segments, citations, requires_rag_stream)
+
+    def _iter_generation_deltas(
+        self,
+        state: AgentState,
+        prefix_segments: List[str],
+        requires_rag_stream: bool,
+        abort_event: Optional[Any] = None,
+    ) -> Iterator[str]:
+        """Yield incremental generation token deltas directly from the prefix segments and live LLM/RAG stream."""
+        def _is_aborted() -> bool:
+            return bool(
+                abort_event is not None
+                and hasattr(abort_event, "is_set")
+                and abort_event.is_set()
+            )
+
+        non_empty_prefixes = [seg for seg in prefix_segments if seg]
+        for idx, seg in enumerate(non_empty_prefixes):
+            if _is_aborted():
+                return
+            if idx > 0:
+                yield "\n\n"
+            for tok in self.tokenize_for_streaming(seg):
+                if _is_aborted():
+                    return
+                yield tok
+
+        if not requires_rag_stream or _is_aborted():
+            return
+
+        if non_empty_prefixes:
+            yield "\n\n"
+
+        query = str(state.get("query") or "")
+        language = str(state.get("language") or "en")
+        contexts: List[RetrievedContext] = list(state.get("contexts") or [])
+
+        for delta in rag_stream_generate_answer(
+            question=query,
+            context=contexts,
+            llm_generator=self._llm_generator,
+            guardrail_validator=self._guardrails,
+            language=language,
+            config=self.config,
+            abort_event=abort_event,
+        ):
+            if _is_aborted():
+                return
+            if delta:
+                yield delta
 
     async def stream_query(
         self,
         request: AgentQueryRequest,
-        owner_user_id: str,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
         session_id: Optional[str] = None,
+        agent_id: str = "trackflow-support-agent",
+        client_id: str = "trackflow-backoffice",
         user_turn_id: Optional[str] = None,
         assistant_turn_id: Optional[str] = None,
         abort_event: Optional[asyncio.Event] = None,
@@ -651,13 +751,14 @@ class SupportAgentService(SupportAgentServicePort):
         thread_repository: Optional[AgentChatThreadRepositoryPort] = None,
         chunk_delay_seconds: Optional[float] = None,
     ) -> ChatMessage:
-        """Stream an assistant response token-by-token over `AgentChatEventBrokerPort` with cooperative cancellation.
+        """Stream an assistant response token-by-token over `AgentChatEventBrokerPort` with true generation cancellation.
 
         Sequencing (FR-004..FR-010, Clarifications 2 & 3):
         1. Validates thread ownership and persists the incoming user `ChatMessage`.
         2. Emits `generation_started` and creates an in-flight `streaming` assistant `ChatMessage`.
-        3. Runs Layer 1-3 intake, operational tools, and RAG retrieval.
-        4. Streams progressive `token_chunk` events, checking `abort_event.is_set()` before every emission.
+        3. Runs Layer 1-3 intake, operational tools, and RAG retrieval (without pre-generating the answer).
+        4. Streams progressive `token_chunk` deltas directly from the live generation loop, closing/aborting
+           the underlying model/RAG generator immediately when `abort_event.is_set()` or task cancellation occurs.
         5. If cancelled or `abort_event` is set at any point, immediately stops (0 trailing chunks),
            persists the partial accumulated text with `status="interrupted"`, and emits `generation_interrupted`.
         6. Once all tokens stream without interruption, runs Layer 4 `OutputGuardrailPort.validate_output()`,
@@ -667,6 +768,7 @@ class SupportAgentService(SupportAgentServicePort):
         start_ns = time.perf_counter()
         active_broker = broker or self._chat_event_broker
         active_repo = thread_repository or self._chat_thread_repository
+        resolved_user_id = str(user_id or owner_user_id or "").strip()
         trace_id = str(uuid.uuid4())
         resolved_thread_id = (
             request.thread_id.strip()
@@ -698,12 +800,14 @@ class SupportAgentService(SupportAgentServicePort):
             else self._token_stream_delay_seconds
         )
 
-        # Ensure thread exists and is owned by owner_user_id
+        # Ensure thread exists and is owned by resolved_user_id
         thread_state = self.get_or_create_thread_state(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            owner_user_id=owner_user_id,
+            user_id=resolved_user_id,
             owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
         )
         prior_history = [
             {"role": m.role, "content": m.content, "status": m.status}
@@ -724,9 +828,12 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            owner_user_id=owner_user_id,
+            user_id=resolved_user_id,
             owner_email=owner_email,
             message=user_msg,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="streaming",
         )
 
         # Emit generation_started
@@ -755,10 +862,13 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            owner_user_id=owner_user_id,
+            user_id=resolved_user_id,
             owner_email=owner_email,
             message=streaming_placeholder,
             latest_sequence_id=started_event.sequence_id,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="streaming",
         )
 
         accumulated_parts: List[str] = []
@@ -766,6 +876,17 @@ class SupportAgentService(SupportAgentServicePort):
         finalization_lock = threading.RLock()
         turn_finalized = False
         interrupted_result: Optional[ChatMessage] = None
+        delta_iterator: Optional[Iterator[str]] = None
+
+        def _close_delta_iterator() -> None:
+            nonlocal delta_iterator
+            gen = delta_iterator
+            delta_iterator = None
+            if gen is not None and hasattr(gen, "close"):
+                try:
+                    gen.close()
+                except Exception:
+                    pass
 
         def _resolve_abort_reason() -> ChatInterruptedReason:
             if hasattr(active_broker, "get_abort_reason"):
@@ -786,6 +907,9 @@ class SupportAgentService(SupportAgentServicePort):
                 if turn_finalized and interrupted_result is not None:
                     return interrupted_result
                 turn_finalized = True
+                if abort_event is not None:
+                    abort_event.set()
+                _close_delta_iterator()
 
                 partial_text = "".join(accumulated_parts)
                 now_abort = datetime.now(timezone.utc)
@@ -842,10 +966,13 @@ class SupportAgentService(SupportAgentServicePort):
                 active_repo.append_or_update_message(
                     thread_id=resolved_thread_id,
                     session_id=resolved_session_id,
-                    owner_user_id=owner_user_id,
+                    user_id=resolved_user_id,
                     owner_email=owner_email,
                     message=interrupted_msg,
                     latest_sequence_id=interrupted_event.sequence_id,
+                    agent_id=agent_id,
+                    client_id=client_id,
+                    session_status="interrupted",
                 )
                 interrupted_result = interrupted_msg
                 return interrupted_msg
@@ -857,25 +984,59 @@ class SupportAgentService(SupportAgentServicePort):
                 _persist_and_publish_interrupted,
             )
 
+        citations: List[SourceCitation] = []
+        structured_llm_candidate: Optional[Dict[str, Any]] = None
+
         try:
             if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
-            state, candidate_answer, citations, structured_llm_candidate = (
+            state, prefix_segments, citations, requires_rag_stream = (
                 await run_in_threadpool(
                     self._prepare_pre_generation_state,
                     request,
                     resolved_thread_id,
                     trace_id,
                     prior_history,
+                    abort_event,
                 )
             )
 
             if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
-            tokens = self.tokenize_for_streaming(candidate_answer)
-            for chunk_index, token_delta in enumerate(tokens):
+            gen_start_ns = time.perf_counter()
+            delta_iterator = self._iter_generation_deltas(
+                state=state,
+                prefix_segments=prefix_segments,
+                requires_rag_stream=requires_rag_stream,
+                abort_event=abort_event,
+            )
+
+            _SENTINEL = object()
+            chunk_index = 0
+            while True:
+                if turn_finalized or (
+                    abort_event is not None and abort_event.is_set()
+                ):
+                    return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+                active_iter = delta_iterator
+                if active_iter is None:
+                    break
+
+                next_piece = await run_in_threadpool(
+                    next,
+                    active_iter,
+                    _SENTINEL,
+                )
+                if next_piece is _SENTINEL:
+                    break
+
+                token_delta = str(next_piece)
+                if not token_delta:
+                    continue
+
                 with finalization_lock:
                     if turn_finalized or (
                         abort_event is not None and abort_event.is_set()
@@ -897,24 +1058,54 @@ class SupportAgentService(SupportAgentServicePort):
                             "accumulated_content": accumulated_text,
                         },
                     )
+                    chunk_index += 1
+
                 if effective_delay > 0:
                     await asyncio.sleep(effective_delay)
+
+            _close_delta_iterator()
+            gen_elapsed_ms = max(
+                0.01, round((time.perf_counter() - gen_start_ns) * 1000.0, 3)
+            )
+            step_latencies_map = dict(state.get("step_latencies") or {})
+            step_latencies_map["generation"] = gen_elapsed_ms
+            state["step_latencies"] = step_latencies_map
 
             if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
 
         except asyncio.CancelledError:
             return _persist_and_publish_interrupted(_resolve_abort_reason())
+        finally:
+            _close_delta_iterator()
 
         with finalization_lock:
             if turn_finalized or (abort_event is not None and abort_event.is_set()):
                 return _persist_and_publish_interrupted(_resolve_abort_reason())
             turn_finalized = True
 
-        # Post-stream Layer 4 Output Guardrail validation before generation_completed (Clarification 3, FR-006)
-        final_answer = "".join(accumulated_parts).strip() or candidate_answer
+        # Post-stream Layer 4 Output Guardrail & Business Guardrail validation before generation_completed (Clarification 3, FR-006)
+        raw_streamed_answer = "".join(accumulated_parts).strip()
         sanitized_query = str(state.get("query") or request.query)
         language = str(state.get("language") or request.language or "en")
+        contexts_list: List[RetrievedContext] = list(state.get("contexts") or [])
+
+        parsed_answer, parsed_candidate = _parse_structured_llm_output(
+            raw_streamed_answer
+        )
+        if parsed_candidate is not None:
+            structured_llm_candidate = parsed_candidate
+            raw_streamed_answer = parsed_answer
+
+        if contexts_list and not bool(state.get("is_refusal", False)):
+            final_answer = self._guardrails.enforce(
+                query=sanitized_query,
+                answer=raw_streamed_answer,
+                contexts=contexts_list,
+                language=language,
+            )
+        else:
+            final_answer = raw_streamed_answer
         session_ctx = state.get("session_context")
         casual_redirect_required = bool(state.get("casual_redirect_required", False))
         guardrail_action = state.get("guardrail_action")
@@ -1120,12 +1311,15 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            owner_user_id=owner_user_id,
+            user_id=resolved_user_id,
             owner_email=owner_email,
             message=completed_msg,
             pending_proposal=memory_proposal,
             latest_checkpoint_id=latest_cp_id,
             latest_sequence_id=completed_event.sequence_id,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="active",
         )
         return completed_msg
 

@@ -9,15 +9,19 @@
 
 ## 1. Domain Entities & Value Objects
 
-### 1.1 `ChatThreadState` (Conversation Thread Aggregate)
+### 1.1 `ChatSession` & `ChatThreadState` (Conversation Thread Aggregate)
 
-Represents a persistent, multi-turn TrackFlow support agent conversation bound to an authenticated operator and a LangGraph `thread_id` / `session_id` (FR-003, FR-012).
+`ChatSession` represents the bound session metadata (`session_id`, `thread_id`, `agent_id`, `client_id`, `user_id`, `status`). `ChatThreadState` represents a persistent, multi-turn TrackFlow support agent conversation bound to an authenticated operator and a LangGraph `thread_id` / `session_id` (FR-003, FR-012).
 
 | Field | Type | Required | Constraints / Validation Rules | Example |
 |---|---|---|---|---|
 | `thread_id` | `string` | Yes | Non-empty unique thread identifier (`1..128` chars) used as LangGraph `configurable.thread_id` and pub/sub broker channel key. | `"thr_support_001"` |
 | `session_id` | `string` | Yes | Non-empty session identifier (`1..128` chars) correlated with `AuthenticatedSessionContext.session_id`. Defaults to `thread_id` if omitted. | `"sess_support_001"` |
-| `owner_user_id` | `string` | Yes | Authenticated backoffice operator's user ID from JWT `sub` claim. Enforces strict per-operator thread ownership (Clarification 5). | `"usr_admin_01"` |
+| `user_id` | `string` | Yes | Authenticated backoffice operator's user ID from JWT `sub` claim. Enforces strict per-operator thread ownership (Clarification 5). | `"usr_admin_01"` |
+| `agent_id` | `string` | Yes | Support agent identifier (`"trackflow-support-agent"`). | `"trackflow-support-agent"` |
+| `client_id` | `string` | Yes | Client application identifier (`"trackflow-backoffice"`). | `"trackflow-backoffice"` |
+| `status` | `"active" \| "streaming" \| "interrupted" \| "disconnected" \| "closed"` | Yes | Current session lifecycle status. | `"active"` |
+| `session` | `ChatSession` | Yes | Canonical `ChatSession` metadata object (`session_id`, `thread_id`, `agent_id`, `client_id`, `user_id`, `status`). | `{"session_id": "sess_support_001", ...}` |
 | `owner_email` | `string` | No | Authenticated operator's email for audit attribution (never logged in plaintext). | `"operator@trackflow.com"` |
 | `messages` | `ChatMessage[]` | Yes | Chronologically ordered list of user and assistant turns (including `completed` and `interrupted` partial turns). | `[...]` |
 | `pending_proposal` | `MemoryProposal \| null` | No | Active unconfirmed `MemoryProposal` on this thread, if any (FR-013). | `null` |
@@ -66,7 +70,7 @@ Published by the agent streaming producer to `AgentChatEventBrokerPort` and forw
 
 | `event` Discriminator | Purpose | Payload Fields |
 |---|---|---|
-| `"session_rehydrated"` | Emitted upon authenticated WebSocket binding or explicit `rehydrate` frame. | `event`, `thread_id`, `session_id`, `sequence_id`, `timestamp`, `messages: ChatMessage[]`, `pending_proposal: MemoryProposal \| null`, `checkpoint_count: int`, `latest_checkpoint_id: str \| null` |
+| `"session_snapshot"` | Emitted upon authenticated WebSocket binding or explicit `rehydrate` frame. | `event`, `thread_id`, `session_id`, `user_id`, `agent_id`, `client_id`, `status`, `session: ChatSession`, `sequence_id`, `timestamp`, `messages: ChatMessage[]`, `pending_proposal: MemoryProposal \| null`, `checkpoint_count: int`, `latest_checkpoint_id: str \| null` |
 | `"generation_started"` | Emitted when an assistant turn starts executing. | `event`, `thread_id`, `session_id`, `turn_id`, `user_turn_id`, `query`, `sequence_id`, `timestamp` |
 | `"token_chunk"` | Emitted incrementally for each generated token/word chunk in real time. | `event`, `thread_id`, `session_id`, `turn_id`, `chunk_index: int`, `delta: str`, `accumulated_content: str`, `sequence_id`, `timestamp` |
 | `"generation_interrupted"` | Emitted immediately upon cooperative task cancellation (interrupt, redirect, or last-client disconnect). | `event`, `thread_id`, `session_id`, `turn_id`, `partial_content: str`, `status: "interrupted"`, `reason: "client_interrupt" \| "redirect_new_message" \| "client_disconnect"`, `sequence_id`, `timestamp` |
@@ -84,8 +88,8 @@ Sent by the client over the bidirectional WebSocket channel while idle or while 
 |---|---|---|
 | `"authenticate"` | Optional first-frame JWT authentication if `?token=` was not passed in the WebSocket handshake URL. | `event: "authenticate"`, `token: str`, `thread_id?: str`, `session_id?: str` |
 | `"user_message"` | Submits a user inquiry (or mid-stream redirecting inquiry). Automatically aborts any active streaming turn on the thread first. | `event: "user_message"`, `query: str`, `turn_id?: str`, `language?: "en" \| "es"`, `top_k?: int`, `min_score?: float`, `session_context?: AuthenticatedSessionContext` |
-| `"interrupt"` | Requests immediate server-side cancellation of the active streaming assistant turn on the bound `thread_id`. | `event: "interrupt"`, `turn_id?: str`, `reason?: str` |
-| `"rehydrate"` | Requests an immediate `session_rehydrated` snapshot from thread history/checkpoints. | `event: "rehydrate"`, `last_sequence_id?: int` |
+| `"interrupt_requested"` | Requests immediate server-side cancellation of the active streaming assistant turn on the bound `thread_id`. | `event: "interrupt_requested"`, `turn_id?: str`, `reason?: str` |
+| `"rehydrate"` | Requests an immediate `session_snapshot` snapshot from thread history/checkpoints. | `event: "rehydrate"`, `last_sequence_id?: int` |
 | `"ping"` | Client heartbeat keep-alive frame. | `event: "ping"`, `timestamp?: str` |
 
 ---

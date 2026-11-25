@@ -50,12 +50,20 @@ CustomerSegment = Literal["B2B", "B2C"]
 OperatingCountry = Literal["US", "ES"]
 ChatTurnRole = Literal["user", "assistant"]
 ChatTurnStatus = Literal["streaming", "completed", "interrupted", "error"]
+ChatSessionStatus = Literal[
+    "active",
+    "streaming",
+    "interrupted",
+    "disconnected",
+    "closed",
+]
 ChatInterruptedReason = Literal[
     "client_interrupt",
     "redirect_new_message",
     "client_disconnect",
 ]
 AgentChatEventName = Literal[
+    "session_snapshot",
     "session_rehydrated",
     "generation_started",
     "token_chunk",
@@ -859,13 +867,72 @@ class ChatMessage:
 
 
 @dataclass(frozen=True)
+class ChatSession:
+    """Represents an active or persisted Support Agent chat session bound to an authenticated operator."""
+
+    session_id: str
+    thread_id: str
+    user_id: str
+    agent_id: str = "trackflow-support-agent"
+    client_id: str = "trackflow-backoffice"
+    status: ChatSessionStatus = "active"
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def owner_user_id(self) -> str:
+        """Backward-compatible alias for user_id."""
+        return self.user_id
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize ChatSession to a JSON-compatible dictionary."""
+        return {
+            "session_id": self.session_id,
+            "thread_id": self.thread_id,
+            "agent_id": self.agent_id,
+            "client_id": self.client_id,
+            "user_id": self.user_id,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChatSession":
+        """Reconstruct a ChatSession from a dictionary."""
+        session_id = str(data.get("session_id") or data.get("thread_id") or "default")
+        thread_id = str(data.get("thread_id") or session_id)
+        user_id = str(data.get("user_id") or data.get("owner_user_id") or "")
+        status_raw = data.get("status")
+        status_val: ChatSessionStatus = (
+            status_raw
+            if status_raw in ("active", "streaming", "interrupted", "disconnected", "closed")
+            else "active"
+        )
+        return cls(
+            session_id=session_id,
+            thread_id=thread_id,
+            agent_id=str(data.get("agent_id") or "trackflow-support-agent"),
+            client_id=str(data.get("client_id") or "trackflow-backoffice"),
+            user_id=user_id,
+            status=status_val,
+            created_at=_parse_iso_datetime(data.get("created_at")),
+            updated_at=_parse_iso_datetime(data.get("updated_at")),
+        )
+
+
+@dataclass(frozen=True)
 class ChatThreadState:
     """Represents a persistent, multi-turn TrackFlow support agent conversation bound to an authenticated operator (FR-003, FR-012)."""
 
     thread_id: str
     session_id: str
-    owner_user_id: str
+    user_id: str = ""
+    owner_user_id: Optional[str] = None
     owner_email: Optional[str] = None
+    agent_id: str = "trackflow-support-agent"
+    client_id: str = "trackflow-backoffice"
+    status: ChatSessionStatus = "active"
     messages: List[ChatMessage] = field(default_factory=list)
     pending_proposal: Optional[MemoryProposal] = None
     session_context: Optional[AuthenticatedSessionContext] = None
@@ -874,13 +941,46 @@ class ChatThreadState:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def __post_init__(self) -> None:
+        resolved_uid = str(self.user_id or self.owner_user_id or "").strip()
+        object.__setattr__(self, "user_id", resolved_uid)
+        object.__setattr__(self, "owner_user_id", resolved_uid)
+
+    @property
+    def session(self) -> ChatSession:
+        """Project the canonical ChatSession metadata for this thread."""
+        derived_status: ChatSessionStatus = self.status
+        if self.messages:
+            last_msg = self.messages[-1]
+            if last_msg.role == "assistant":
+                if last_msg.status == "streaming":
+                    derived_status = "streaming"
+                elif last_msg.status == "interrupted" and self.status == "active":
+                    derived_status = "interrupted"
+        return ChatSession(
+            session_id=self.session_id,
+            thread_id=self.thread_id,
+            agent_id=self.agent_id,
+            client_id=self.client_id,
+            user_id=self.user_id,
+            status=derived_status,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize ChatThreadState to a JSON-compatible dictionary."""
+        session_obj = self.session
         return {
             "thread_id": self.thread_id,
             "session_id": self.session_id,
-            "owner_user_id": self.owner_user_id,
+            "user_id": self.user_id,
+            "owner_user_id": self.user_id,
             "owner_email": self.owner_email,
+            "agent_id": self.agent_id,
+            "client_id": self.client_id,
+            "status": session_obj.status,
+            "session": session_obj.to_dict(),
             "messages": [m.to_dict() for m in self.messages],
             "pending_proposal": (
                 self.pending_proposal.to_dict()
@@ -932,12 +1032,37 @@ class ChatThreadState:
                 order_country_map=dict(raw_session_ctx.get("order_country_map") or {}),
             )
 
+        raw_session = data.get("session") if isinstance(data.get("session"), dict) else {}
         thread_id = str(data["thread_id"])
+        user_id = str(
+            data.get("user_id")
+            or data.get("owner_user_id")
+            or raw_session.get("user_id")
+            or ""
+        )
+        status_raw = data.get("status") or raw_session.get("status")
+        status_val: ChatSessionStatus = (
+            status_raw
+            if status_raw in ("active", "streaming", "interrupted", "disconnected", "closed")
+            else "active"
+        )
         return cls(
             thread_id=thread_id,
-            session_id=str(data.get("session_id") or thread_id),
-            owner_user_id=str(data["owner_user_id"]),
+            session_id=str(data.get("session_id") or raw_session.get("session_id") or thread_id),
+            user_id=user_id,
+            owner_user_id=user_id,
             owner_email=data.get("owner_email"),
+            agent_id=str(
+                data.get("agent_id")
+                or raw_session.get("agent_id")
+                or "trackflow-support-agent"
+            ),
+            client_id=str(
+                data.get("client_id")
+                or raw_session.get("client_id")
+                or "trackflow-backoffice"
+            ),
+            status=status_val,
             messages=messages,
             pending_proposal=pending_proposal,
             session_context=session_context,
@@ -991,6 +1116,8 @@ __all__ = [
     "AuthenticatedSessionContext",
     "ChatInterruptedReason",
     "ChatMessage",
+    "ChatSession",
+    "ChatSessionStatus",
     "ChatThreadState",
     "ChatTurnRole",
     "ChatTurnStatus",

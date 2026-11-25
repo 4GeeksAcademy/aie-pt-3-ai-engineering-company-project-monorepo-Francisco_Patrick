@@ -22,6 +22,8 @@ from domain.agent.entities import (
     AuthenticatedSessionContext,
     ChatInterruptedReason,
     ChatMessage,
+    ChatSession,
+    ChatSessionStatus,
     ChatThreadState,
     ConsolidatedCarrierProfile,
     GuardrailAuditEvent,
@@ -436,18 +438,25 @@ class AgentChatThreadRepositoryPort(ABC):
         self,
         thread_id: str,
         session_id: str,
-        owner_user_id: str,
         message: ChatMessage,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
         pending_proposal: Optional[Any] = None,
         latest_checkpoint_id: Optional[str] = None,
         latest_sequence_id: Optional[int] = None,
+        agent_id: str = "trackflow-support-agent",
+        client_id: str = "trackflow-backoffice",
+        session_status: Optional[ChatSessionStatus] = None,
     ) -> ChatThreadState:
         """Append a new ChatMessage or update an existing turn (by turn_id) on a thread."""
 
     @abstractmethod
     def list_threads_by_owner(
-        self, owner_user_id: str, limit: int = 50
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        owner_user_id: Optional[str] = None,
     ) -> List[ChatThreadState]:
         """List conversation threads owned by a specific authenticated user ordered newest first."""
 

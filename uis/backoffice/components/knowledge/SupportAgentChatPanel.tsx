@@ -7,7 +7,7 @@
  * - Connection lifecycle status indicator (`connected`, `connecting`, `reconnecting`, `unauthorized`, `disconnected`)
  *   with bound `thread_id` and progressive backoff attempt counter
  * - Multi-turn conversation timeline with live progressive token-by-token assistant bubble rendering
- * - Prominent **"Interrupt / Stop"** control during active streaming (`{"event": "interrupt"}`)
+ * - Prominent **"Interrupt / Stop"** control during active streaming (`{"event": "interrupt_requested"}`)
  * - Permanent **"Interrupted"** badge on preserved partial assistant responses (never deleting partial text)
  * - Instant mid-stream redirection (allowing operators to submit a new prompt while a response is streaming)
  * - Grounded policy citations, consulted sources badges, operational tool summaries, guardrail badges,

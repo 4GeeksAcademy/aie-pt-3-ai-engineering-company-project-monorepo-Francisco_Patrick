@@ -5,7 +5,7 @@ info:
   description: |
     Part 2 Real-Time Communication contract for the TrackFlow Support Agent (`035-websocket-streaming-chat`).
     Provides:
-    1. Bidirectional WebSocket endpoint (`/api/v1/agent/ws` and legacy `/agent/ws`) supporting real-time token streaming (`token_chunk`), true server-side generation abort (`interrupt` -> `generation_interrupted`), mid-stream conversation redirection, JWT authentication, per-user thread ownership binding, and automatic state rehydration (`session_rehydrated`).
+    1. Bidirectional WebSocket endpoint (`/api/v1/agent/ws` and legacy `/agent/ws`) supporting real-time token streaming (`token_chunk`), true server-side generation abort (`interrupt_requested` -> `generation_interrupted`), mid-stream conversation redirection, JWT authentication, per-user thread ownership binding, and automatic state rehydration (`session_snapshot`).
     2. Authenticated REST companion endpoint (`GET /api/v1/agent/threads/{thread_id}/history` and legacy `/agent/threads/{thread_id}/history`) for durable thread history inspection and reconnection reconciliation.
     3. Backward-compatible synchronous fallback endpoint (`POST /api/v1/agent/query`).
 
@@ -224,12 +224,46 @@ components:
           type: string
           format: date-time
 
+    ChatSessionSchema:
+      type: object
+      required:
+        - session_id
+        - thread_id
+        - agent_id
+        - client_id
+        - user_id
+        - status
+      properties:
+        session_id:
+          type: string
+        thread_id:
+          type: string
+        agent_id:
+          type: string
+        client_id:
+          type: string
+        user_id:
+          type: string
+        status:
+          type: string
+          enum: ["active", "streaming", "interrupted", "disconnected", "closed"]
+        created_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+
     ChatThreadHistoryResponseSchema:
       type: object
       required:
         - thread_id
         - session_id
-        - owner_user_id
+        - user_id
+        - agent_id
+        - client_id
+        - status
+        - session
         - messages
         - latest_sequence_id
         - checkpoint_count
@@ -240,8 +274,17 @@ components:
           type: string
         session_id:
           type: string
-        owner_user_id:
+        user_id:
           type: string
+        agent_id:
+          type: string
+        client_id:
+          type: string
+        status:
+          type: string
+          enum: ["active", "streaming", "interrupted", "disconnected", "closed"]
+        session:
+          $ref: "#/components/schemas/ChatSessionSchema"
         messages:
           type: array
           items:

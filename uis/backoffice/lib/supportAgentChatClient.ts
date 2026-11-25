@@ -13,6 +13,8 @@ import type {
   AgentToolCallTraceDTO,
   ChatInterruptedReason,
   ChatMessageDTO,
+  ChatSessionDTO,
+  ChatSessionStatus,
   ChatTurnRole,
   ChatTurnStatus,
   KnowledgeSourceCitationDTO,
@@ -21,7 +23,7 @@ import type {
   ServerGenerationInterruptedEventDTO,
   ServerGenerationStartedEventDTO,
   ServerPongEventDTO,
-  ServerSessionRehydratedEventDTO,
+  ServerSessionSnapshotEventDTO,
   ServerTokenChunkEventDTO,
 } from '@repo/shared-types';
 
@@ -32,6 +34,14 @@ const VALID_STATUSES: ReadonlySet<ChatTurnStatus> = new Set<ChatTurnStatus>([
   'interrupted',
   'error',
 ]);
+const VALID_SESSION_STATUSES: ReadonlySet<ChatSessionStatus> =
+  new Set<ChatSessionStatus>([
+    'active',
+    'streaming',
+    'interrupted',
+    'disconnected',
+    'closed',
+  ]);
 const VALID_INTERRUPTED_REASONS: ReadonlySet<ChatInterruptedReason> =
   new Set<ChatInterruptedReason>([
     'client_interrupt',
@@ -405,9 +415,62 @@ export function parseAgentChatStreamEvent(
       return null;
     }
 
-    if (eventType === 'session_rehydrated') {
-      const ownerUserId =
-        typeof parsed['owner_user_id'] === 'string' ? parsed['owner_user_id'] : '';
+    if (eventType === 'session_snapshot' || eventType === 'session_rehydrated') {
+      const rawSession = isPlainRecord(parsed['session']) ? parsed['session'] : null;
+      const userId =
+        typeof parsed['user_id'] === 'string' && parsed['user_id'].length > 0
+          ? parsed['user_id']
+          : typeof parsed['owner_user_id'] === 'string' &&
+              parsed['owner_user_id'].length > 0
+            ? parsed['owner_user_id']
+            : rawSession && typeof rawSession['user_id'] === 'string'
+              ? rawSession['user_id']
+              : '';
+      const agentId =
+        typeof parsed['agent_id'] === 'string' && parsed['agent_id'].length > 0
+          ? parsed['agent_id']
+          : rawSession && typeof rawSession['agent_id'] === 'string'
+            ? rawSession['agent_id']
+            : 'trackflow-support-agent';
+      const clientId =
+        typeof parsed['client_id'] === 'string' && parsed['client_id'].length > 0
+          ? parsed['client_id']
+          : rawSession && typeof rawSession['client_id'] === 'string'
+            ? rawSession['client_id']
+            : 'trackflow-backoffice';
+      const statusCandidate =
+        typeof parsed['status'] === 'string'
+          ? parsed['status']
+          : rawSession && typeof rawSession['status'] === 'string'
+            ? rawSession['status']
+            : 'active';
+      const sessionStatus: ChatSessionStatus = VALID_SESSION_STATUSES.has(
+        statusCandidate as ChatSessionStatus
+      )
+        ? (statusCandidate as ChatSessionStatus)
+        : 'active';
+      const sessionObj: ChatSessionDTO = {
+        session_id:
+          rawSession && typeof rawSession['session_id'] === 'string'
+            ? rawSession['session_id']
+            : sessionId,
+        thread_id:
+          rawSession && typeof rawSession['thread_id'] === 'string'
+            ? rawSession['thread_id']
+            : threadId,
+        agent_id: agentId,
+        client_id: clientId,
+        user_id: userId,
+        status: sessionStatus,
+        created_at:
+          rawSession && typeof rawSession['created_at'] === 'string'
+            ? rawSession['created_at']
+            : timestamp,
+        updated_at:
+          rawSession && typeof rawSession['updated_at'] === 'string'
+            ? rawSession['updated_at']
+            : timestamp,
+      };
       const rawMessages = Array.isArray(parsed['messages']) ? parsed['messages'] : [];
       const messages: ChatMessageDTO[] = [];
       for (const item of rawMessages) {
@@ -416,11 +479,15 @@ export function parseAgentChatStreamEvent(
           messages.push(msg);
         }
       }
-      const ev: ServerSessionRehydratedEventDTO = {
-        event: 'session_rehydrated',
+      const ev: ServerSessionSnapshotEventDTO = {
+        event: 'session_snapshot',
         thread_id: threadId,
         session_id: sessionId,
-        owner_user_id: ownerUserId,
+        user_id: userId,
+        agent_id: agentId,
+        client_id: clientId,
+        status: sessionStatus,
+        session: sessionObj,
         messages,
         pending_proposal: parseMemoryProposal(parsed['pending_proposal']),
         latest_checkpoint_id:
@@ -663,7 +730,7 @@ export function applyStreamEventToMessages(
   currentMessages: readonly ChatMessageDTO[],
   event: AgentChatStreamEventDTO
 ): ChatMessageDTO[] {
-  if (event.event === 'session_rehydrated') {
+  if (event.event === 'session_snapshot') {
     return mergeRehydratedMessages(currentMessages, event.messages);
   }
 

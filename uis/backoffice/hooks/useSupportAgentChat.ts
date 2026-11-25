@@ -12,6 +12,7 @@ import type {
   AgentMemoryProposalDTO,
   AgentQueryResponseDTO,
   ChatMessageDTO,
+  ChatSessionDTO,
   ChatThreadHistoryResponseDTO,
   WebSocketChatConnectionStatus,
 } from '@repo/shared-types';
@@ -56,6 +57,8 @@ export interface UseSupportAgentChatResult {
   threadId: string;
   /** Bound `session_id`. */
   sessionId: string;
+  /** Active `ChatSession` metadata (`agent_id`, `client_id`, `user_id`, `status`), if hydrated. */
+  chatSession: ChatSessionDTO | null;
   /** True while an assistant response is actively streaming `token_chunk` events. */
   isStreaming: boolean;
   /** Turn ID of the currently streaming assistant message, if any. */
@@ -119,6 +122,7 @@ export function useSupportAgentChat(
       : getOrInitializeThreadId(options.initialThreadId)
   );
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
+  const [chatSession, setChatSession] = useState<ChatSessionDTO | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<WebSocketChatConnectionStatus>('connecting');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -155,6 +159,9 @@ export function useSupportAgentChat(
           return;
         }
         const historyData = (await response.json()) as ChatThreadHistoryResponseDTO;
+        if (historyData.session) {
+          setChatSession(historyData.session);
+        }
         if (Array.isArray(historyData.messages)) {
           setMessages((prev) => mergeRehydratedMessages(prev, historyData.messages));
         }
@@ -249,7 +256,8 @@ export function useSupportAgentChat(
         setLastSequenceId((prev) => Math.max(prev, parsedEvent.sequence_id));
         setMessages((prev) => applyStreamEventToMessages(prev, parsedEvent));
 
-        if (parsedEvent.event === 'session_rehydrated') {
+        if (parsedEvent.event === 'session_snapshot') {
+          setChatSession(parsedEvent.session);
           setPendingProposal(parsedEvent.pending_proposal);
           const streamingTurn = parsedEvent.messages.find(
             (m) => m.role === 'assistant' && m.status === 'streaming'
@@ -380,7 +388,7 @@ export function useSupportAgentChat(
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(
         serializeClientCommand({
-          event: 'interrupt',
+          event: 'interrupt_requested',
           turn_id: currentTurnId,
           reason: 'client_interrupt',
         })
@@ -595,6 +603,7 @@ export function useSupportAgentChat(
     connectionStatus,
     threadId,
     sessionId,
+    chatSession,
     isStreaming,
     activeTurnId,
     pendingProposal,
