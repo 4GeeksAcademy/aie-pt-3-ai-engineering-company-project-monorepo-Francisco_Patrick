@@ -63,7 +63,9 @@ class SecurityFindingSchema(BaseModel):
     location: str
     severity: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
     applicability: Literal["APPLIES", "DOES_NOT_APPLY"]
-    verification_status: Literal["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED"]
+    verification_status: Literal[
+        "OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED", "PRE_EXISTING_MITIGATED"
+    ]
     description: Optional[str] = None
     gdpr_implications: Optional[bool] = False
     ccpa_implications: Optional[bool] = False
@@ -141,6 +143,9 @@ class HostHardeningBaselineResponse(BaseModel):
     profile_id: str
     captured_at: str
     phase: Literal["PRE_REMEDIATION", "POST_REMEDIATION"]
+    provenance: Optional[str] = None
+    hostname: Optional[str] = None
+    commit_hash: Optional[str] = None
     ssh_config: SSHConfigSchema
     operational_user: str
     listening_ports: List[ListeningPortSchema]

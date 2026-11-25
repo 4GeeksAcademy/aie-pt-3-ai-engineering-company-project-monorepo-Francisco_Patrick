@@ -12,7 +12,7 @@
 - California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA)  
 **Fecha de Certificación**: 2026-11-25  
 **Alcance**: Monorepo Completo (`services/api`, `uis/website`, `uis/backoffice`, `agents/`, `infra/host`)  
-**Rama**: `feature/owasp-top10-audit` | **Commits Clave**: `da4841e`, `2c9b3f7`, `a15613e`
+**Rama**: `feature/owasp-top10-audit` | **Commit Certificado**: `602e55cf3a85a53af25eade50fbbe7fde8dc1b54` (**Commits Clave**: `da4841e`, `2c9b3f7`, `a15613e`, `602e55c`)
 
 ---
 
@@ -21,9 +21,9 @@
 Durante noviembre de 2026, TrackFlow Tech llevó a cabo una auditoría integral de seguridad y un programa de endurecimiento de infraestructura en profundidad (*defense-in-depth*) sobre su plataforma de inteligencia logística monorepo y servidores de operaciones. La evaluación implementó un **Modelo de Auditoría Tri-Track** (tres carriles independientes: Backend API, Frontend Web Applications y Autonomous Agentic Workflows) complementado con una línea base de endurecimiento para la infraestructura del sistema operativo anfitrión.
 
 ### Hitos y Resultados Clave:
-1. **Evaluación al 100% del OWASP Top 10**: Se evaluaron las 10 categorías en los 3 carriles técnicos (30 intersecciones discretas analizadas, con veredictos explícitos de aplicabilidad, calificación de severidad CVSS/OWASP y citas directas de código/endpoints).
-2. **0 Vulnerabilidades Críticas Abiertas (100% Remediadas)**: Las 4 vulnerabilidades críticas descubiertas (CORS wildcard con credenciales, credenciales de carriers en logs agénticos, exposición de excepciones de base de datos en 500, y acceso SSH directo como root sin autenticación) fueron solventadas con pruebas antes/después reproducibles.
-3. **Endurecimiento de Host Certificado**: Implementación de usuario operativo sin privilegios (`trackflow-ops`), desactivación de acceso root por SSH (`PermitRootLogin no`, `PasswordAuthentication no`), cortafuegos `ufw` con política predeterminada *default-deny* y máscara de permisos `0600` en secretos `.env`.
+1. **Evaluación al 100% del OWASP Top 10**: Se evaluaron las 10 categorías en los 3 carriles técnicos (30 intersecciones discretas analizadas, con veredictos explícitos de aplicabilidad, calificación de severidad CVSS/OWASP y citas directas de código/endpoints, más `SEC-HST-001` en infraestructura host).
+2. **0 Vulnerabilidades Críticas Abiertas (100% Remediadas)**: Las 3 vulnerabilidades críticas descubiertas (`SEC-BK-005` CORS wildcard con credenciales, `SEC-AG-002` credenciales de carriers en logs agénticos y `SEC-HST-001` acceso SSH directo como root y puertos internos expuestos) fueron solventadas con pruebas antes/después reproducibles. (`SEC-BK-009` en `services/api/core/exceptions.py` ya se encontraba mitigado en `main` desde el commit `4a38d68`, por lo que se clasifica como `PRE_EXISTING_MITIGATED` / `INFORMATIONAL` y se asegura con tests de regresión.)
+3. **Endurecimiento de Host Certificado**: Implementación de usuario operativo sin privilegios (`trackflow-ops`), desactivación de acceso root por SSH (`PermitRootLogin no`, `PasswordAuthentication no`), vinculación a loopback (`127.0.0.1`) de los puertos internos en Docker (`8000`, `6379`, `5555`), eliminación de credenciales por defecto `admin:admin` en Flower, cortafuegos `ufw` con política predeterminada *default-deny* y máscara de permisos `0600` en secretos `.env`.
 4. **Gobernanza Agéntica y Compuertas HITL (Human-in-the-Loop)**: Aislamiento estricto de herramientas contra IDOR (aislamiento por sesión de órdenes B2C y métricas de marcas B2B) y compuertas de aprobación humana obligatorias para devoluciones $> 100{,}00$ EUR y cambio de transportista en paquetes en tránsito.
 5. **Remediación del Bug de Pre-Merge (`owasp-hardening-pr-findings`)**: Cierre de brechas en endpoints `/actions/review` (RBAC con roles supervisor `admin`/`manager`, prevención de suplantación de `reviewer_id`), cableado en runtime de validación de herramientas en LangGraph (`ticket_tool_node`, `inventory_tool_node`), y eliminación de falsos positivos en el script de verificación del host.
 
@@ -31,14 +31,14 @@ Durante noviembre de 2026, TrackFlow Tech llevó a cabo una auditoría integral 
 ┌──────────────────────┬──────────┬──────┬────────┬─────┬──────────────┬───────┐
 │ Carril Técnico       │ Critical │ High │ Medium │ Low │ No Aplica    │ Total │
 ├──────────────────────┼──────────┼──────┼────────┼─────┼──────────────┼───────┤
-│ Backend API          │    2     │  2   │   3    │  1  │      2       │  10   │
+│ Backend API          │    1     │  2   │   3    │  1  │      3       │  10   │
 │ Frontend Web Apps    │    0     │  3   │   3    │  1  │      3       │  10   │
 │ Flujos Agénticos IA  │    1     │  4   │   3    │  1  │      1       │  10   │
 │ Infraestructura Host │    1     │  0   │   0    │  0  │      0       │   1   │
 ├──────────────────────┼──────────┼──────┼────────┼─────┼──────────────┼───────┤
-│ Total Monorepo       │    4     │  9   │   9    │  3  │      6       │  31   │
+│ Total Monorepo       │    3     │  9   │   9    │  3  │      7       │  31   │
 └──────────────────────┴──────────┴──────┴────────┴─────┴──────────────┴───────┘
-Estado: 4/4 Críticas Resueltas (100%) | 0 Regresiones | 44/44 Tests Pasando
+Estado: 3/3 Críticas Resueltas (100%) | 0 Regresiones | Tests Pasando
 ```
 
 ---
@@ -123,7 +123,7 @@ A continuación se detalla la matriz de auditoría con las 10 categorías evalua
 | **A08: Fallas de Integridad** | Backend | `SEC-BK-008` | Payloads de Webhooks de Carriers Externos No Firmados | MEDIA | APLICA | MITIGADO (HMAC-SHA256) |
 | | Frontend | `SEC-FE-008` | Integridad de Subrecursos (SRI) en Recursos Externos | BAJA | NO APLICA | MITIGADO (Bundles Locales) |
 | | Agente IA | `SEC-AG-008` | Envenenamiento de Contexto RAG por Documentos No Validados | MEDIA | APLICA | **RESUELTO** (RBAC en Ingesta) |
-| **A09: Fallas de Registro** | Backend | `SEC-BK-009` | Fuga de Traza y Detalles de Base de Datos en Errores 500 | **CRÍTICA** | APLICA | **RESUELTO** (Handler Sanitizado Global) |
+| **A09: Fallas de Registro** | Backend | `SEC-BK-009` | Sanitización Global Preexistente de Errores 500 | INFORMATIVA | NO APLICA | `PRE_EXISTING_MITIGATED` (`4a38d68`) |
 | | Frontend | `SEC-FE-009` | Registro Verboso de Respuestas de API en `console.log` | BAJA | APLICA | MITIGADO (Compiler Stripping) |
 | | Agente IA | `SEC-AG-009` | Persistencia de Datos Personales (PII) en Trazas Agénticas | ALTA | APLICA | **RESUELTO** (Enmascaramiento PII) |
 | **A10: SSRF** | Backend | `SEC-BK-010` | Peticiones HTTP Salientes a Destinos Dinámicos | BAJA | NO APLICA | MITIGADO (Destinos Fijos) |
@@ -233,9 +233,9 @@ A continuación se detalla la prueba reproducible antes/después de las correcci
   ```
 - **Prueba Determinista**: Test unitario `services/api/tests/unit/test_guardrail_observability_redaction.py` verificando enmascaramiento al 100%.
 
-### 7.3 SEC-BK-009: Sanitización Global de Excepciones 500
-- **Archivo**: `services/api/core/exceptions.py`
-- **Estado Seguro**: El manejador de excepciones `generic_exception_handler` captura cualquier excepción imprevista y responde un JSON estandarizado sin incluir trazas de conexión ni `str(e)`. Verificado exhaustivamente bajo la especificación 036 mediante el nuevo conjunto de pruebas `services/api/tests/unit/test_error_handling_sanitization.py`.
+### 7.3 SEC-BK-009 (`PRE_EXISTING_MITIGATED` / Control Base Preexistente): Sanitización Global de Excepciones 500
+- **Archivo**: `services/api/core/exceptions.py` (ya sanitizado en `main` en el commit `4a38d68`, sin diff en esta rama).
+- **Estado Seguro**: El manejador de excepciones `generic_exception_handler` captura cualquier excepción imprevista y responde un JSON estandarizado sin incluir trazas de conexión ni `str(e)`. Reclasificado como `PRE_EXISTING_MITIGATED` (`INFORMATIONAL` / `DOES_NOT_APPLY`) y asegurado mediante el conjunto de pruebas de regresión `services/api/tests/unit/test_error_handling_sanitization.py`.
 
 ### 7.4 SEC-HST-001: Endurecimiento de Acceso Host
 - **Archivos**: `infra/host/sshd_config.hardened`, `infra/host/ufw_setup.sh`, `infra/host/permissions_setup.sh`, `infra/host/verify_hardening.sh`.

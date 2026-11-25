@@ -70,3 +70,52 @@ def test_verify_hardening_strictly_checks_system_without_false_positives(repo_ro
     assert "|| grep -Eqi \"^\\s*PermitRootLogin\\s+no\" infra/host/sshd_config.hardened" not in content
     # Ensure explicit --template-check flag is supported for CI/offline use
     assert "--template-check" in content
+
+
+def test_docker_compose_internal_ports_bound_to_loopback(repo_root: Path) -> None:
+    """Verify every published port in docker-compose.yml other than 3000/3001 starts with 127.0.0.1: and Flower removes admin:admin default."""
+    import yaml
+
+    compose_file = repo_root / "docker-compose.yml"
+    assert compose_file.exists(), f"docker-compose.yml missing at {compose_file}"
+    raw_text = compose_file.read_text(encoding="utf-8")
+    compose_data = yaml.safe_load(raw_text)
+
+    allowed_public_container_ports = {"3000", "3001"}
+    internal_ports_found = set()
+
+    for service_name, service_cfg in compose_data.get("services", {}).items():
+        for port_mapping in service_cfg.get("ports", []):
+            mapping_str = str(port_mapping)
+            container_port = mapping_str.rsplit(":", 1)[-1].split("/")[0]
+            if container_port in allowed_public_container_ports:
+                continue
+            internal_ports_found.add(container_port)
+            assert mapping_str.startswith("127.0.0.1:"), (
+                f"Service '{service_name}' publishes internal port '{mapping_str}' without 127.0.0.1: loopback binding"
+            )
+
+    assert {"8000", "6379", "5555"}.issubset(internal_ports_found)
+    assert "admin:admin" not in raw_text, "docker-compose.yml must not default FLOWER_BASIC_AUTH to admin:admin"
+
+
+def test_ufw_setup_covers_all_compose_internal_ports(repo_root: Path) -> None:
+    """Verify every internal port in docker-compose.yml (8000, 6379, 5555) is also explicitly denied in ufw_setup.sh."""
+    import yaml
+
+    compose_file = repo_root / "docker-compose.yml"
+    ufw_file = repo_root / "infra" / "host" / "ufw_setup.sh"
+    compose_data = yaml.safe_load(compose_file.read_text(encoding="utf-8"))
+    ufw_content = ufw_file.read_text(encoding="utf-8")
+
+    allowed_public_container_ports = {"3000", "3001"}
+    for service_name, service_cfg in compose_data.get("services", {}).items():
+        for port_mapping in service_cfg.get("ports", []):
+            mapping_str = str(port_mapping)
+            container_port = mapping_str.rsplit(":", 1)[-1].split("/")[0]
+            if container_port in allowed_public_container_ports:
+                continue
+            assert f"ufw deny {container_port}/tcp" in ufw_content, (
+                f"Internal port {container_port} from service '{service_name}' is not covered by ufw_setup.sh"
+            )
+

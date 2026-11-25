@@ -96,7 +96,7 @@
           "remediation_plan": { "type": "string" },
           "verification_status": {
             "type": "string",
-            "enum": ["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED"]
+            "enum": ["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED", "PRE_EXISTING_MITIGATED"]
           },
           "verification_proof": { "type": "string" }
         }

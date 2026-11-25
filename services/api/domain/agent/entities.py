@@ -998,7 +998,9 @@ OWASPCategory = Literal[
 ]
 SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
 ApplicabilityVerdict = Literal["APPLIES", "DOES_NOT_APPLY"]
-VerificationStatus = Literal["OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED"]
+VerificationStatus = Literal[
+    "OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED", "PRE_EXISTING_MITIGATED"
+]
 DataClassification = Literal[
     "RESTRICTED_PII", "CONFIDENTIAL_B2B", "INTERNAL_OPERATIONAL", "PUBLIC"
 ]

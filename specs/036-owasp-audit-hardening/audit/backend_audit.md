@@ -4,15 +4,15 @@
 **Architecture**: FastAPI REST Service, SQLModel ORM, TinyDB adapter, Redis broker, JWT auth  
 **Evaluator**: TrackFlow Security Engineering  
 **Evaluation Date**: 2026-11-25  
-**Commit**: `8f4091add62f74d3e578cc5d60f605e75df9d789` | **Branch**: `feature/owasp-top10-audit`
+**Commit**: `602e55cf3a85a53af25eade50fbbe7fde8dc1b54` | **Branch**: `feature/owasp-top10-audit`
 
 ---
 
 ## 1. Executive Summary
 
-A comprehensive assessment of the TrackFlow backend API was conducted against the **OWASP Top 10 (2021)** standard. The audit identified two **CRITICAL** vulnerabilities requiring immediate remediation:
+A comprehensive assessment of the TrackFlow backend API was conducted against the **OWASP Top 10 (2021)** standard. The audit identified one **CRITICAL** vulnerability in the backend service requiring immediate remediation in this branch, alongside confirming one pre-existing mitigated control:
 1. **Permissive CORS Wildcard with Credentials** (`services/api/main.py:95-99`): `allow_origins=["*"]` configured alongside `allow_credentials=True`. This creates severe cross-origin vulnerability exposure where untrusted web domains can access authenticated session APIs.
-2. **Raw Exception Exposure & Leakage** (`services/api/core/exceptions.py`): Default error handlers leaking runtime traces or unhandled raw exception text (`str(e)`) in violation of Constitution Principle IV and OWASP A09.
+2. **Pre-Existing Sanitized Exception Handling** (`services/api/core/exceptions.py`): Global `generic_exception_handler` was already sanitized on `main` (commit `4a38d68`) to prevent raw exception text (`str(e)`) leakage; reclassified as `PRE_EXISTING_MITIGATED` (`INFORMATIONAL` / `DOES_NOT_APPLY`) and pinned with regression tests (`test_error_handling_sanitization.py`).
 
 All findings, applicability verdicts, severity levels, and remediation blueprints are detailed below.
 
@@ -30,7 +30,7 @@ All findings, applicability verdicts, severity levels, and remediation blueprint
 | `SEC-BK-006` | A06: Vulnerable Components | Unpinned Transitive Dependencies in pyproject.toml | LOW | APPLIES | OPEN |
 | `SEC-BK-007` | A07: Identification & Auth Failures | Missing Refresh Token Rotation and Invalidation | MEDIUM | APPLIES | OPEN |
 | `SEC-BK-008` | A08: Software & Data Integrity Failures | Unsigned Webhook Payloads for External Ingestion | MEDIUM | APPLIES | OPEN |
-| `SEC-BK-009` | A09: Logging & Monitoring Failures | Sensitive Credentials & Raw Exception Traces in Logs | CRITICAL | APPLIES | VERIFIED_RESOLVED |
+| `SEC-BK-009` | A09: Logging & Monitoring Failures | Pre-Existing Global Exception Handler Sanitization | INFORMATIONAL | DOES_NOT_APPLY | PRE_EXISTING_MITIGATED |
 | `SEC-BK-010` | A10: Server-Side Request Forgery | Outbound HTTP Webhook & Telemetry Client Dispatch | LOW | DOES_NOT_APPLY | MITIGATED |
 
 ---
@@ -87,13 +87,14 @@ All findings, applicability verdicts, severity levels, and remediation blueprint
 - **Description**: Incoming telemetry payloads from external carriers are validated for schema but lack HMAC-SHA256 signature verification.
 - **Remediation**: Introduce webhook signature verification headers for enterprise carrier endpoints.
 
-### SEC-BK-009: A09 Security Logging & Monitoring Failures (CRITICAL)
-- **Location**: `services/api/core/exceptions.py` & `services/api/application/services/guardrail_observability.py`
-- **Applicability**: `APPLIES`
-- **Severity**: `CRITICAL`
-- **Description**: Unhandled exceptions exposed raw internal details (`str(e)`) in HTTP 500 error responses, potentially leaking database schema and stack traces to clients. Additionally, log outputs lacked masking for carrier secrets (UPS, FedEx, DHL, MRW, SEUR) and customer PII.
-- **Remediation Plan**: Refactor FastAPI exception handlers to return sanitized error messages (verified via `test_error_handling_sanitization.py` against base implementation), and implement regex-based redaction in logging middleware.
-- **Verification Proof**: Unit tests `test_error_handling_sanitization.py` and `test_guardrail_observability_redaction.py`.
+### SEC-BK-009: A09 Security Logging & Monitoring Failures (PRE_EXISTING_MITIGATED)
+- **Location**: `services/api/core/exceptions.py`
+- **Applicability**: `DOES_NOT_APPLY`
+- **Severity**: `INFORMATIONAL`
+- **Status**: `PRE_EXISTING_MITIGATED`
+- **Description**: FastAPI `generic_exception_handler` in `services/api/core/exceptions.py` was already sanitized on `main` (commit `4a38d68`) prior to this branch, returning standardized 500 JSON responses without raw `str(e)` or stack traces. Carrier credential and PII log redaction is tracked separately under `SEC-AG-002` and `SEC-AG-009`.
+- **Remediation Plan**: Pre-existing mitigation maintained; regression test added in `services/api/tests/unit/test_error_handling_sanitization.py`.
+- **Verification Proof**: Unit test `services/api/tests/unit/test_error_handling_sanitization.py` against base implementation from commit `4a38d68`.
 
 ### SEC-BK-010: A10 Server-Side Request Forgery (SSRF)
 - **Location**: `services/api/infrastructure/adapters/`

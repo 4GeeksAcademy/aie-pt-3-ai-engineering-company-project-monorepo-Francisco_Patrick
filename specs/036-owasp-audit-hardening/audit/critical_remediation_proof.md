@@ -3,20 +3,19 @@
 **Organization**: TrackFlow Tech  
 **Audit Framework**: OWASP Top 10 (2021) & Host Infrastructure Baseline  
 **Evaluation Date**: 2026-11-25  
-**Commit**: `8f4091add62f74d3e578cc5d60f605e75df9d789` | **Branch**: `feature/owasp-top10-audit`
+**Commit**: `602e55cf3a85a53af25eade50fbbe7fde8dc1b54` | **Branch**: `feature/owasp-top10-audit`
 
 ---
 
 ## 1. Executive Summary of Critical Findings Remediated
 
-This document provides deterministic, reproducible before-and-after evidence demonstrating that 100% of the vulnerabilities classified with severity **CRITICAL** have been fully remediated and verified through automated test suites.
+This document provides deterministic, reproducible before-and-after evidence demonstrating that 100% of the 3 vulnerabilities classified with severity **CRITICAL** (`SEC-BK-005`, `SEC-AG-002`, `SEC-HST-001`) have been fully remediated and verified through automated test suites. (`SEC-BK-009` was audited and reclassified as `PRE_EXISTING_MITIGATED` because `services/api/core/exceptions.py` was already sanitized on `main` in commit `4a38d68`; its regression coverage via `test_error_handling_sanitization.py` is recorded as an informational baseline note in Section 2.2.)
 
 | Finding ID | Component | OWASP Category | Finding Title | Pre-Remediation State | Post-Remediation State | Verification Test |
 |---|---|---|---|---|---|---|
 | `SEC-BK-005` | BACKEND | A05: Security Misconfiguration | Wildcard CORS with Credentials Allowed | `allow_origins=["*"]` with `allow_credentials=True` in `services/api/main.py:95` | Explicit whitelist from `CORS_ALLOWED_ORIGINS` (`http://localhost:3000`, `https://app.trackflow.io`); unapproved origins rejected | `test_security_cors_configuration.py` |
-| `SEC-BK-009` | BACKEND | A09: Logging & Monitoring Failures | Sensitive Database Internals Leaked in Raw Exceptions | Raw exception traces (`str(e)`) exposed in HTTP 500 error responses | Global sanitized handler returning generic error message without database connection strings | `test_error_handling_sanitization.py` |
 | `SEC-AG-002` | AGENTIC | A02: Cryptographic Failures | Carrier API Keys & Auth Tokens in Observability Logs | Carrier keys (UPS, FedEx, DHL, MRW, SEUR) and Bearer tokens logged cleartext | Multi-carrier regex masking sanitizing tokens to `[REDACTED_CARRIER_CREDENTIAL]` and `[REDACTED_AUTH_TOKEN]` | `test_guardrail_observability_redaction.py` |
-| `SEC-HST-001` | HOST | A05: Security Misconfiguration | Unauthenticated Direct Root SSH Exposure | Root SSH logins permitted (`PermitRootLogin yes`); passwords allowed | Hardened SSH config (`PermitRootLogin no`, `PasswordAuthentication no`, `MaxAuthTries 3`) | `test_host_hardening_verification.py` |
+| `SEC-HST-001` | HOST | A05: Security Misconfiguration | Unauthenticated Direct Root SSH & Public Internal Port Exposure | Root SSH logins permitted; internal ports (`8000`, `6379`, `5555`) published on `0.0.0.0` with `admin:admin` Flower fallback | Hardened SSH config (`PermitRootLogin no`, `PasswordAuthentication no`, `MaxAuthTries 3`), loopback binding (`127.0.0.1`) for `8000`/`6379`/`5555`, mandatory `FLOWER_BASIC_AUTH`, and UFW deny rules | `test_host_hardening_verification.py` |
 
 ---
 
@@ -69,14 +68,11 @@ uv run --project services/api pytest services/api/tests/unit/test_security_cors_
 
 ---
 
-### 2.2 SEC-BK-009: Raw Exception Exposure
+### 2.2 SEC-BK-009 (Pre-Existing Mitigated Baseline Control — Not Counted as Branch Remediation): Raw Exception Exposure
 
-#### Pre-Remediation State:
-- Raw `str(exc)` or database stack traces returned to clients on unexpected failures.
-- Leaked internal Supabase connection URLs and database schema internals.
-
-#### Post-Remediation State (`services/api/core/exceptions.py`):
-> *Note on Diff*: The exception handler sanitization logic was already pre-existing in `services/api/core/exceptions.py` on `main`. Under specification 036, compliance was pinned down and audited by introducing the new verification test suite `test_error_handling_sanitization.py`.
+#### Status & Provenance (`PRE_EXISTING_MITIGATED` / `INFORMATIONAL`):
+- `services/api/core/exceptions.py` was already sanitized on `main` (commit `4a38d68`) prior to this branch, with zero code diff against `main`.
+- It is therefore classified as `PRE_EXISTING_MITIGATED` (`DOES_NOT_APPLY` / `INFORMATIONAL`) rather than an in-branch critical remediation, and is pinned by the regression suite `services/api/tests/unit/test_error_handling_sanitization.py`.
 
 ```python
 async def generic_exception_handler(
@@ -161,4 +157,4 @@ uv run --project services/api pytest services/api/tests/integration/test_host_ha
 
 ## 3. Residual Risk & Verification Sign-Off
 
-All 4 critical findings identified across the TrackFlow monorepo and host infrastructure have been systematically mitigated with passing unit and integration verification tests. Zero unmitigated critical findings remain.
+All 3 critical findings identified across the TrackFlow monorepo and host infrastructure (`SEC-BK-005`, `SEC-AG-002`, `SEC-HST-001`) have been systematically mitigated with passing unit and integration verification tests (plus regression verification for pre-existing `SEC-BK-009`). Zero unmitigated critical findings remain.

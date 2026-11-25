@@ -16,10 +16,10 @@ To prevent lateral movement and container escapes, TrackFlow hosts enforce four 
    - `PasswordAuthentication no` (Ed25519 or RSA-4096 key pairs only)
    - `MaxAuthTries 3`
    - Configuration template: [infra/host/sshd_config.hardened](file:///j:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/infra/host/sshd_config.hardened)
-3. **Default-Deny Host Firewall (UFW)**:
+3. **Default-Deny Host Firewall (UFW) & Docker Loopback Binding**:
    - Inbound traffic policy: `DENY`
    - Only administrative SSH (`22/tcp`), HTTP (`80/tcp`), and HTTPS (`443/tcp`) are exposed.
-   - Internal service ports (`8000` for FastAPI, `6379` for Redis, `6333` for Qdrant) are restricted to `127.0.0.1` or firewalled externally.
+   - Internal service ports (`8000` for FastAPI, `6379` for Redis, `6333` for Qdrant, `5555` for Flower) are explicitly bound to `127.0.0.1` in `docker-compose.yml` and denied externally in UFW (since Docker's `DOCKER` iptables chain bypasses UFW `INPUT` rules unless bound to loopback or filtered in `DOCKER-USER`).
    - Setup automation script: [infra/host/ufw_setup.sh](file:///j:/GitHub/mr-stegmann-ai-engineering-company-project-monorepo/infra/host/ufw_setup.sh)
 4. **Filesystem Permission Segregation**:
    - Application directories: `0755`
@@ -53,6 +53,10 @@ sudo infra/host/permissions_setup.sh
 # Run automated verification suite
 chmod +x infra/host/verify_hardening.sh
 ./infra/host/verify_hardening.sh
+
+# Capture host baseline state (listeners, UFW, Docker ports, SSH, file modes)
+chmod +x infra/host/capture_baseline.sh
+./infra/host/capture_baseline.sh infra/host/baseline_post.json
 ```
 
 ---

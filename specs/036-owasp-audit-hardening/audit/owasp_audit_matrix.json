@@ -3,7 +3,7 @@
   "audit_metadata": {
     "audit_date": "2026-11-25T00:00:00Z",
     "evaluator": "TrackFlow Security Engineering / Antigravity",
-    "commit_hash": "8f4091add62f74d3e578cc5d60f605e75df9d789",
+    "commit_hash": "602e55cf3a85a53af25eade50fbbe7fde8dc1b54",
     "branch": "feature/owasp-top10-audit",
     "regulatory_frameworks": [
       "GDPR_EU",
@@ -193,16 +193,16 @@
       "id": "SEC-BK-009",
       "component": "BACKEND",
       "category": "A09_LOGGING_MONITORING_FAILURES",
-      "title": "Sensitive Credentials & Raw Exception Traces in Logs",
+      "title": "Pre-Existing Global Exception Handler Sanitization",
       "location": "services/api/core/exceptions.py",
-      "severity": "CRITICAL",
-      "applicability": "APPLIES",
-      "gdpr_implications": true,
-      "ccpa_implications": true,
-      "description": "Unhandled exceptions exposed raw internal details (str(e)) in HTTP responses, leaking database internals to clients.",
-      "remediation_plan": "Refactor FastAPI exception handlers to return sanitized error messages, and enforce regex-based secret redaction in logging.",
-      "verification_status": "VERIFIED_RESOLVED",
-      "verification_proof": "Verified by services/api/tests/unit/test_error_handling_sanitization.py and test_guardrail_observability_redaction.py."
+      "severity": "INFORMATIONAL",
+      "applicability": "DOES_NOT_APPLY",
+      "gdpr_implications": false,
+      "ccpa_implications": false,
+      "description": "FastAPI generic_exception_handler in services/api/core/exceptions.py was already sanitized on main (commit 4a38d68) prior to this branch, returning standardized HTTP 500 JSON without raw str(e) or database connection strings.",
+      "remediation_plan": "Pre-existing mitigation maintained in services/api/core/exceptions.py and covered by regression tests.",
+      "verification_status": "PRE_EXISTING_MITIGATED",
+      "verification_proof": "Pre-existing mitigation on main (commit 4a38d68); verified by services/api/tests/unit/test_error_handling_sanitization.py."
     },
     {
       "id": "SEC-BK-010",
@@ -518,6 +518,21 @@
       "remediation_plan": "Architectural absence of unconstrained outbound network tools.",
       "verification_status": "MITIGATED",
       "verification_proof": ""
+    },
+    {
+      "id": "SEC-HST-001",
+      "component": "HOST",
+      "category": "A05_SECURITY_MISCONFIGURATION",
+      "title": "Unauthenticated Direct Root SSH & Public Internal Port Exposure",
+      "location": "infra/host/sshd_config.hardened",
+      "severity": "CRITICAL",
+      "applicability": "APPLIES",
+      "gdpr_implications": true,
+      "ccpa_implications": true,
+      "description": "Unrestricted root SSH logins, password authentication, and non-loopback Docker port bindings (8000, 6379, 5555) exposed internal services.",
+      "remediation_plan": "Enforce PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3 in sshd_config.hardened, bind Docker internal ports (8000, 6379, 5555) to 127.0.0.1 in docker-compose.yml, require FLOWER_BASIC_AUTH, and deny 8000/6379/6333/5555 in ufw_setup.sh.",
+      "verification_status": "VERIFIED_RESOLVED",
+      "verification_proof": "Verified by services/api/tests/integration/test_host_hardening_verification.py."
     }
   ]
 }
