@@ -8,6 +8,8 @@ import type {
 import KnowledgeQueryForm from '../../components/knowledge/KnowledgeQueryForm';
 import KnowledgeAnswerCard from '../../components/knowledge/KnowledgeAnswerCard';
 import KnowledgeStatusState from '../../components/knowledge/KnowledgeStatusState';
+import SupportAgentChatPanel from '../../components/knowledge/SupportAgentChatPanel';
+import { useSupportAgentChat } from '../../hooks/useSupportAgentChat';
 
 const API_BASE_URL: string =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -52,11 +54,14 @@ async function submitKnowledgeQuery(
 }
 
 /**
- * Frontline Interactive Knowledge Base & RAG Query Page (`/knowledge`).
+ * Frontline Interactive Knowledge Base, RAG Query & Real-Time Support Agent Streaming Chat Page (`/knowledge`).
  *
- * Allows Account Managers, Business Development, and Operations Coordinators
- * to query canonical corporate policies (Delivery SLAs, Returns, Carrier Coverage,
- * Storage Pricing) with real-time loading skeletons, citation badges, and retry CTAs.
+ * Hosts both:
+ * 1. The synchronous Single-Turn Policy Lookup form (`POST /api/v1/knowledge/query`), and
+ * 2. The full-duplex Bidirectional WebSocket Support Agent Streaming Chat (`/api/v1/agent/ws`)
+ *    with progressive token rendering, true mid-stream generation abort (`Interrupt / Stop`),
+ *    partial response preservation (`status: "interrupted"`), instant redirection, and automatic
+ *    progressive-backoff reconnection with thread rehydration.
  *
  * @returns Rendered JSX page element.
  */
@@ -66,6 +71,10 @@ export default function KnowledgeBasePage(): React.ReactElement {
   const [answerResponse, setAnswerResponse] =
     useState<KnowledgeQueryResponseDTO | null>(null);
   const [lastQuery, setLastQuery] = useState<string>('');
+
+  const chat = useSupportAgentChat({
+    apiUrl: API_BASE_URL,
+  });
 
   const executeQuery = useCallback(async (queryText: string): Promise<void> => {
     setLastQuery(queryText);
@@ -129,6 +138,21 @@ export default function KnowledgeBasePage(): React.ReactElement {
         {!isLoading && errorMessage === null && answerResponse !== null ? (
           <KnowledgeAnswerCard response={answerResponse} />
         ) : null}
+
+        <SupportAgentChatPanel
+          messages={chat.messages}
+          connectionStatus={chat.connectionStatus}
+          threadId={chat.threadId}
+          isStreaming={chat.isStreaming}
+          pendingProposal={chat.pendingProposal}
+          errorMessage={chat.errorMessage}
+          reconnectAttempt={chat.reconnectAttempt}
+          onSendMessage={chat.sendMessage}
+          onInterrupt={chat.interruptGeneration}
+          onReconnect={chat.reconnectNow}
+          onNewThread={chat.startNewThread}
+          onProposalFeedback={chat.submitProposalFeedback}
+        />
       </div>
     </main>
   );

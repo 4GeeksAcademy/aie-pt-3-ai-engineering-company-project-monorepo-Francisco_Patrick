@@ -34,6 +34,8 @@ from application.services.knowledge_service import KnowledgeService
 from application.services.support_agent_service import SupportAgentService
 from application.services.trace_registry import TraceRegistry
 from domain.agent.ports import (
+    AgentChatEventBrokerPort,
+    AgentChatThreadRepositoryPort,
     AgentMemoryRepositoryPort,
     AuthorizationGuardrailPort,
     ContextSanitizerPort,
@@ -331,7 +333,33 @@ _authorization_guardrail_singleton: Optional[AuthorizationGuardrailPort] = None
 _context_sanitizer_singleton: Optional[ContextSanitizerPort] = None
 _output_guardrail_singleton: Optional[OutputGuardrailPort] = None
 _guardrail_observability_singleton: Optional[GuardrailObservabilityPort] = None
+_agent_chat_thread_repo_singleton: Optional[AgentChatThreadRepositoryPort] = None
+_agent_chat_event_broker_singleton: Optional[AgentChatEventBrokerPort] = None
 _support_agent_service_singleton: Optional[SupportAgentServicePort] = None
+
+
+def get_agent_chat_thread_repository_dep() -> AgentChatThreadRepositoryPort:
+    """Dependency provider for durable AgentChatThreadRepositoryPort (TinyDBAgentChatThreadRepository)."""
+    global _agent_chat_thread_repo_singleton
+    if _agent_chat_thread_repo_singleton is None:
+        from infrastructure.adapters.tinydb_chat_thread_repository import (
+            TinyDBAgentChatThreadRepository,
+        )
+
+        _agent_chat_thread_repo_singleton = TinyDBAgentChatThreadRepository()
+    return _agent_chat_thread_repo_singleton
+
+
+def get_agent_chat_event_broker_dep() -> AgentChatEventBrokerPort:
+    """Dependency provider for the singleton AgentChatEventBrokerPort pub/sub event bus."""
+    global _agent_chat_event_broker_singleton
+    if _agent_chat_event_broker_singleton is None:
+        from infrastructure.messaging.agent_chat_event_broker import (
+            get_agent_chat_event_broker_singleton,
+        )
+
+        _agent_chat_event_broker_singleton = get_agent_chat_event_broker_singleton()
+    return _agent_chat_event_broker_singleton
 
 
 def get_guardrail_observability_dep() -> GuardrailObservabilityPort:
@@ -517,6 +545,12 @@ def get_support_agent_service(
     guardrail_observability: GuardrailObservabilityPort = Depends(
         get_guardrail_observability_dep
     ),
+    chat_thread_repository: AgentChatThreadRepositoryPort = Depends(
+        get_agent_chat_thread_repository_dep
+    ),
+    chat_event_broker: AgentChatEventBrokerPort = Depends(
+        get_agent_chat_event_broker_dep
+    ),
     config: KnowledgeRuntimeConfig = Depends(get_knowledge_config_dep),
 ) -> SupportAgentServicePort:
     """Dependency provider for SupportAgentService with compiled LangGraph state machine."""
@@ -535,6 +569,8 @@ def get_support_agent_service(
             context_sanitizer=context_sanitizer,
             output_guard=output_guard,
             guardrail_observability=guardrail_observability,
+            chat_thread_repository=chat_thread_repository,
+            chat_event_broker=chat_event_broker,
             config=config,
         )
     return _support_agent_service_singleton
@@ -625,6 +661,8 @@ def get_rfp_notification_broadcaster_dep() -> Any:
 
 
 __all__ = [
+    "get_agent_chat_event_broker_dep",
+    "get_agent_chat_thread_repository_dep",
     "get_agent_memory_repository_dep",
     "get_agent_memory_service_dep",
     "get_audit_log_repository_dep",

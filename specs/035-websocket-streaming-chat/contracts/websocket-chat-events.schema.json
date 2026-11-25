@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.internal/schemas/websocket-chat-events.schema.json",
+  "title": "TrackFlow Support Agent Bidirectional WebSocket Event Contracts",
+  "description": "Discriminated union schemas for all client-to-server commands and server-to-client pub/sub streaming events on /api/v1/agent/ws. Strictly uses TrackFlow Support Agent domain field conventions with zero RFP Ticket SSE schema leakage.",
+  "$defs": {
+    "ClientAuthenticateFrame": {
+      "type": "object",
+      "required": ["event", "token"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "authenticate" },
+        "token": { "type": "string", "minLength": 1 },
+        "thread_id": { "type": ["string", "null"] },
+        "session_id": { "type": ["string", "null"] }
+      }
+    },
+    "ClientUserMessageFrame": {
+      "type": "object",
+      "required": ["event", "query"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "user_message" },
+        "query": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "turn_id": { "type": ["string", "null"] },
+        "thread_id": { "type": ["string", "null"] },
+        "session_id": { "type": ["string", "null"] },
+        "language": { "type": "string", "enum": ["en", "es"], "default": "en" },
+        "top_k": { "type": "integer", "minimum": 1, "maximum": 20, "default": 3 },
+        "min_score": { "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.62 },
+        "session_context": { "type": ["object", "null"] }
+      }
+    },
+    "ChatSession": {
+      "type": "object",
+      "required": ["session_id", "thread_id", "agent_id", "client_id", "user_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": { "type": "string" },
+        "thread_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "interrupted", "closed"]
+        },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "ClientInterruptRequestedFrame": {
+      "type": "object",
+      "required": ["event"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "interrupt_requested" },
+        "turn_id": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "ClientRehydrateFrame": {
+      "type": "object",
+      "required": ["event"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "rehydrate" },
+        "last_sequence_id": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "ClientPingFrame": {
+      "type": "object",
+      "required": ["event"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "ping" },
+        "timestamp": { "type": ["string", "null"] }
+      }
+    },
+    "ServerSessionSnapshotEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "user_id",
+        "agent_id",
+        "client_id",
+        "status",
+        "session",
+        "messages",
+        "checkpoint_count",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "session_snapshot" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "interrupted", "closed"]
+        },
+        "session": { "$ref": "#/$defs/ChatSession" },
+        "messages": { "type": "array", "items": { "type": "object" } },
+        "pending_proposal": { "type": ["object", "null"] },
+        "latest_checkpoint_id": { "type": ["string", "null"] },
+        "checkpoint_count": { "type": "integer", "minimum": 0 },
+        "sequence_id": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerGenerationStartedEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "turn_id",
+        "user_turn_id",
+        "query",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "generation_started" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "user_turn_id": { "type": "string" },
+        "query": { "type": "string" },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerTokenChunkEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "turn_id",
+        "chunk_index",
+        "delta",
+        "accumulated_content",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "token_chunk" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "delta": { "type": "string" },
+        "accumulated_content": { "type": "string" },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerGenerationInterruptedEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "turn_id",
+        "partial_content",
+        "status",
+        "reason",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "generation_interrupted" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "partial_content": { "type": "string" },
+        "status": { "const": "interrupted" },
+        "reason": {
+          "type": "string",
+          "enum": ["client_interrupt", "redirect_new_message", "client_disconnect"]
+        },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerGenerationCompletedEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "turn_id",
+        "query",
+        "content",
+        "status",
+        "is_refusal",
+        "fallback_triggered",
+        "trace_id",
+        "node_sequence",
+        "execution_time_ms",
+        "sources",
+        "sources_consulted",
+        "tool_calls",
+        "recalled_memories",
+        "guardrail_interventions",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "generation_completed" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "turn_id": { "type": "string" },
+        "query": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "const": "completed" },
+        "is_refusal": { "type": "boolean" },
+        "fallback_triggered": { "type": "boolean" },
+        "trace_id": { "type": "string" },
+        "node_sequence": { "type": "array", "items": { "type": "string" } },
+        "execution_time_ms": { "type": "number", "minimum": 0.0 },
+        "sources": { "type": "array", "items": { "type": "object" } },
+        "sources_consulted": { "type": "array", "items": { "type": "string" } },
+        "tool_calls": { "type": "array", "items": { "type": "object" } },
+        "memory_proposal": { "type": ["object", "null"] },
+        "recalled_memories": { "type": "array", "items": { "type": "string" } },
+        "guardrail_interventions": { "type": "array", "items": { "type": "object" } },
+        "resolved_country": { "type": ["string", "null"], "enum": ["US", "ES", null] },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerErrorEvent": {
+      "type": "object",
+      "required": [
+        "event",
+        "thread_id",
+        "session_id",
+        "error_code",
+        "detail",
+        "sequence_id",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "error" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "turn_id": { "type": ["string", "null"] },
+        "error_code": { "type": "string" },
+        "detail": { "type": "string" },
+        "sequence_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ServerPongEvent": {
+      "type": "object",
+      "required": ["event", "thread_id", "session_id", "sequence_id", "timestamp"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "const": "pong" },
+        "thread_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "sequence_id": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

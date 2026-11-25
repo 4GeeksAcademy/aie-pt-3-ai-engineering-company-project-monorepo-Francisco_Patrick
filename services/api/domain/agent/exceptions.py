@@ -166,6 +166,25 @@ class UnauthorizedOrderAccessError(GuardrailBlockedError):
         )
 
 
+class ThreadOwnershipMismatchError(AgentDomainException):
+    """Raised when an authenticated operator attempts to access or bind a conversation thread owned by another user (FR-003)."""
+
+    def __init__(
+        self,
+        thread_id: str,
+        requester_user_id: str,
+        message: Optional[str] = None,
+    ) -> None:
+        """Initialize thread ownership mismatch error."""
+        self.thread_id = thread_id
+        self.requester_user_id = requester_user_id
+        resolved_msg = (
+            message
+            or f"Conversation thread '{thread_id}' is bound to a different operator account."
+        )
+        super().__init__(resolved_msg)
+
+
 __all__ = [
     "AgentDomainException",
     "GraphCompilationError",
@@ -174,6 +193,7 @@ __all__ = [
     "MemoryNotFoundError",
     "MemoryStorageError",
     "StateValidationError",
+    "ThreadOwnershipMismatchError",
     "ToolExecutionTimeoutError",
     "TraceNotFoundError",
     "UnauthorizedOrderAccessError",

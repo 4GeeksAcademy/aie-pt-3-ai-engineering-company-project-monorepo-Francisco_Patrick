@@ -10,10 +10,14 @@ Implements `SupportAgentServicePort` (T036, T037):
 """
 
 from datetime import datetime, timezone
+import asyncio
+import re
+import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+from fastapi.concurrency import run_in_threadpool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -26,30 +30,61 @@ from application.services.agent_guardrails import (
 )
 from application.services.agent_workflow import (
     REQUIRED_WORKFLOW_NODES,
+    _format_inventory_records_summary,
+    _format_ticket_records_summary,
+    _parse_structured_llm_output,
     build_agent_checkpoint_serializer,
     build_support_agent_graph,
+    intake_node,
+    inventory_tool_node,
+    refusal_node,
+    retrieval_node,
+    route_after_intake,
+    route_after_inventory_tool,
+    route_after_retrieval,
+    route_after_ticket_tool,
+    route_after_tool_fallback,
+    ticket_tool_node,
+    tool_fallback_node,
 )
 from application.services.guardrail_observability import GuardrailObservabilityService
 from application.services.guardrails import BusinessGuardrailValidator
 from application.services.trace_registry import TraceRegistry
+from data.pipelines.rag_pipeline import (
+    build_citations_from_context,
+    generate_answer as rag_generate_answer,
+    stream_generate_answer as rag_stream_generate_answer,
+)
 from domain.agent.entities import (
     AgentCheckpoint,
     AgentQueryRequest,
     AgentQueryResult,
     AgentState,
     AgentTrace,
+    AuthenticatedSessionContext,
+    ChatInterruptedReason,
+    ChatMessage,
+    ChatSession,
+    ChatSessionStatus,
+    ChatThreadState,
     GuardrailAuditEvent,
     InventoryToolOutput,
     MemoryProposal,
     OperatingCountry,
+    RetrievedContext,
     SourceCitation,
     TicketToolOutput,
+    merge_thread_session_context,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import (
+    ThreadOwnershipMismatchError,
     TraceNotFoundError,
     WorkflowExecutionError,
 )
 from domain.agent.ports import (
+    AgentChatEventBrokerPort,
+    AgentChatThreadRepositoryPort,
     AuthorizationGuardrailPort,
     ContextSanitizerPort,
     GuardrailObservabilityPort,
@@ -90,6 +125,9 @@ class SupportAgentService(SupportAgentServicePort):
         context_sanitizer: Optional[ContextSanitizerPort] = None,
         output_guard: Optional[OutputGuardrailPort] = None,
         guardrail_observability: Optional[GuardrailObservabilityPort] = None,
+        chat_thread_repository: Optional[AgentChatThreadRepositoryPort] = None,
+        chat_event_broker: Optional[AgentChatEventBrokerPort] = None,
+        token_stream_delay_seconds: float = 0.015,
     ) -> None:
         """Initialize SupportAgentService and compile the workflow graph at startup."""
         self.config = config or KnowledgeRuntimeConfig.from_env()
@@ -155,6 +193,29 @@ class SupportAgentService(SupportAgentServicePort):
         self._guardrail_observability: GuardrailObservabilityPort = (
             guardrail_observability or GuardrailObservabilityService()
         )
+        if chat_thread_repository is None:
+            from infrastructure.adapters.tinydb_chat_thread_repository import (
+                TinyDBAgentChatThreadRepository,
+            )
+
+            self._chat_thread_repository: AgentChatThreadRepositoryPort = (
+                TinyDBAgentChatThreadRepository()
+            )
+        else:
+            self._chat_thread_repository = chat_thread_repository
+
+        if chat_event_broker is None:
+            from infrastructure.messaging.agent_chat_event_broker import (
+                get_agent_chat_event_broker_singleton,
+            )
+
+            self._chat_event_broker: AgentChatEventBrokerPort = (
+                get_agent_chat_event_broker_singleton()
+            )
+        else:
+            self._chat_event_broker = chat_event_broker
+
+        self._token_stream_delay_seconds = max(0.0, float(token_stream_delay_seconds))
         self._checkpointer: BaseCheckpointSaver = (
             checkpointer
             if checkpointer is not None
@@ -210,6 +271,1127 @@ class SupportAgentService(SupportAgentServicePort):
     def inventory_tool(self) -> InventoryStockToolPort:
         """Return the wired InventoryStockToolPort instance."""
         return self._inventory_tool
+
+    @property
+    def chat_thread_repository(self) -> AgentChatThreadRepositoryPort:
+        """Return the active AgentChatThreadRepositoryPort instance."""
+        return self._chat_thread_repository
+
+    @property
+    def chat_event_broker(self) -> AgentChatEventBrokerPort:
+        """Return the active AgentChatEventBrokerPort instance."""
+        return self._chat_event_broker
+
+    @staticmethod
+    def tokenize_for_streaming(text: str) -> List[str]:
+        """Split synthesized assistant text into natural progressive token chunks (preserving whitespace)."""
+        if not text:
+            return []
+        tokens = re.findall(r"\S+\s*|\s+", text)
+        return [tok for tok in tokens if tok]
+
+    @staticmethod
+    def resolve_client_user_id(
+        thread_state: Optional[ChatThreadState] = None,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> str:
+        """Resolve the chatting client `user_id` from domain `session_context.customer_id` (or `"unassigned"`)."""
+        effective_ctx = (
+            merge_thread_session_context(
+                thread_state.session_context if thread_state is not None else None,
+                session_context,
+            )
+            if thread_state is not None or session_context is not None
+            else None
+        )
+        return resolve_client_user_id(effective_ctx)
+
+    def get_or_create_thread_state(
+        self,
+        thread_id: str,
+        session_id: str,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        owner_email: Optional[str] = None,
+        agent_id: str = "first_line_cx",
+        client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> ChatThreadState:
+        """Load or initialize a ChatThreadState bound to `owner_user_id`, raising ThreadOwnershipMismatchError on mismatch."""
+        cleaned_thread = (thread_id or "").strip() or str(uuid.uuid4())
+        cleaned_session = (session_id or "").strip() or cleaned_thread
+        cleaned_owner = str(owner_user_id or user_id or "").strip()
+
+        existing = self._chat_thread_repository.get_thread(cleaned_thread)
+        if existing is not None:
+            if (
+                existing.owner_user_id
+                and cleaned_owner
+                and existing.owner_user_id != cleaned_owner
+            ):
+                raise ThreadOwnershipMismatchError(
+                    thread_id=cleaned_thread,
+                    requester_user_id=cleaned_owner,
+                )
+            merged_ctx = merge_thread_session_context(
+                existing.session_context,
+                session_context,
+            )
+            if merged_ctx != existing.session_context:
+                existing = self._chat_thread_repository.save_thread(
+                    ChatThreadState(
+                        thread_id=existing.thread_id,
+                        session_id=existing.session_id,
+                        user_id=self.resolve_client_user_id(session_context=merged_ctx),
+                        owner_user_id=existing.owner_user_id or cleaned_owner or None,
+                        owner_email=owner_email or existing.owner_email,
+                        agent_id=existing.agent_id,
+                        client_id=existing.client_id,
+                        status=existing.status,
+                        messages=list(existing.messages),
+                        pending_proposal=existing.pending_proposal,
+                        session_context=merged_ctx,
+                        latest_checkpoint_id=existing.latest_checkpoint_id,
+                        latest_sequence_id=existing.latest_sequence_id,
+                        created_at=existing.created_at,
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                )
+            self._chat_event_broker.sync_sequence_id(
+                cleaned_thread, existing.latest_sequence_id
+            )
+            return existing
+
+        now = datetime.now(timezone.utc)
+        pending = (
+            self._memory_service.get_pending_proposal(cleaned_thread)
+            if self._memory_service is not None
+            and hasattr(self._memory_service, "get_pending_proposal")
+            else None
+        )
+        checkpoints = self.get_checkpoints(cleaned_thread)
+        latest_cp = checkpoints[-1].checkpoint_id if checkpoints else None
+        initial_thread = ChatThreadState(
+            thread_id=cleaned_thread,
+            session_id=cleaned_session,
+            user_id=self.resolve_client_user_id(session_context=session_context),
+            owner_user_id=cleaned_owner or None,
+            owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
+            status="active",
+            messages=[],
+            pending_proposal=pending if isinstance(pending, MemoryProposal) else None,
+            session_context=session_context,
+            latest_checkpoint_id=latest_cp,
+            latest_sequence_id=self._chat_event_broker.get_latest_sequence_id(
+                cleaned_thread
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+        return self._chat_thread_repository.save_thread(initial_thread)
+
+    def get_thread_history(
+        self,
+        thread_id: str,
+        requester_user_id: str,
+        session_id: Optional[str] = None,
+        agent_id: str = "first_line_cx",
+        client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> Tuple[ChatThreadState, int]:
+        """Return persisted thread history and checkpoint count, validating per-operator thread ownership."""
+        cleaned_thread = (thread_id or "").strip()
+        cleaned_requester = str(requester_user_id).strip()
+        existing = self._chat_thread_repository.get_thread(cleaned_thread)
+        if existing is not None:
+            if (
+                existing.owner_user_id
+                and cleaned_requester
+                and existing.owner_user_id != cleaned_requester
+            ):
+                raise ThreadOwnershipMismatchError(
+                    thread_id=cleaned_thread,
+                    requester_user_id=cleaned_requester,
+                )
+            thread_state = existing
+        else:
+            thread_state = self.get_or_create_thread_state(
+                thread_id=cleaned_thread,
+                session_id=session_id or cleaned_thread,
+                owner_user_id=cleaned_requester,
+                agent_id=agent_id,
+                client_id=client_id,
+                session_context=session_context,
+            )
+
+        checkpoints = self.get_checkpoints(cleaned_thread)
+        latest_cp = (
+            checkpoints[-1].checkpoint_id
+            if checkpoints
+            else thread_state.latest_checkpoint_id
+        )
+        pending = (
+            self._memory_service.get_pending_proposal(cleaned_thread)
+            if self._memory_service is not None
+            and hasattr(self._memory_service, "get_pending_proposal")
+            else None
+        )
+        resolved_pending = (
+            pending
+            if isinstance(pending, MemoryProposal)
+            else thread_state.pending_proposal
+        )
+        latest_seq = max(
+            thread_state.latest_sequence_id,
+            self._chat_event_broker.get_latest_sequence_id(cleaned_thread),
+        )
+        self._chat_event_broker.sync_sequence_id(cleaned_thread, latest_seq)
+
+        is_currently_generating = self._chat_event_broker.is_generating(cleaned_thread)
+        # An in-flight turn keeps the session `active`; turn-level `streaming` lives on ChatTurnStatus.
+        session_status: ChatSessionStatus = (
+            "active" if is_currently_generating else thread_state.session.status
+        )
+        merged_ctx = merge_thread_session_context(
+            thread_state.session_context,
+            session_context,
+        )
+
+        reconciled = ChatThreadState(
+            thread_id=thread_state.thread_id,
+            session_id=session_id or thread_state.session_id,
+            user_id=self.resolve_client_user_id(session_context=merged_ctx),
+            owner_user_id=thread_state.owner_user_id,
+            owner_email=thread_state.owner_email,
+            agent_id=thread_state.agent_id or agent_id,
+            client_id=thread_state.client_id or client_id,
+            status=session_status,
+            messages=list(thread_state.messages),
+            pending_proposal=resolved_pending,
+            session_context=merged_ctx,
+            latest_checkpoint_id=latest_cp,
+            latest_sequence_id=latest_seq,
+            created_at=thread_state.created_at,
+            updated_at=thread_state.updated_at,
+        )
+        if (
+            reconciled.latest_checkpoint_id != thread_state.latest_checkpoint_id
+            or reconciled.latest_sequence_id != thread_state.latest_sequence_id
+            or reconciled.session_context != thread_state.session_context
+        ):
+            reconciled = self._chat_thread_repository.save_thread(reconciled)
+        return (reconciled, len(checkpoints))
+
+    def rehydrate_thread(
+        self,
+        thread_id: str,
+        session_id: str,
+        user_id: Optional[str] = None,
+        owner_email: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        agent_id: str = "first_line_cx",
+        client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> Dict[str, Any]:
+        """Build a session_snapshot event payload from durable TinyDB history and LangGraph checkpoints."""
+        resolved_owner_id = str(owner_user_id or user_id or "").strip()
+        self.get_or_create_thread_state(
+            thread_id=thread_id,
+            session_id=session_id,
+            owner_user_id=resolved_owner_id,
+            owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_context=session_context,
+        )
+        thread_state, checkpoint_count = self.get_thread_history(
+            thread_id=thread_id,
+            requester_user_id=resolved_owner_id,
+            session_id=session_id,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_context=session_context,
+        )
+        session_obj = thread_state.session
+        return {
+            "user_id": session_obj.user_id,
+            "owner_user_id": thread_state.owner_user_id,
+            "agent_id": session_obj.agent_id,
+            "client_id": session_obj.client_id,
+            "status": session_obj.status,
+            "session": session_obj.to_dict(),
+            "messages": [m.to_dict() for m in thread_state.messages],
+            "pending_proposal": (
+                thread_state.pending_proposal.to_dict()
+                if thread_state.pending_proposal is not None
+                else None
+            ),
+            "latest_checkpoint_id": thread_state.latest_checkpoint_id,
+            "checkpoint_count": checkpoint_count,
+        }
+
+    def _prepare_pre_generation_state(
+        self,
+        request: AgentQueryRequest,
+        thread_id: str,
+        trace_id: str,
+        conversation_history: List[Dict[str, Any]],
+        abort_event: Optional[Any] = None,
+    ) -> Tuple[AgentState, List[str], List[SourceCitation], bool]:
+        """Execute pre-generation workflow nodes ONLY (intake, guardrails, tools, retrieval, fallback, or refusal).
+
+        Does NOT execute LLM/RAG answer synthesis so that `stream_query` can stream token deltas
+        directly from the live generation generator with true mid-generation cancellation.
+        """
+        effective_min_score = (
+            request.min_score
+            if request.min_score is not None
+            else self.config.similarity_threshold
+        )
+        state: AgentState = {
+            "query": request.query,
+            "thread_id": thread_id,
+            "language": request.language or "en",
+            "top_k": request.top_k,
+            "min_score": effective_min_score,
+            "selected_sources": [],
+            "sources_consulted": [],
+            "ticket_tool_input": None,
+            "ticket_tool_output": None,
+            "inventory_tool_input": None,
+            "inventory_tool_output": None,
+            "contexts": [],
+            "fallback_triggered": False,
+            "fallback_messages": [],
+            "answer": "",
+            "is_refusal": False,
+            "sources": [],
+            "trace_id": trace_id,
+            "node_history": [],
+            "step_latencies": {},
+            "node_outputs": {},
+            "error": None,
+            "pending_proposal": None,
+            "memory_proposal": None,
+            "recalled_memories": [],
+            "proposal_resolution": None,
+            "session_context": request.session_context,
+            "resolved_country": (
+                request.session_context.primary_operating_country
+                if request.session_context is not None
+                else None
+            ),
+            "guardrail_action": "allow",
+            "guardrail_failure_category": "none",
+            "guardrail_reason_code": None,
+            "guardrail_message": None,
+            "casual_redirect_required": False,
+            "guardrail_events": [],
+        }
+        if conversation_history:
+            state["conversation_history"] = conversation_history  # type: ignore[typeddict-unknown-key]
+
+        def _is_aborted() -> bool:
+            return bool(
+                abort_event is not None
+                and hasattr(abort_event, "is_set")
+                and abort_event.is_set()
+            )
+
+        if _is_aborted():
+            return (state, [], [], False)
+
+        # 1. Intake node (Layer 1 Input Guardrail + Layer 2 Auth Guardrail + Memory Proposal Resolution & Recall)
+        state.update(
+            intake_node(
+                state=state,
+                memory_service=self._memory_service,
+                input_guard=self._input_guard,
+                authorization_guard=self._authorization_guard,
+                observability=self._guardrail_observability,
+            )
+        )
+        if _is_aborted():
+            return (state, [], [], False)
+
+        next_node = route_after_intake(state)
+
+        while next_node not in ("generation", "refusal", "__end__"):
+            if _is_aborted():
+                return (state, [], [], False)
+            if next_node == "ticket_tool":
+                state.update(
+                    ticket_tool_node(
+                        state=state,
+                        ticket_tool=self._ticket_tool,
+                        context_sanitizer=self._context_sanitizer,
+                        observability=self._guardrail_observability,
+                    )
+                )
+                next_node = route_after_ticket_tool(state)
+            elif next_node == "inventory_tool":
+                state.update(
+                    inventory_tool_node(
+                        state=state,
+                        inventory_tool=self._inventory_tool,
+                        context_sanitizer=self._context_sanitizer,
+                        observability=self._guardrail_observability,
+                    )
+                )
+                next_node = route_after_inventory_tool(state)
+            elif next_node == "retrieval":
+                state.update(
+                    retrieval_node(
+                        state=state,
+                        vector_store=self._vector_store,
+                        embedding_service=self._embedding_service,
+                        default_min_score=self.config.similarity_threshold,
+                        context_sanitizer=self._context_sanitizer,
+                        observability=self._guardrail_observability,
+                    )
+                )
+                next_node = route_after_retrieval(state)
+            elif next_node == "tool_fallback":
+                state.update(tool_fallback_node(state))
+                routed = route_after_tool_fallback(state)
+                next_node = "generation" if routed == "generation" else "__end__"
+            else:
+                break
+
+        if _is_aborted():
+            return (state, [], [], False)
+
+        if next_node == "refusal":
+            state.update(
+                refusal_node(
+                    state=state,
+                    output_guard=self._output_guard,
+                    observability=self._guardrail_observability,
+                )
+            )
+            refusal_ans = str(state.get("answer") or "")
+            return (state, [refusal_ans] if refusal_ans else [], [], False)
+
+        if next_node == "__end__":
+            end_ans = str(state.get("answer") or "")
+            return (state, [end_ans] if end_ans else [], [], False)
+
+        # Assemble pre-generation context prefixes (memory acknowledgments, recalled rules, tool summaries)
+        # while deferring RAG / LLM answer generation to the live streaming iterator
+        query = state.get("query") or ""
+        language = state.get("language") or "en"
+        contexts: List[RetrievedContext] = list(state.get("contexts") or [])
+        ticket_out = state.get("ticket_tool_output")
+        inv_out = state.get("inventory_tool_output")
+        fallback_messages: List[str] = list(state.get("fallback_messages") or [])
+        recalled_memories: List[str] = list(state.get("recalled_memories") or [])
+        proposal_resolution: Optional[Dict[str, Any]] = state.get("proposal_resolution")
+        casual_redirect_required = bool(state.get("casual_redirect_required", False))
+        guardrail_message = state.get("guardrail_message")
+
+        prefix_segments: List[str] = []
+        citations: List[SourceCitation] = []
+        requires_rag_stream = False
+
+        pure_proposal_turn = False
+        if proposal_resolution is not None:
+            ack_text = proposal_resolution.get("acknowledgment_text")
+            intent = proposal_resolution.get("classified_intent")
+            has_residual = bool(proposal_resolution.get("residual_query"))
+            if ack_text and (
+                intent in ("approve", "reject", "edit")
+                or (intent == "unrelated_or_ambiguous" and not has_residual)
+            ):
+                prefix_segments.append(str(ack_text))
+            if not has_residual:
+                pure_proposal_turn = True
+
+        if casual_redirect_required and guardrail_message:
+            prefix_segments.append(str(guardrail_message))
+        else:
+            if recalled_memories and not pure_proposal_turn:
+                recalled_text = (
+                    "Operational Memory Context (Confirmed Cross-Session Rules):\n"
+                    + "\n".join(
+                        f"- {mem} ( recommend using local carrier alternatives accordingly )"
+                        for mem in recalled_memories
+                    )
+                )
+                prefix_segments.append(recalled_text)
+
+            if not pure_proposal_turn:
+                if (
+                    ticket_out is not None
+                    and ticket_out.status == "success"
+                    and ticket_out.records
+                ):
+                    prefix_segments.append(
+                        _format_ticket_records_summary(
+                            ticket_out,
+                            query=query,
+                            language=language,
+                        )
+                    )
+                if inv_out is not None and inv_out.status == "success" and inv_out.records:
+                    prefix_segments.append(_format_inventory_records_summary(inv_out))
+                if fallback_messages:
+                    prefix_segments.append(" ".join(fallback_messages))
+
+                if contexts or not prefix_segments:
+                    requires_rag_stream = True
+                    citations = build_citations_from_context(contexts)
+
+        node_history = list(state.get("node_history") or [])
+        if "generation" not in node_history:
+            node_history.append("generation")
+        state["node_history"] = node_history
+        return (state, prefix_segments, citations, requires_rag_stream)
+
+    def _iter_generation_deltas(
+        self,
+        state: AgentState,
+        prefix_segments: List[str],
+        requires_rag_stream: bool,
+        abort_event: Optional[Any] = None,
+    ) -> Iterator[str]:
+        """Yield incremental generation token deltas directly from the prefix segments and live LLM/RAG stream."""
+        def _is_aborted() -> bool:
+            return bool(
+                abort_event is not None
+                and hasattr(abort_event, "is_set")
+                and abort_event.is_set()
+            )
+
+        non_empty_prefixes = [seg for seg in prefix_segments if seg]
+        for idx, seg in enumerate(non_empty_prefixes):
+            if _is_aborted():
+                return
+            if idx > 0:
+                yield "\n\n"
+            for tok in self.tokenize_for_streaming(seg):
+                if _is_aborted():
+                    return
+                yield tok
+
+        if not requires_rag_stream or _is_aborted():
+            return
+
+        if non_empty_prefixes:
+            yield "\n\n"
+
+        query = str(state.get("query") or "")
+        language = str(state.get("language") or "en")
+        contexts: List[RetrievedContext] = list(state.get("contexts") or [])
+
+        for delta in rag_stream_generate_answer(
+            question=query,
+            context=contexts,
+            llm_generator=self._llm_generator,
+            guardrail_validator=self._guardrails,
+            language=language,
+            config=self.config,
+            abort_event=abort_event,
+        ):
+            if _is_aborted():
+                return
+            if delta:
+                yield delta
+
+    async def stream_query(
+        self,
+        request: AgentQueryRequest,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        owner_email: Optional[str] = None,
+        session_id: Optional[str] = None,
+        agent_id: str = "first_line_cx",
+        client_id: str = "trackflow-backoffice",
+        user_turn_id: Optional[str] = None,
+        assistant_turn_id: Optional[str] = None,
+        abort_event: Optional[asyncio.Event] = None,
+        broker: Optional[AgentChatEventBrokerPort] = None,
+        thread_repository: Optional[AgentChatThreadRepositoryPort] = None,
+        chunk_delay_seconds: Optional[float] = None,
+    ) -> ChatMessage:
+        """Stream an assistant response token-by-token over `AgentChatEventBrokerPort` with true generation cancellation.
+
+        Sequencing (FR-004..FR-010, Clarifications 2 & 3):
+        1. Validates thread ownership and persists the incoming user `ChatMessage`.
+        2. Emits `generation_started` and creates an in-flight `streaming` assistant `ChatMessage`.
+        3. Runs Layer 1-3 intake, operational tools, and RAG retrieval (without pre-generating the answer).
+        4. Streams progressive `token_chunk` deltas directly from the live generation loop, closing/aborting
+           the underlying model/RAG generator immediately when `abort_event.is_set()` or task cancellation occurs.
+        5. If cancelled or `abort_event` is set at any point, immediately stops (0 trailing chunks),
+           persists the partial accumulated text with `status="interrupted"`, and emits `generation_interrupted`.
+        6. Once all tokens stream without interruption, runs Layer 4 `OutputGuardrailPort.validate_output()`,
+           evaluates single-turn memory proposals, records the `AgentTrace` and LangGraph checkpoint,
+           persists the completed assistant `ChatMessage`, and emits `generation_completed`.
+        """
+        start_ns = time.perf_counter()
+        active_broker = broker or self._chat_event_broker
+        active_repo = thread_repository or self._chat_thread_repository
+        resolved_user_id = str(user_id or owner_user_id or "").strip()
+        trace_id = str(uuid.uuid4())
+        resolved_thread_id = (
+            request.thread_id.strip()
+            if request.thread_id and request.thread_id.strip()
+            else trace_id
+        )
+        resolved_session_id = (
+            (session_id or "").strip()
+            or (
+                request.session_context.session_id
+                if request.session_context and request.session_context.session_id
+                else ""
+            )
+            or resolved_thread_id
+        )
+        resolved_user_turn_id = (
+            user_turn_id.strip()
+            if user_turn_id and user_turn_id.strip()
+            else f"usr_{uuid.uuid4().hex[:12]}"
+        )
+        resolved_assistant_turn_id = (
+            assistant_turn_id.strip()
+            if assistant_turn_id and assistant_turn_id.strip()
+            else f"turn_{uuid.uuid4().hex[:12]}"
+        )
+        effective_delay = (
+            max(0.0, float(chunk_delay_seconds))
+            if chunk_delay_seconds is not None
+            else self._token_stream_delay_seconds
+        )
+
+        # Ensure thread exists and is owned by resolved_user_id
+        thread_state = self.get_or_create_thread_state(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            owner_user_id=resolved_user_id,
+            owner_email=owner_email,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_context=request.session_context,
+        )
+        locked_session_context = thread_state.session_context
+        prior_history = [
+            {"role": m.role, "content": m.content, "status": m.status}
+            for m in thread_state.messages
+        ]
+
+        now_start = datetime.now(timezone.utc)
+        user_msg = ChatMessage(
+            turn_id=resolved_user_turn_id,
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            role="user",
+            content=request.query.strip(),
+            status="completed",
+            created_at=now_start,
+            updated_at=now_start,
+        )
+        active_repo.append_or_update_message(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            owner_user_id=resolved_user_id,
+            owner_email=owner_email,
+            message=user_msg,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="active",
+            session_context=locked_session_context,
+        )
+
+        # Emit generation_started
+        started_event = active_broker.publish(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            event_name="generation_started",
+            payload={
+                "turn_id": resolved_assistant_turn_id,
+                "user_turn_id": resolved_user_turn_id,
+                "query": request.query.strip(),
+            },
+        )
+        streaming_placeholder = ChatMessage(
+            turn_id=resolved_assistant_turn_id,
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            role="assistant",
+            content="",
+            status="streaming",
+            parent_user_turn_id=resolved_user_turn_id,
+            trace_id=trace_id,
+            created_at=now_start,
+            updated_at=now_start,
+        )
+        active_repo.append_or_update_message(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            owner_user_id=resolved_user_id,
+            owner_email=owner_email,
+            message=streaming_placeholder,
+            latest_sequence_id=started_event.sequence_id,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="active",
+            session_context=locked_session_context,
+        )
+
+        accumulated_parts: List[str] = []
+        state: AgentState = {}
+        finalization_lock = threading.RLock()
+        turn_finalized = False
+        interrupted_result: Optional[ChatMessage] = None
+        delta_iterator: Optional[Iterator[str]] = None
+
+        def _close_delta_iterator() -> None:
+            nonlocal delta_iterator
+            gen = delta_iterator
+            delta_iterator = None
+            if gen is not None and hasattr(gen, "close"):
+                try:
+                    gen.close()
+                except Exception:
+                    pass
+
+        def _resolve_abort_reason() -> ChatInterruptedReason:
+            if hasattr(active_broker, "get_abort_reason"):
+                reason = active_broker.get_abort_reason(resolved_thread_id)
+                if reason in (
+                    "client_interrupt",
+                    "redirect_new_message",
+                    "client_disconnect",
+                ):
+                    return reason
+            return "client_interrupt"
+
+        def _persist_and_publish_interrupted(
+            reason: ChatInterruptedReason,
+        ) -> ChatMessage:
+            nonlocal turn_finalized, interrupted_result
+            with finalization_lock:
+                if turn_finalized and interrupted_result is not None:
+                    return interrupted_result
+                turn_finalized = True
+                if abort_event is not None:
+                    abort_event.set()
+                _close_delta_iterator()
+
+                partial_text = "".join(accumulated_parts)
+                now_abort = datetime.now(timezone.utc)
+                elapsed_abort_ms = max(
+                    0.01, round((time.perf_counter() - start_ns) * 1000.0, 3)
+                )
+                interrupted_event = active_broker.publish(
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    event_name="generation_interrupted",
+                    payload={
+                        "turn_id": resolved_assistant_turn_id,
+                        "partial_content": partial_text,
+                        "status": "interrupted",
+                        "reason": reason,
+                    },
+                )
+                interrupted_msg = ChatMessage(
+                    turn_id=resolved_assistant_turn_id,
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    role="assistant",
+                    content=partial_text,
+                    status="interrupted",
+                    parent_user_turn_id=resolved_user_turn_id,
+                    interrupted_reason=reason,
+                    is_refusal=bool(state.get("is_refusal", False)),
+                    fallback_triggered=bool(state.get("fallback_triggered", False)),
+                    trace_id=trace_id,
+                    node_sequence=list(state.get("node_history") or []),
+                    execution_time_ms=elapsed_abort_ms,
+                    sources=[],
+                    sources_consulted=[
+                        str(s) for s in (state.get("sources_consulted") or [])
+                    ],
+                    tool_calls=[],
+                    memory_proposal=None,
+                    recalled_memories=[
+                        str(m) for m in (state.get("recalled_memories") or [])
+                    ],
+                    guardrail_interventions=[
+                        ev
+                        for ev in (state.get("guardrail_events") or [])
+                        if isinstance(ev, GuardrailAuditEvent)
+                    ],
+                    resolved_country=(
+                        state.get("resolved_country")
+                        if state.get("resolved_country") in ("US", "ES")
+                        else None
+                    ),
+                    created_at=now_start,
+                    updated_at=now_abort,
+                )
+                active_repo.append_or_update_message(
+                    thread_id=resolved_thread_id,
+                    session_id=resolved_session_id,
+                    owner_user_id=resolved_user_id,
+                    owner_email=owner_email,
+                    message=interrupted_msg,
+                    latest_sequence_id=interrupted_event.sequence_id,
+                    agent_id=agent_id,
+                    client_id=client_id,
+                    session_status="interrupted",
+                    session_context=locked_session_context,
+                )
+                interrupted_result = interrupted_msg
+                return interrupted_msg
+
+        if hasattr(active_broker, "register_abort_finalizer"):
+            getattr(active_broker, "register_abort_finalizer")(
+                resolved_thread_id,
+                resolved_assistant_turn_id,
+                _persist_and_publish_interrupted,
+            )
+
+        citations: List[SourceCitation] = []
+        structured_llm_candidate: Optional[Dict[str, Any]] = None
+
+        try:
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
+                return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+            state, prefix_segments, citations, requires_rag_stream = (
+                await run_in_threadpool(
+                    self._prepare_pre_generation_state,
+                    request,
+                    resolved_thread_id,
+                    trace_id,
+                    prior_history,
+                    abort_event,
+                )
+            )
+
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
+                return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+            gen_start_ns = time.perf_counter()
+            delta_iterator = self._iter_generation_deltas(
+                state=state,
+                prefix_segments=prefix_segments,
+                requires_rag_stream=requires_rag_stream,
+                abort_event=abort_event,
+            )
+
+            _SENTINEL = object()
+            chunk_index = 0
+            while True:
+                if turn_finalized or (
+                    abort_event is not None and abort_event.is_set()
+                ):
+                    return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+                active_iter = delta_iterator
+                if active_iter is None:
+                    break
+
+                next_piece = await run_in_threadpool(
+                    next,
+                    active_iter,
+                    _SENTINEL,
+                )
+                if next_piece is _SENTINEL:
+                    break
+
+                token_delta = str(next_piece)
+                if not token_delta:
+                    continue
+
+                with finalization_lock:
+                    if turn_finalized or (
+                        abort_event is not None and abort_event.is_set()
+                    ):
+                        return _persist_and_publish_interrupted(
+                            _resolve_abort_reason()
+                        )
+
+                    accumulated_parts.append(token_delta)
+                    accumulated_text = "".join(accumulated_parts)
+                    active_broker.publish(
+                        thread_id=resolved_thread_id,
+                        session_id=resolved_session_id,
+                        event_name="token_chunk",
+                        payload={
+                            "turn_id": resolved_assistant_turn_id,
+                            "chunk_index": chunk_index,
+                            "delta": token_delta,
+                            "accumulated_content": accumulated_text,
+                        },
+                    )
+                    chunk_index += 1
+
+                if effective_delay > 0:
+                    await asyncio.sleep(effective_delay)
+
+            _close_delta_iterator()
+            gen_elapsed_ms = max(
+                0.01, round((time.perf_counter() - gen_start_ns) * 1000.0, 3)
+            )
+            step_latencies_map = dict(state.get("step_latencies") or {})
+            step_latencies_map["generation"] = gen_elapsed_ms
+            state["step_latencies"] = step_latencies_map
+
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
+                return _persist_and_publish_interrupted(_resolve_abort_reason())
+
+        except asyncio.CancelledError:
+            return _persist_and_publish_interrupted(_resolve_abort_reason())
+        finally:
+            _close_delta_iterator()
+
+        with finalization_lock:
+            if turn_finalized or (abort_event is not None and abort_event.is_set()):
+                return _persist_and_publish_interrupted(_resolve_abort_reason())
+            turn_finalized = True
+
+        # Post-stream Layer 4 Output Guardrail & Business Guardrail validation before generation_completed (Clarification 3, FR-006)
+        raw_streamed_answer = "".join(accumulated_parts).strip()
+        sanitized_query = str(state.get("query") or request.query)
+        language = str(state.get("language") or request.language or "en")
+        contexts_list: List[RetrievedContext] = list(state.get("contexts") or [])
+
+        parsed_answer, parsed_candidate = _parse_structured_llm_output(
+            raw_streamed_answer
+        )
+        if parsed_candidate is not None:
+            structured_llm_candidate = parsed_candidate
+            raw_streamed_answer = parsed_answer
+
+        if contexts_list and not bool(state.get("is_refusal", False)):
+            final_answer = self._guardrails.enforce(
+                query=sanitized_query,
+                answer=raw_streamed_answer,
+                contexts=contexts_list,
+                language=language,
+            )
+        else:
+            final_answer = raw_streamed_answer
+        session_ctx = state.get("session_context")
+        casual_redirect_required = bool(state.get("casual_redirect_required", False))
+        guardrail_action = state.get("guardrail_action")
+        guardrail_events: List[GuardrailAuditEvent] = [
+            ev
+            for ev in (state.get("guardrail_events") or [])
+            if isinstance(ev, GuardrailAuditEvent)
+        ]
+        is_refusal = bool(state.get("is_refusal", False))
+        memory_proposal: Optional[MemoryProposal] = None
+        proposal_resolution = state.get("proposal_resolution")
+        if proposal_resolution and proposal_resolution.get("status") == "edited":
+            updated_prop = proposal_resolution.get("updated_proposal")
+            if isinstance(updated_prop, MemoryProposal):
+                memory_proposal = updated_prop
+
+        if not is_refusal:
+            output_eval = self._output_guard.validate_output(
+                query=sanitized_query,
+                candidate_answer=final_answer,
+                session_context=session_ctx,
+                casual_redirect_required=casual_redirect_required,
+                language=language,
+            )
+            if self._guardrail_observability is not None:
+                ev = self._guardrail_observability.record_evaluation(
+                    result=output_eval,
+                    session_id=resolved_session_id,
+                    raw_preview=final_answer,
+                    trace_id=trace_id,
+                )
+                if ev is not None:
+                    guardrail_events.append(ev)
+
+            is_output_blocked = output_eval.action == "block"
+            if output_eval.sanitized_text is not None:
+                final_answer = output_eval.sanitized_text
+            if is_output_blocked:
+                is_refusal = True
+                citations = []
+
+            should_suppress_memory_proposal = bool(
+                is_output_blocked
+                or casual_redirect_required
+                or guardrail_action in ("block", "redirect", "deflect", "clarify")
+            )
+            if should_suppress_memory_proposal:
+                memory_proposal = None
+                if (
+                    is_output_blocked
+                    and self._memory_service is not None
+                    and hasattr(self._memory_service, "discard_pending_proposal")
+                ):
+                    self._memory_service.discard_pending_proposal(
+                        thread_id=resolved_thread_id,
+                        reason=output_eval.reason_code or "output_guardrail_block",
+                    )
+            elif self._memory_service is not None and proposal_resolution is None:
+                candidate_proposal, final_answer = (
+                    self._memory_service.evaluate_turn_for_proposal(
+                        user_message=sanitized_query,
+                        base_answer=final_answer,
+                        thread_id=resolved_thread_id,
+                        language=language,
+                        llm_candidate=structured_llm_candidate,
+                    )
+                )
+                if candidate_proposal is not None:
+                    memory_proposal = candidate_proposal
+
+        state["answer"] = final_answer
+        state["is_refusal"] = is_refusal
+        state["sources"] = list(citations)
+        state["memory_proposal"] = memory_proposal
+        state["guardrail_events"] = guardrail_events
+
+        node_sequence: List[str] = list(state.get("node_history") or [])
+        sources_consulted: List[str] = [
+            str(s) for s in (state.get("sources_consulted") or [])
+        ]
+        fallback_triggered = bool(state.get("fallback_triggered", False))
+        tool_calls: List[Dict[str, Any]] = []
+        ticket_out = state.get("ticket_tool_output")
+        if isinstance(ticket_out, TicketToolOutput):
+            tool_calls.append(ticket_out.to_trace_summary())
+        inv_out = state.get("inventory_tool_output")
+        if isinstance(inv_out, InventoryToolOutput):
+            tool_calls.append(inv_out.to_trace_summary())
+
+        step_latencies: Dict[str, float] = {
+            str(k): float(v)
+            for k, v in (state.get("step_latencies") or {}).items()
+        }
+        elapsed_ms = round((time.perf_counter() - start_ns) * 1000.0, 3)
+        step_sum_ms = round(sum(step_latencies.values()), 3)
+        total_duration_ms = max(elapsed_ms, step_sum_ms, 0.01)
+
+        node_outputs: Dict[str, Dict[str, Any]] = {
+            str(k): dict(v)
+            for k, v in (state.get("node_outputs") or {}).items()
+            if isinstance(v, dict)
+        }
+        try:
+            self._compiled_graph.update_state(
+                {"configurable": {"thread_id": resolved_thread_id}},  # type: ignore[arg-type]
+                state,
+            )
+        except Exception:
+            pass
+
+        checkpoints = self.get_checkpoints(resolved_thread_id)
+        latest_cp_id = checkpoints[-1].checkpoint_id if checkpoints else None
+        trace = AgentTrace(
+            trace_id=trace_id,
+            query=sanitized_query,
+            node_sequence=node_sequence,
+            step_latencies=step_latencies,
+            total_duration_ms=total_duration_ms,
+            is_refusal=is_refusal,
+            final_answer=final_answer,
+            source_count=len(citations),
+            sources_consulted=sources_consulted,
+            fallback_triggered=fallback_triggered,
+            tool_calls=tool_calls,
+            node_outputs=node_outputs,
+            created_at=datetime.now(timezone.utc),
+            checkpoints=checkpoints,
+        )
+        self._trace_registry.record_trace(trace)
+
+        recalled_memories: List[str] = [
+            str(m) for m in (state.get("recalled_memories") or [])
+        ]
+        resolved_country_raw = state.get("resolved_country")
+        resolved_country: Optional[OperatingCountry] = (
+            resolved_country_raw
+            if resolved_country_raw in ("US", "ES")
+            else None
+        )
+
+        now_complete = datetime.now(timezone.utc)
+        completed_msg = ChatMessage(
+            turn_id=resolved_assistant_turn_id,
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            role="assistant",
+            content=final_answer,
+            status="completed",
+            parent_user_turn_id=resolved_user_turn_id,
+            interrupted_reason=None,
+            is_refusal=is_refusal,
+            fallback_triggered=fallback_triggered,
+            trace_id=trace_id,
+            node_sequence=node_sequence,
+            execution_time_ms=total_duration_ms,
+            sources=list(citations),
+            sources_consulted=sources_consulted,
+            tool_calls=tool_calls,
+            memory_proposal=memory_proposal,
+            recalled_memories=recalled_memories,
+            guardrail_interventions=guardrail_events,
+            resolved_country=resolved_country,
+            created_at=now_start,
+            updated_at=now_complete,
+        )
+
+        completed_event = active_broker.publish(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            event_name="generation_completed",
+            payload={
+                "turn_id": resolved_assistant_turn_id,
+                "query": sanitized_query,
+                "content": final_answer,
+                "status": "completed",
+                "is_refusal": is_refusal,
+                "fallback_triggered": fallback_triggered,
+                "trace_id": trace_id,
+                "node_sequence": node_sequence,
+                "execution_time_ms": total_duration_ms,
+                "sources": [
+                    {
+                        "source_document": s.source_document,
+                        "section": s.section,
+                        "similarity_score": round(float(s.similarity_score), 4),
+                    }
+                    for s in citations
+                ],
+                "sources_consulted": sources_consulted,
+                "tool_calls": [dict(tc) for tc in tool_calls],
+                "memory_proposal": (
+                    memory_proposal.to_dict()
+                    if memory_proposal is not None
+                    else None
+                ),
+                "recalled_memories": recalled_memories,
+                "guardrail_interventions": [
+                    ev.to_dict() for ev in guardrail_events
+                ],
+                "resolved_country": resolved_country,
+            },
+        )
+        active_repo.append_or_update_message(
+            thread_id=resolved_thread_id,
+            session_id=resolved_session_id,
+            owner_user_id=resolved_user_id,
+            owner_email=owner_email,
+            message=completed_msg,
+            pending_proposal=memory_proposal,
+            latest_checkpoint_id=latest_cp_id,
+            latest_sequence_id=completed_event.sequence_id,
+            agent_id=agent_id,
+            client_id=client_id,
+            session_status="active",
+            session_context=locked_session_context,
+        )
+        return completed_msg
 
     def query(self, request: AgentQueryRequest) -> AgentQueryResult:
         """Execute a customer inquiry through the compiled LangGraph workflow.

@@ -1,0 +1,392 @@
+openapi: 3.1.0
+info:
+  title: TrackFlow Support Agent Real-Time Bidirectional WebSocket Chat & Thread Rehydration API
+  version: 1.0.0
+  description: |
+    Part 2 Real-Time Communication contract for the TrackFlow Support Agent (`035-websocket-streaming-chat`).
+    Provides:
+    1. Bidirectional WebSocket endpoint (`/api/v1/agent/ws` and legacy `/agent/ws`) supporting real-time token streaming (`token_chunk`), true server-side generation abort (`interrupt_requested` -> `generation_interrupted`), mid-stream conversation redirection, JWT authentication, per-user thread ownership binding, and automatic state rehydration (`session_snapshot`).
+    2. Authenticated REST companion endpoint (`GET /api/v1/agent/threads/{thread_id}/history` and legacy `/agent/threads/{thread_id}/history`) for durable thread history inspection and reconnection reconciliation.
+    3. Backward-compatible synchronous fallback endpoint (`POST /api/v1/agent/query`).
+
+servers:
+  - url: http://localhost:8000
+    description: Local FastAPI development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Backoffice HS256 JWT token issued by `/api/v1/auth/login`.
+
+  schemas:
+    KnowledgeSourceCitationSchema:
+      type: object
+      required:
+        - source_document
+        - section
+        - similarity_score
+      properties:
+        source_document:
+          type: string
+          example: "returns-policy"
+        section:
+          type: string
+          example: "Return Window & Shipping Costs"
+        similarity_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.89
+
+    ToolCallTraceSchema:
+      type: object
+      required:
+        - tool_name
+        - status
+        - total_matched
+        - returned_count
+        - latency_ms
+      properties:
+        tool_name:
+          type: string
+          enum: ["ticket_tool", "inventory_tool"]
+        status:
+          type: string
+          enum: ["success", "not_found", "timeout", "error"]
+        total_matched:
+          type: integer
+          minimum: 0
+        returned_count:
+          type: integer
+          minimum: 0
+          maximum: 20
+        latency_ms:
+          type: number
+          minimum: 0.0
+        error_message:
+          type: ["string", "null"]
+
+    MemoryProposalSchema:
+      type: object
+      required:
+        - proposal_id
+        - category
+        - target_entity
+        - summary
+        - status
+        - confidence
+        - created_at
+      properties:
+        proposal_id:
+          type: string
+        category:
+          type: string
+          enum: ["carrier_rule", "incident_context", "b2b_preference"]
+        target_entity:
+          type: string
+        country_code:
+          type: ["string", "null"]
+        summary:
+          type: string
+        status:
+          type: string
+          enum: ["pending", "approved", "rejected", "edited", "discarded"]
+        confidence:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        created_at:
+          type: string
+          format: date-time
+
+    GuardrailInterventionSchema:
+      type: object
+      required:
+        - event_id
+        - timestamp
+        - session_id
+        - failure_type
+        - layer
+        - input_category
+        - reason_code
+        - disposition
+        - redacted_preview
+      properties:
+        event_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+        trace_id:
+          type: ["string", "null"]
+        failure_type:
+          type: string
+          enum: ["structural", "content", "security"]
+        layer:
+          type: string
+          enum: ["input_guard", "authorization_guard", "context_sanitizer", "output_guard"]
+        input_category:
+          type: string
+        reason_code:
+          type: string
+        disposition:
+          type: string
+          enum: ["blocked", "redirected", "deflected", "clarified"]
+        redacted_preview:
+          type: string
+
+    ChatMessageSchema:
+      type: object
+      required:
+        - turn_id
+        - thread_id
+        - session_id
+        - role
+        - content
+        - status
+        - created_at
+        - updated_at
+      properties:
+        turn_id:
+          type: string
+          description: Unique identifier for this conversational turn.
+        thread_id:
+          type: string
+          description: Bound conversation thread identifier.
+        session_id:
+          type: string
+          description: Bound session identifier.
+        role:
+          type: string
+          enum: ["user", "assistant"]
+        content:
+          type: string
+          description: Full message text or accumulated partial text if interrupted.
+        status:
+          type: string
+          enum: ["streaming", "completed", "interrupted", "error"]
+        parent_user_turn_id:
+          type: ["string", "null"]
+        interrupted_reason:
+          type: ["string", "null"]
+          enum: ["client_interrupt", "redirect_new_message", "client_disconnect", null]
+        is_refusal:
+          type: boolean
+          default: false
+        fallback_triggered:
+          type: boolean
+          default: false
+        trace_id:
+          type: ["string", "null"]
+        node_sequence:
+          type: array
+          items:
+            type: string
+        execution_time_ms:
+          type: number
+          default: 0.0
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeSourceCitationSchema"
+        sources_consulted:
+          type: array
+          items:
+            type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCallTraceSchema"
+        memory_proposal:
+          oneOf:
+            - $ref: "#/components/schemas/MemoryProposalSchema"
+            - type: "null"
+        recalled_memories:
+          type: array
+          items:
+            type: string
+        guardrail_interventions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuardrailInterventionSchema"
+        resolved_country:
+          type: ["string", "null"]
+          enum: ["US", "ES", null]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ChatSessionSchema:
+      type: object
+      required:
+        - session_id
+        - thread_id
+        - agent_id
+        - client_id
+        - user_id
+        - status
+      properties:
+        session_id:
+          type: string
+        thread_id:
+          type: string
+        agent_id:
+          type: string
+        client_id:
+          type: string
+        user_id:
+          type: string
+        status:
+          type: string
+          enum: ["active", "interrupted", "closed"]
+        created_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ChatThreadHistoryResponseSchema:
+      type: object
+      required:
+        - thread_id
+        - session_id
+        - user_id
+        - agent_id
+        - client_id
+        - status
+        - session
+        - messages
+        - latest_sequence_id
+        - checkpoint_count
+        - created_at
+        - updated_at
+      properties:
+        thread_id:
+          type: string
+        session_id:
+          type: string
+        user_id:
+          type: string
+        agent_id:
+          type: string
+        client_id:
+          type: string
+        status:
+          type: string
+          enum: ["active", "interrupted", "closed"]
+        session:
+          $ref: "#/components/schemas/ChatSessionSchema"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessageSchema"
+        pending_proposal:
+          oneOf:
+            - $ref: "#/components/schemas/MemoryProposalSchema"
+            - type: "null"
+        latest_checkpoint_id:
+          type: ["string", "null"]
+        latest_sequence_id:
+          type: integer
+          minimum: 0
+        checkpoint_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    SanitizedErrorResponse:
+      type: object
+      required:
+        - detail
+        - error_code
+      properties:
+        detail:
+          type: string
+        error_code:
+          type: string
+        trace_id:
+          type: ["string", "null"]
+
+paths:
+  /api/v1/agent/ws:
+    get:
+      tags:
+        - Support Agent WebSocket Chat
+      summary: Bidirectional WebSocket endpoint for real-time Support Agent token streaming & true generation abort
+      description: |
+        Upgrades HTTP connection to a full-duplex WebSocket session (`ws://` or `wss://`).
+        - **Authentication**: Requires a valid backoffice JWT via `?token=<jwt>`, `Authorization: Bearer <jwt>` header, or an immediate first-frame `{"event": "authenticate", "token": "<jwt>"}` message. Closes with code `4001` (`1008`) on invalid/missing JWT.
+        - **Thread Ownership Binding**: Binds to `thread_id` and `session_id` query parameters. Closes with code `4003` if `thread_id` is already bound to a different authenticated user.
+        - **Initial Rehydration**: Immediately emits `session_rehydrated` upon binding.
+      parameters:
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Backoffice Bearer JWT token (if not supplied via Authorization header or first frame).
+        - name: thread_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conversation thread identifier for checkpointing and history rehydration.
+        - name: session_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Session identifier correlated with AuthenticatedSessionContext.
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket connection established and bound to thread_id.
+        "403":
+          description: Connection rejected due to invalid/missing JWT (WS Close 4001) or thread ownership mismatch (WS Close 4003).
+
+  /api/v1/agent/threads/{thread_id}/history:
+    get:
+      tags:
+        - Support Agent WebSocket Chat
+      summary: Retrieve persisted conversation thread history, interrupted turns, and checkpoint state
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Conversation thread identifier to rehydrate.
+      responses:
+        "200":
+          description: Persisted thread message history and checkpoint metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatThreadHistoryResponseSchema"
+        "401":
+          description: Missing, invalid, or expired Bearer JWT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanitizedErrorResponse"
+        "403":
+          description: Thread belongs to a different authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanitizedErrorResponse"

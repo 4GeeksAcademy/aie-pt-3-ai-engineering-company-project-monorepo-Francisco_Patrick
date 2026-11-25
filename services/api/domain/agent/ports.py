@@ -8,15 +8,23 @@ tool adapters (`SupportTicketToolPort`, `InventoryStockToolPort`) and trace stor
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from domain.agent.entities import (
+    AgentChatEventName,
+    AgentChatStreamEvent,
     AgentCheckpoint,
     AgentQueryRequest,
     AgentQueryResult,
     AgentTrace,
     AuthenticatedSessionContext,
+    ChatInterruptedReason,
+    ChatMessage,
+    ChatSession,
+    ChatSessionStatus,
+    ChatThreadState,
     ConsolidatedCarrierProfile,
     GuardrailAuditEvent,
     GuardrailEvaluationResult,
@@ -414,7 +422,116 @@ class GuardrailObservabilityPort(ABC):
         """Reset counters and stored events (used for deterministic test isolation)."""
 
 
+class AgentChatThreadRepositoryPort(ABC):
+    """Port interface for durable persistence of Support Agent conversation threads and turns (FR-003, FR-012)."""
+
+    @abstractmethod
+    def get_thread(self, thread_id: str) -> Optional[ChatThreadState]:
+        """Retrieve a persisted ChatThreadState by its thread_id, or None if not found."""
+
+    @abstractmethod
+    def save_thread(self, thread_state: ChatThreadState) -> ChatThreadState:
+        """Insert or update a ChatThreadState record atomically."""
+
+    @abstractmethod
+    def append_or_update_message(
+        self,
+        thread_id: str,
+        session_id: str,
+        message: ChatMessage,
+        user_id: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        owner_email: Optional[str] = None,
+        pending_proposal: Optional[Any] = None,
+        latest_checkpoint_id: Optional[str] = None,
+        latest_sequence_id: Optional[int] = None,
+        agent_id: str = "first_line_cx",
+        client_id: str = "trackflow-backoffice",
+        session_status: Optional[ChatSessionStatus] = None,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> ChatThreadState:
+        """Append a new ChatMessage or update an existing turn (by turn_id) on a thread."""
+
+    @abstractmethod
+    def list_threads_by_owner(
+        self,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        owner_user_id: Optional[str] = None,
+    ) -> List[ChatThreadState]:
+        """List conversation threads owned by a specific authenticated user ordered newest first."""
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Clear all stored conversation thread records (for deterministic test isolation)."""
+
+
+class AgentChatEventBrokerPort(ABC):
+    """Decoupled pub/sub event bus and cooperative generation task coordinator for Support Agent WebSocket chat (FR-004, FR-008)."""
+
+    @abstractmethod
+    def subscribe(self, thread_id: str) -> asyncio.Queue[AgentChatStreamEvent]:
+        """Register a new subscriber queue for `thread_id` and return it."""
+
+    @abstractmethod
+    def unsubscribe(
+        self, thread_id: str, queue: asyncio.Queue[AgentChatStreamEvent]
+    ) -> int:
+        """Remove a subscriber queue from `thread_id` and return remaining subscriber count."""
+
+    @abstractmethod
+    def publish(
+        self,
+        thread_id: str,
+        session_id: str,
+        event_name: AgentChatEventName,
+        payload: Dict[str, Any],
+    ) -> AgentChatStreamEvent:
+        """Assign the next monotonic sequence_id for `thread_id`, build an AgentChatStreamEvent, and fan out to all thread subscribers."""
+
+    @abstractmethod
+    def register_generation_task(
+        self,
+        thread_id: str,
+        turn_id: str,
+        task: asyncio.Task[Any],
+        abort_event: asyncio.Event,
+    ) -> None:
+        """Register an active generation asyncio.Task and cooperative abort_event for `thread_id`."""
+
+    @abstractmethod
+    async def abort_active_generation(
+        self,
+        thread_id: str,
+        reason: ChatInterruptedReason = "client_interrupt",
+        turn_id: Optional[str] = None,
+    ) -> bool:
+        """Signal cooperative abort and cancel any active generation task on `thread_id`. Returns True if an active task was aborted."""
+
+    @abstractmethod
+    def is_generating(self, thread_id: str) -> bool:
+        """Return True if a generation task is currently running on `thread_id`."""
+
+    @abstractmethod
+    def get_subscriber_count(self, thread_id: str) -> int:
+        """Return the number of active WebSocket subscriber queues on `thread_id`."""
+
+    @abstractmethod
+    def get_latest_sequence_id(self, thread_id: str) -> int:
+        """Return the latest monotonic event sequence ID emitted for `thread_id`."""
+
+    @abstractmethod
+    def sync_sequence_id(self, thread_id: str, sequence_id: int) -> None:
+        """Ensure the broker's sequence counter for `thread_id` is at least `sequence_id`."""
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Cancel any active tasks and clear all thread channels and sequence counters (for test isolation)."""
+
+
 __all__ = [
+    "AgentChatEventBrokerPort",
+    "AgentChatThreadRepositoryPort",
     "AgentMemoryRepositoryPort",
     "AuthorizationGuardrailPort",
     "ContextSanitizerPort",

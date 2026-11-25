@@ -7,37 +7,74 @@ Adheres strictly to Monorepo Constitution Principles II & IV:
 - Defensive exception boundaries guaranteeing zero raw stack traces or internal file paths leak.
 """
 
+import asyncio
+from datetime import datetime, timezone
+import json
 import logging
-from fastapi import APIRouter, Depends, Query, status
+import re
+import uuid
+from fastapi import (
+    APIRouter,
+    Depends,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from application.services.user_service import UserService
 from domain.agent.entities import (
     AgentQueryRequest,
     AuthenticatedSessionContext,
+    ChatMessage,
+    ChatThreadState,
+    UNASSIGNED_CLIENT_USER_ID,
+    normalize_agent_id,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import (
     MemoryGuardrailViolationError,
     MemoryNotFoundError,
+    ThreadOwnershipMismatchError,
     TraceNotFoundError,
     WorkflowExecutionError,
 )
 from domain.agent.ports import (
+    AgentChatEventBrokerPort,
+    AgentChatThreadRepositoryPort,
     GuardrailObservabilityPort,
     SupportAgentServicePort,
 )
+from domain.exceptions import AuthenticationError
 from domain.knowledge.exceptions import KnowledgeBaseUnavailableException
+from domain.models import User
+from domain.ports import SecurityPort
 from presentation.dependencies import (
+    get_agent_chat_event_broker_dep,
+    get_agent_chat_thread_repository_dep,
     get_agent_memory_service_dep,
+    get_current_user,
     get_guardrail_observability_dep,
+    get_security_adapter_dep,
     get_support_agent_service,
+    get_user_service_dep,
 )
 from presentation.schemas.agent import (
     AgentHealthResponseSchema,
     AgentQueryRequestSchema,
     AgentQueryResponseSchema,
     AgentTraceResponseSchema,
+    ChatMessageSchema,
+    ChatSessionSchema,
+    ChatThreadHistoryResponseSchema,
+    ClientAuthenticateFrameSchema,
+    ClientInterruptRequestedFrameSchema,
+    ClientPingFrameSchema,
+    ClientRehydrateFrameSchema,
+    ClientUserMessageFrameSchema,
     GuardrailInterventionSchema,
     GuardrailResetResponseSchema,
     GuardrailSummaryResponseSchema,
@@ -47,6 +84,13 @@ from presentation.schemas.agent import (
     MemoryProposalResponseSchema,
     MemoryProposalSchema,
     SanitizedErrorResponse,
+    ServerErrorEventSchema,
+    ServerGenerationCompletedEventSchema,
+    ServerGenerationInterruptedEventSchema,
+    ServerGenerationStartedEventSchema,
+    ServerPongEventSchema,
+    ServerSessionSnapshotEventSchema,
+    ServerTokenChunkEventSchema,
     ToolCallTraceSchema,
 )
 
@@ -426,3 +470,727 @@ async def get_agent_health(
         nodes=[str(n) for n in health_data.get("nodes", [])],
         checkpointer=str(health_data.get("checkpointer", "MemorySaver")),
     )
+
+
+def _project_chat_message_schema(msg: ChatMessage) -> ChatMessageSchema:
+    """Project a ChatMessage domain entity into a validated ChatMessageSchema DTO."""
+    tool_calls = [
+        ToolCallTraceSchema(
+            tool_name=(
+                tc.get("tool_name")
+                if tc.get("tool_name") in ("ticket_tool", "inventory_tool")
+                else "ticket_tool"
+            ),
+            status=(
+                tc.get("status")
+                if tc.get("status") in ("success", "not_found", "timeout", "error")
+                else "success"
+            ),
+            total_matched=int(tc.get("total_matched", 0)),
+            returned_count=max(0, min(20, int(tc.get("returned_count", 0)))),
+            latency_ms=max(0.0, float(tc.get("latency_ms", 0.0))),
+            error_message=tc.get("error_message"),
+        )
+        for tc in msg.tool_calls
+        if isinstance(tc, dict)
+    ]
+    proposal = msg.memory_proposal
+    proposal_schema = (
+        MemoryProposalSchema(
+            proposal_id=proposal.proposal_id,
+            category=proposal.category,
+            target_entity=proposal.target_entity,
+            country_code=proposal.country_code,
+            summary=proposal.summary,
+            status=proposal.status,
+            confidence=proposal.confidence,
+            created_at=proposal.created_at.isoformat(),
+        )
+        if proposal is not None
+        else None
+    )
+    interventions = [
+        GuardrailInterventionSchema(
+            event_id=ev.event_id,
+            timestamp=ev.timestamp.isoformat(),
+            session_id=ev.session_id,
+            trace_id=ev.trace_id,
+            failure_type=ev.failure_type,
+            layer=ev.layer,
+            input_category=ev.input_category,
+            reason_code=ev.reason_code,
+            disposition=ev.disposition,
+            redacted_preview=ev.redacted_preview,
+        )
+        for ev in msg.guardrail_interventions
+    ]
+    return ChatMessageSchema(
+        turn_id=msg.turn_id,
+        thread_id=msg.thread_id,
+        session_id=msg.session_id,
+        role=msg.role,
+        content=msg.content,
+        status=msg.status,
+        parent_user_turn_id=msg.parent_user_turn_id,
+        interrupted_reason=msg.interrupted_reason,
+        is_refusal=bool(msg.is_refusal),
+        fallback_triggered=bool(msg.fallback_triggered),
+        trace_id=msg.trace_id,
+        node_sequence=list(msg.node_sequence),
+        execution_time_ms=max(0.0, float(msg.execution_time_ms)),
+        sources=[
+            KnowledgeSourceCitationSchema(
+                source_document=s.source_document,
+                section=s.section,
+                similarity_score=s.similarity_score,
+            )
+            for s in msg.sources
+        ],
+        sources_consulted=list(msg.sources_consulted),
+        tool_calls=tool_calls,
+        memory_proposal=proposal_schema,
+        recalled_memories=list(msg.recalled_memories),
+        guardrail_interventions=interventions,
+        resolved_country=msg.resolved_country,
+        created_at=msg.created_at.isoformat(),
+        updated_at=msg.updated_at.isoformat(),
+    )
+
+
+def _validate_and_serialize_outbound_frame(frame: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate outbound server-to-client WebSocket frame against its strict Pydantic schema (T035)."""
+    event_name = frame.get("event")
+    if event_name in ("session_snapshot", "session_rehydrated"):
+        normalized = dict(frame)
+        normalized["event"] = "session_snapshot"
+        return ServerSessionSnapshotEventSchema.model_validate(normalized).model_dump()
+    if event_name == "generation_started":
+        return ServerGenerationStartedEventSchema.model_validate(frame).model_dump()
+    if event_name == "token_chunk":
+        return ServerTokenChunkEventSchema.model_validate(frame).model_dump()
+    if event_name == "generation_interrupted":
+        return ServerGenerationInterruptedEventSchema.model_validate(frame).model_dump()
+    if event_name == "generation_completed":
+        return ServerGenerationCompletedEventSchema.model_validate(frame).model_dump()
+    if event_name == "error":
+        return ServerErrorEventSchema.model_validate(frame).model_dump()
+    if event_name == "pong":
+        return ServerPongEventSchema.model_validate(frame).model_dump()
+    return dict(frame)
+
+
+@router.get(
+    "/threads/{thread_id}/history",
+    response_model=ChatThreadHistoryResponseSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve persisted conversation thread history, interrupted turns, and checkpoint state",
+    responses={
+        401: {"model": SanitizedErrorResponse, "description": "Missing, invalid, or expired Bearer JWT"},
+        403: {"model": SanitizedErrorResponse, "description": "Thread belongs to a different authenticated user"},
+        500: {"model": SanitizedErrorResponse, "description": "Sanitized internal error"},
+    },
+)
+async def get_thread_history_endpoint(
+    thread_id: str,
+    current_user: User = Depends(get_current_user),
+    agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
+    thread_repository: AgentChatThreadRepositoryPort = Depends(
+        get_agent_chat_thread_repository_dep
+    ),
+    broker: AgentChatEventBrokerPort = Depends(get_agent_chat_event_broker_dep),
+) -> ChatThreadHistoryResponseSchema | JSONResponse:
+    """Return persisted conversation thread history and checkpoint count for the authenticated operator."""
+    user_id = str(current_user.id)
+    try:
+        if hasattr(agent_service, "get_thread_history"):
+            thread_state, checkpoint_count = await run_in_threadpool(
+                getattr(agent_service, "get_thread_history"),
+                thread_id,
+                user_id,
+            )
+        else:
+            existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
+            if existing is not None:
+                if existing.owner_user_id and existing.owner_user_id != user_id:
+                    raise ThreadOwnershipMismatchError(
+                        thread_id=thread_id,
+                        requester_user_id=user_id,
+                    )
+                thread_state = existing
+            else:
+                now = datetime.now(timezone.utc)
+                thread_state = ChatThreadState(
+                    thread_id=thread_id,
+                    session_id=thread_id,
+                    user_id=resolve_client_user_id(None),
+                    owner_user_id=user_id,
+                    owner_email=current_user.email,
+                    messages=[],
+                    latest_sequence_id=broker.get_latest_sequence_id(thread_id),
+                    created_at=now,
+                    updated_at=now,
+                )
+            checkpoints = await run_in_threadpool(
+                agent_service.get_checkpoints, thread_id
+            )
+            checkpoint_count = len(checkpoints)
+    except ThreadOwnershipMismatchError:
+        forbidden = SanitizedErrorResponse(
+            detail=f"Conversation thread '{thread_id}' is bound to a different operator account.",
+            error_code="THREAD_FORBIDDEN",
+        )
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content=forbidden.model_dump(),
+        )
+    except Exception:
+        logger.error(
+            "Unhandled error while retrieving thread history for thread_id=%s",
+            thread_id,
+        )
+        err = SanitizedErrorResponse(
+            detail="An internal error occurred while retrieving conversation thread history.",
+            error_code="INTERNAL_WORKFLOW_ERROR",
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=err.model_dump(),
+        )
+
+    pending = thread_state.pending_proposal
+    pending_schema = (
+        MemoryProposalSchema(
+            proposal_id=pending.proposal_id,
+            category=pending.category,
+            target_entity=pending.target_entity,
+            country_code=pending.country_code,
+            summary=pending.summary,
+            status=pending.status,
+            confidence=pending.confidence,
+            created_at=pending.created_at.isoformat(),
+        )
+        if pending is not None
+        else None
+    )
+
+    session_obj = thread_state.session
+    session_schema = ChatSessionSchema(
+        session_id=session_obj.session_id,
+        thread_id=session_obj.thread_id,
+        agent_id=session_obj.agent_id,
+        client_id=session_obj.client_id,
+        user_id=session_obj.user_id,
+        status=session_obj.status,
+        created_at=session_obj.created_at.isoformat(),
+        updated_at=session_obj.updated_at.isoformat(),
+    )
+
+    return ChatThreadHistoryResponseSchema(
+        thread_id=thread_state.thread_id,
+        session_id=thread_state.session_id,
+        user_id=session_obj.user_id,
+        agent_id=session_obj.agent_id,
+        client_id=session_obj.client_id,
+        status=session_obj.status,
+        session=session_schema,
+        messages=[_project_chat_message_schema(m) for m in thread_state.messages],
+        pending_proposal=pending_schema,
+        latest_checkpoint_id=thread_state.latest_checkpoint_id,
+        latest_sequence_id=thread_state.latest_sequence_id,
+        checkpoint_count=checkpoint_count,
+        created_at=thread_state.created_at.isoformat(),
+        updated_at=thread_state.updated_at.isoformat(),
+    )
+
+
+def _sanitize_websocket_query_for_logging(raw_query_or_url: str) -> str:
+    """Redact any `?token=<jwt>` or `&token=<jwt>` parameter before diagnostic logging.
+
+    Note: Browser `new WebSocket(url)` cannot set custom `Authorization` headers, so FR-002
+    supports both `?token=<jwt>` handshake authentication and first-frame `authenticate` messages.
+    Reverse proxies and ASGI access loggers should redact `token` query parameters in production.
+    """
+    if not raw_query_or_url:
+        return ""
+    return re.sub(
+        r"(?i)(^|[?&])token=[^&\s]+",
+        r"\1token=[REDACTED]",
+        raw_query_or_url,
+    )
+
+
+def _extract_handshake_bearer_token(websocket: WebSocket) -> Optional[str]:
+    """Extract JWT token from `?token=` query param or `Authorization: Bearer <token>` header."""
+    query_token = websocket.query_params.get("token")
+    if query_token and query_token.strip():
+        cleaned_q = query_token.strip()
+        if cleaned_q.lower().startswith("bearer "):
+            cleaned_q = cleaned_q[7:].strip()
+        return cleaned_q
+
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.strip():
+        raw_hdr = auth_header.strip()
+        if raw_hdr.lower().startswith("bearer "):
+            return raw_hdr[7:].strip()
+        return raw_hdr
+    return None
+
+
+def _verify_jwt_token_to_user(
+    raw_token: str,
+    security_adapter: SecurityPort,
+    user_service: UserService,
+) -> Optional[User]:
+    """Decode JWT token and verify user exists and is active. Returns None if invalid."""
+    if not raw_token or not raw_token.strip():
+        return None
+    try:
+        user_id = security_adapter.decode_access_token(raw_token.strip())
+    except (AuthenticationError, Exception):
+        return None
+
+    user = user_service.get_user_by_id(user_id)
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+async def _authenticate_websocket_connection(
+    websocket: WebSocket,
+    security_adapter: SecurityPort,
+    user_service: UserService,
+    first_frame_timeout_seconds: float = 5.0,
+) -> Tuple[Optional[User], Optional[str], Optional[str], bool]:
+    """Authenticate a WebSocket connection via handshake token or first-frame `authenticate` message.
+
+    Returns:
+        Tuple of `(authenticated_user, override_thread_id, override_session_id, was_accepted)`.
+    """
+    handshake_token = _extract_handshake_bearer_token(websocket)
+    if handshake_token is not None:
+        user = await run_in_threadpool(
+            _verify_jwt_token_to_user,
+            handshake_token,
+            security_adapter,
+            user_service,
+        )
+        if user is None:
+            await websocket.accept()
+            await websocket.close(code=4001, reason="UNAUTHORIZED")
+            return (None, None, None, True)
+        await websocket.accept()
+        return (user, None, None, True)
+
+    # No handshake token: accept connection and require an immediate first-frame {"event": "authenticate", "token": "..."}
+    await websocket.accept()
+    try:
+        raw_text = await asyncio.wait_for(
+            websocket.receive_text(), timeout=first_frame_timeout_seconds
+        )
+        data = json.loads(raw_text)
+        if not isinstance(data, dict) or data.get("event") != "authenticate":
+            await websocket.close(code=4001, reason="UNAUTHORIZED")
+            return (None, None, None, True)
+        auth_frame = ClientAuthenticateFrameSchema.model_validate(data)
+    except WebSocketDisconnect:
+        return (None, None, None, True)
+    except Exception:
+        await websocket.close(code=4001, reason="UNAUTHORIZED")
+        return (None, None, None, True)
+
+    user = await run_in_threadpool(
+        _verify_jwt_token_to_user,
+        auth_frame.token,
+        security_adapter,
+        user_service,
+    )
+    if user is None:
+        await websocket.close(code=4001, reason="UNAUTHORIZED")
+        return (None, None, None, True)
+
+    return (user, auth_frame.thread_id, auth_frame.session_id, True)
+
+
+@router.websocket("/ws")
+async def support_agent_websocket_endpoint(
+    websocket: WebSocket,
+    agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
+    thread_repository: AgentChatThreadRepositoryPort = Depends(
+        get_agent_chat_thread_repository_dep
+    ),
+    broker: AgentChatEventBrokerPort = Depends(get_agent_chat_event_broker_dep),
+    security_adapter: SecurityPort = Depends(get_security_adapter_dep),
+    user_service: UserService = Depends(get_user_service_dep),
+) -> None:
+    """Bidirectional WebSocket endpoint for real-time Support Agent token streaming & true generation abort (FR-001..FR-013)."""
+    user, auth_thread_id, auth_session_id, _ = await _authenticate_websocket_connection(
+        websocket=websocket,
+        security_adapter=security_adapter,
+        user_service=user_service,
+    )
+    if user is None:
+        return
+
+    user_id = str(user.id)
+    raw_thread_id = (
+        auth_thread_id
+        or websocket.query_params.get("thread_id")
+        or auth_session_id
+        or websocket.query_params.get("session_id")
+        or ""
+    ).strip()
+    if not raw_thread_id:
+        await websocket.close(code=1008, reason="MISSING_THREAD_OR_SESSION_ID")
+        return
+    thread_id = raw_thread_id
+    raw_session_id = (
+        auth_session_id
+        or websocket.query_params.get("session_id")
+        or thread_id
+    ).strip()
+    session_id = raw_session_id or thread_id
+    agent_id = normalize_agent_id(websocket.query_params.get("agent_id"))
+    client_id = (
+        websocket.query_params.get("client_id") or "trackflow-backoffice"
+    ).strip() or "trackflow-backoffice"
+
+    # Verify per-operator thread ownership and load rehydration snapshot (FR-003, FR-012).
+    # Client identity (`user_id`) is resolved strictly from domain session_context, ignoring any query param.
+    try:
+        if hasattr(agent_service, "rehydrate_thread"):
+            rehydrated_payload = await run_in_threadpool(
+                getattr(agent_service, "rehydrate_thread"),
+                thread_id,
+                session_id,
+                user_id,
+                user.email,
+                user_id,
+                agent_id,
+                client_id,
+            )
+        else:
+            existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
+            if (
+                existing is not None
+                and existing.owner_user_id
+                and existing.owner_user_id != user_id
+            ):
+                raise ThreadOwnershipMismatchError(
+                    thread_id=thread_id,
+                    requester_user_id=user_id,
+                )
+            now_snap = datetime.now(timezone.utc).isoformat()
+            resolved_client_uid = (
+                existing.session.user_id
+                if existing is not None
+                else UNASSIGNED_CLIENT_USER_ID
+            )
+            rehydrated_payload = {
+                "user_id": resolved_client_uid,
+                "agent_id": agent_id,
+                "client_id": client_id,
+                "status": "active",
+                "session": {
+                    "session_id": session_id,
+                    "thread_id": thread_id,
+                    "agent_id": agent_id,
+                    "client_id": client_id,
+                    "user_id": resolved_client_uid,
+                    "status": "active",
+                    "created_at": now_snap,
+                    "updated_at": now_snap,
+                },
+                "messages": (
+                    [m.to_dict() for m in existing.messages]
+                    if existing is not None
+                    else []
+                ),
+                "pending_proposal": None,
+                "latest_checkpoint_id": (
+                    existing.latest_checkpoint_id if existing is not None else None
+                ),
+                "checkpoint_count": 0,
+            }
+    except ThreadOwnershipMismatchError:
+        await websocket.close(code=4003, reason="THREAD_FORBIDDEN")
+        return
+    except Exception:
+        logger.error("Failed to initialize thread state for thread_id=%s", thread_id)
+        await websocket.close(code=1011, reason="INTERNAL_ERROR")
+        return
+
+    subscriber_queue = broker.subscribe(thread_id)
+    send_lock = asyncio.Lock()
+
+    async def _send_validated_frame(frame: Dict[str, Any]) -> None:
+        validated = _validate_and_serialize_outbound_frame(frame)
+        async with send_lock:
+            await websocket.send_json(validated)
+
+    async def _send_rehydration_snapshot() -> None:
+        if hasattr(agent_service, "rehydrate_thread"):
+            snapshot = await run_in_threadpool(
+                getattr(agent_service, "rehydrate_thread"),
+                thread_id,
+                session_id,
+                user_id,
+                user.email,
+                user_id,
+                agent_id,
+                client_id,
+            )
+        else:
+            snapshot = rehydrated_payload
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        seq_id = broker.get_latest_sequence_id(thread_id)
+        resolved_uid = str(snapshot.get("user_id") or UNASSIGNED_CLIENT_USER_ID)
+        resolved_agent_id = str(snapshot.get("agent_id") or agent_id)
+        resolved_client_id = str(snapshot.get("client_id") or client_id)
+        resolved_status = str(snapshot.get("status") or "active")
+        session_dict = snapshot.get("session") or {
+            "session_id": session_id,
+            "thread_id": thread_id,
+            "agent_id": resolved_agent_id,
+            "client_id": resolved_client_id,
+            "user_id": resolved_uid,
+            "status": resolved_status,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        frame = {
+            "event": "session_snapshot",
+            "thread_id": thread_id,
+            "session_id": session_id,
+            "user_id": resolved_uid,
+            "agent_id": resolved_agent_id,
+            "client_id": resolved_client_id,
+            "status": resolved_status,
+            "session": session_dict,
+            "messages": snapshot["messages"],
+            "pending_proposal": snapshot["pending_proposal"],
+            "latest_checkpoint_id": snapshot["latest_checkpoint_id"],
+            "checkpoint_count": snapshot["checkpoint_count"],
+            "sequence_id": seq_id,
+            "timestamp": now_iso,
+        }
+        await _send_validated_frame(frame)
+
+    async def _broker_subscriber_writer_loop() -> None:
+        """Forward pub/sub events from subscriber_queue to the connected WebSocket client."""
+        while True:
+            event = await subscriber_queue.get()
+            frame_dict = event.to_frame_dict()
+            await _send_validated_frame(frame_dict)
+
+    async def _launch_generation_turn(
+        user_msg_cmd: ClientUserMessageFrameSchema,
+    ) -> None:
+        """Start an asynchronous streaming generation task on the broker for `thread_id`."""
+        # If a generation is already running on this thread, abort it first as a mid-stream redirect (FR-010)
+        if broker.is_generating(thread_id):
+            await broker.abort_active_generation(
+                thread_id=thread_id,
+                reason="redirect_new_message",
+            )
+
+        session_ctx: Optional[AuthenticatedSessionContext] = None
+        if user_msg_cmd.session_context is not None:
+            session_ctx = AuthenticatedSessionContext(
+                session_id=user_msg_cmd.session_context.session_id,
+                customer_id=user_msg_cmd.session_context.customer_id,
+                customer_segment=user_msg_cmd.session_context.customer_segment,
+                primary_operating_country=(
+                    user_msg_cmd.session_context.primary_operating_country
+                ),
+                authorized_order_ids=tuple(
+                    user_msg_cmd.session_context.authorized_order_ids
+                ),
+                order_country_map=dict(user_msg_cmd.session_context.order_country_map),
+            )
+
+        domain_req = AgentQueryRequest(
+            query=user_msg_cmd.query,
+            top_k=user_msg_cmd.top_k,
+            min_score=user_msg_cmd.min_score,
+            thread_id=thread_id,
+            language=user_msg_cmd.language,
+            session_context=session_ctx,
+        )
+
+        abort_event = asyncio.Event()
+        assistant_turn_id = f"turn_{uuid.uuid4().hex[:12]}"
+        user_turn_id = (
+            user_msg_cmd.turn_id.strip()
+            if user_msg_cmd.turn_id and user_msg_cmd.turn_id.strip()
+            else f"usr_{uuid.uuid4().hex[:12]}"
+        )
+
+        async def _producer_runner() -> None:
+            try:
+                if hasattr(agent_service, "stream_query"):
+                    await getattr(agent_service, "stream_query")(
+                        request=domain_req,
+                        user_id=user_id,
+                        owner_email=user.email,
+                        session_id=session_id,
+                        agent_id=agent_id,
+                        client_id=client_id,
+                        user_turn_id=user_turn_id,
+                        assistant_turn_id=assistant_turn_id,
+                        abort_event=abort_event,
+                        broker=broker,
+                        thread_repository=thread_repository,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except KnowledgeBaseUnavailableException:
+                broker.publish(
+                    thread_id=thread_id,
+                    session_id=session_id,
+                    event_name="error",
+                    payload={
+                        "turn_id": assistant_turn_id,
+                        "error_code": "KNOWLEDGE_BASE_UNAVAILABLE",
+                        "detail": "The TrackFlow knowledge base service is temporarily unavailable.",
+                    },
+                )
+            except Exception:
+                logger.error(
+                    "Unhandled exception in streaming generation task for thread_id=%s",
+                    thread_id,
+                )
+                broker.publish(
+                    thread_id=thread_id,
+                    session_id=session_id,
+                    event_name="error",
+                    payload={
+                        "turn_id": assistant_turn_id,
+                        "error_code": "INTERNAL_WORKFLOW_ERROR",
+                        "detail": "An internal error occurred while processing the agent workflow.",
+                    },
+                )
+
+        task = asyncio.create_task(_producer_runner())
+        broker.register_generation_task(
+            thread_id=thread_id,
+            turn_id=assistant_turn_id,
+            task=task,
+            abort_event=abort_event,
+        )
+
+    async def _client_reader_loop() -> None:
+        """Read and dispatch incoming client WebSocket commands concurrently while streaming."""
+        while True:
+            raw_text = await websocket.receive_text()
+            try:
+                parsed = json.loads(raw_text)
+                if not isinstance(parsed, dict):
+                    raise ValueError("WebSocket frame must be a JSON object.")
+            except Exception:
+                err_ev = broker.publish(
+                    thread_id=thread_id,
+                    session_id=session_id,
+                    event_name="error",
+                    payload={
+                        "turn_id": None,
+                        "error_code": "INVALID_JSON_FRAME",
+                        "detail": "Incoming WebSocket frame must be a valid JSON object.",
+                    },
+                )
+                _ = err_ev
+                continue
+
+            event_type = parsed.get("event")
+            if event_type == "ping":
+                try:
+                    _ = ClientPingFrameSchema.model_validate(parsed)
+                except Exception:
+                    pass
+                now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                pong_frame = {
+                    "event": "pong",
+                    "thread_id": thread_id,
+                    "session_id": session_id,
+                    "sequence_id": broker.get_latest_sequence_id(thread_id),
+                    "timestamp": now_iso,
+                }
+                await _send_validated_frame(pong_frame)
+
+            elif event_type in ("interrupt_requested", "interrupt"):
+                try:
+                    interrupt_cmd = ClientInterruptRequestedFrameSchema.model_validate(
+                        parsed
+                    )
+                except Exception:
+                    interrupt_cmd = ClientInterruptRequestedFrameSchema()
+                # Idempotent no-op if no active generation is running
+                await broker.abort_active_generation(
+                    thread_id=thread_id,
+                    reason="client_interrupt",
+                    turn_id=interrupt_cmd.turn_id,
+                )
+
+            elif event_type == "rehydrate":
+                try:
+                    _ = ClientRehydrateFrameSchema.model_validate(parsed)
+                except Exception:
+                    pass
+                await _send_rehydration_snapshot()
+
+            elif event_type == "user_message":
+                try:
+                    user_cmd = ClientUserMessageFrameSchema.model_validate(parsed)
+                except Exception:
+                    broker.publish(
+                        thread_id=thread_id,
+                        session_id=session_id,
+                        event_name="error",
+                        payload={
+                            "turn_id": parsed.get("turn_id"),
+                            "error_code": "INVALID_USER_MESSAGE",
+                            "detail": "Query must be a non-empty string between 1 and 1000 characters.",
+                        },
+                    )
+                    continue
+                await _launch_generation_turn(user_cmd)
+
+            elif event_type == "authenticate":
+                # Already authenticated; re-emit rehydration snapshot idempotently
+                await _send_rehydration_snapshot()
+
+            else:
+                broker.publish(
+                    thread_id=thread_id,
+                    session_id=session_id,
+                    event_name="error",
+                    payload={
+                        "turn_id": None,
+                        "error_code": "UNSUPPORTED_EVENT",
+                        "detail": f"Unsupported client WebSocket event type: '{event_type}'.",
+                    },
+                )
+
+    writer_task: Optional[asyncio.Task[None]] = None
+    try:
+        await _send_rehydration_snapshot()
+        writer_task = asyncio.create_task(_broker_subscriber_writer_loop())
+        await _client_reader_loop()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.debug("WebSocket session terminated for thread_id=%s", thread_id)
+    finally:
+        if writer_task is not None and not writer_task.done():
+            writer_task.cancel()
+            try:
+                await writer_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        remaining_subscribers = broker.unsubscribe(thread_id, subscriber_queue)
+        if remaining_subscribers == 0 and broker.is_generating(thread_id):
+            await broker.abort_active_generation(
+                thread_id=thread_id,
+                reason="client_disconnect",
+            )
+
