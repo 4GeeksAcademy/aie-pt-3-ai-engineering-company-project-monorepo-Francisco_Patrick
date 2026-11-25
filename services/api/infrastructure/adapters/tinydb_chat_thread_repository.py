@@ -16,10 +16,13 @@ from tinydb import Query, TinyDB
 from tinydb.storages import MemoryStorage
 
 from domain.agent.entities import (
+    AuthenticatedSessionContext,
     ChatMessage,
     ChatSessionStatus,
     ChatThreadState,
     MemoryProposal,
+    merge_thread_session_context,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import ThreadOwnershipMismatchError
 from domain.agent.ports import AgentChatThreadRepositoryPort
@@ -78,7 +81,8 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
     def save_thread(self, thread_state: ChatThreadState) -> ChatThreadState:
         """Insert or update a ChatThreadState record atomically.
 
-        Enforces immutable thread ownership (`user_id`) once bound.
+        Enforces immutable thread ownership (`owner_user_id`) once bound, and locks
+        the client `user_id` to the first domain `session_context.customer_id` seen.
         """
         with self._lock:
             now = datetime.now(timezone.utc)
@@ -88,27 +92,30 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
             if existing_docs:
                 existing = ChatThreadState.from_dict(dict(existing_docs[0]))
                 if (
-                    existing.user_id
-                    and thread_state.user_id
-                    and existing.user_id != thread_state.user_id
+                    existing.owner_user_id
+                    and thread_state.owner_user_id
+                    and existing.owner_user_id != thread_state.owner_user_id
                 ):
                     raise ThreadOwnershipMismatchError(
                         thread_id=thread_state.thread_id,
-                        requester_user_id=thread_state.user_id,
+                        requester_user_id=thread_state.owner_user_id,
                     )
+                merged_context = merge_thread_session_context(
+                    existing.session_context,
+                    thread_state.session_context,
+                )
                 updated = ChatThreadState(
                     thread_id=thread_state.thread_id,
                     session_id=thread_state.session_id or existing.session_id,
-                    user_id=existing.user_id or thread_state.user_id,
+                    user_id=resolve_client_user_id(merged_context),
+                    owner_user_id=existing.owner_user_id or thread_state.owner_user_id,
                     owner_email=thread_state.owner_email or existing.owner_email,
                     agent_id=thread_state.agent_id or existing.agent_id,
                     client_id=thread_state.client_id or existing.client_id,
                     status=thread_state.status or existing.status,
                     messages=list(thread_state.messages),
                     pending_proposal=thread_state.pending_proposal,
-                    session_context=(
-                        thread_state.session_context or existing.session_context
-                    ),
+                    session_context=merged_context,
                     latest_checkpoint_id=(
                         thread_state.latest_checkpoint_id
                         if thread_state.latest_checkpoint_id is not None
@@ -130,7 +137,8 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
             created = ChatThreadState(
                 thread_id=thread_state.thread_id,
                 session_id=thread_state.session_id or thread_state.thread_id,
-                user_id=thread_state.user_id,
+                user_id=resolve_client_user_id(thread_state.session_context),
+                owner_user_id=thread_state.owner_user_id,
                 owner_email=thread_state.owner_email,
                 agent_id=thread_state.agent_id,
                 client_id=thread_state.client_id,
@@ -157,23 +165,20 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
         pending_proposal: Optional[MemoryProposal] = None,
         latest_checkpoint_id: Optional[str] = None,
         latest_sequence_id: Optional[int] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
         session_status: Optional[ChatSessionStatus] = None,
+        session_context: Optional[AuthenticatedSessionContext] = None,
     ) -> ChatThreadState:
         """Append a new ChatMessage or update an existing turn (by turn_id) on a thread."""
-        resolved_user_id = str(user_id or owner_user_id or "").strip()
+        resolved_owner_id = str(owner_user_id or user_id or "").strip()
         derived_status: ChatSessionStatus = (
             session_status
             if session_status is not None
             else (
-                "streaming"
-                if message.role == "assistant" and message.status == "streaming"
-                else (
-                    "interrupted"
-                    if message.role == "assistant" and message.status == "interrupted"
-                    else "active"
-                )
+                "interrupted"
+                if message.role == "assistant" and message.status == "interrupted"
+                else "active"
             )
         )
         with self._lock:
@@ -181,13 +186,13 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
             existing = self.get_thread(thread_id)
             if existing is not None:
                 if (
-                    existing.user_id
-                    and resolved_user_id
-                    and existing.user_id != resolved_user_id
+                    existing.owner_user_id
+                    and resolved_owner_id
+                    and existing.owner_user_id != resolved_owner_id
                 ):
                     raise ThreadOwnershipMismatchError(
                         thread_id=thread_id,
-                        requester_user_id=resolved_user_id,
+                        requester_user_id=resolved_owner_id,
                     )
                 messages: List[ChatMessage] = []
                 replaced = False
@@ -214,17 +219,22 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
                     if latest_sequence_id is not None
                     else existing.latest_sequence_id
                 )
+                merged_context = merge_thread_session_context(
+                    existing.session_context,
+                    session_context,
+                )
                 updated_state = ChatThreadState(
                     thread_id=thread_id,
                     session_id=session_id or existing.session_id or thread_id,
-                    user_id=existing.user_id,
+                    user_id=resolve_client_user_id(merged_context),
+                    owner_user_id=existing.owner_user_id or resolved_owner_id or None,
                     owner_email=owner_email or existing.owner_email,
                     agent_id=agent_id or existing.agent_id,
                     client_id=client_id or existing.client_id,
                     status=derived_status,
                     messages=messages,
                     pending_proposal=resolved_proposal,
-                    session_context=existing.session_context,
+                    session_context=merged_context,
                     latest_checkpoint_id=(
                         latest_checkpoint_id
                         if latest_checkpoint_id is not None
@@ -239,14 +249,15 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
             new_state = ChatThreadState(
                 thread_id=thread_id,
                 session_id=session_id or thread_id,
-                user_id=resolved_user_id,
+                user_id=resolve_client_user_id(session_context),
+                owner_user_id=resolved_owner_id or None,
                 owner_email=owner_email,
                 agent_id=agent_id,
                 client_id=client_id,
                 status=derived_status,
                 messages=[message],
                 pending_proposal=pending_proposal or message.memory_proposal,
-                session_context=None,
+                session_context=session_context,
                 latest_checkpoint_id=latest_checkpoint_id,
                 latest_sequence_id=int(latest_sequence_id or 0),
                 created_at=now,
@@ -261,15 +272,16 @@ class TinyDBAgentChatThreadRepository(AgentChatThreadRepositoryPort):
         owner_user_id: Optional[str] = None,
     ) -> List[ChatThreadState]:
         """List conversation threads owned by a specific authenticated user ordered newest first."""
-        cleaned_owner = str(user_id or owner_user_id or "").strip()
+        cleaned_owner = str(owner_user_id or user_id or "").strip()
         if not cleaned_owner:
             return []
         with self._lock:
-            docs = self._table.search(
-                (self._query.user_id == cleaned_owner)
-                | (self._query.owner_user_id == cleaned_owner)
-            )
-            threads = [ChatThreadState.from_dict(dict(d)) for d in docs]
+            docs = self._table.all()
+            threads = [
+                t
+                for t in (ChatThreadState.from_dict(dict(d)) for d in docs)
+                if t.owner_user_id == cleaned_owner
+            ]
             threads.sort(key=lambda t: t.updated_at, reverse=True)
             return threads[: max(1, int(limit))]
 

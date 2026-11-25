@@ -445,9 +445,10 @@ class AgentChatThreadRepositoryPort(ABC):
         pending_proposal: Optional[Any] = None,
         latest_checkpoint_id: Optional[str] = None,
         latest_sequence_id: Optional[int] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
         session_status: Optional[ChatSessionStatus] = None,
+        session_context: Optional[AuthenticatedSessionContext] = None,
     ) -> ChatThreadState:
         """Append a new ChatMessage or update an existing turn (by turn_id) on a thread."""
 

@@ -105,10 +105,10 @@ def test_us1_live_token_chunk_streaming_and_generation_completed_metadata(
         assert rehydrated["event"] == "session_snapshot"
         assert rehydrated["thread_id"] == thread_id
         assert rehydrated["session_id"] == session_id
-        assert rehydrated["user_id"] == str(test_users["active"].id)
-        assert rehydrated["session"]["agent_id"] == "trackflow-support-agent"
+        assert rehydrated["user_id"] == "unassigned"
+        assert rehydrated["session"]["agent_id"] == "first_line_cx"
         assert rehydrated["session"]["client_id"] == "trackflow-backoffice"
-        assert rehydrated["session"]["user_id"] == str(test_users["active"].id)
+        assert rehydrated["session"]["user_id"] == "unassigned"
         assert rehydrated["session"]["status"] == "active"
         assert rehydrated["messages"] == []
 
@@ -613,7 +613,7 @@ def test_us3_first_frame_authenticate_and_cross_operator_thread_ownership_isolat
         rehydrated_a = ws_a.receive_json()
         assert rehydrated_a["event"] == "session_snapshot"
         assert rehydrated_a["thread_id"] == shared_thread_id
-        assert rehydrated_a["user_id"] == str(test_users["active"].id)
+        assert rehydrated_a["user_id"] == "unassigned"
 
     # 2. User B attempts to connect to User A's thread_id -> rejected with WebSocket close code 4003
     with pytest.raises(WebSocketDisconnect) as exc_forbidden:
@@ -769,13 +769,120 @@ def test_us4_reconnect_and_server_restart_rehydrate_completed_and_interrupted_tu
         assert hist_resp.status_code == 200
         hist_body = hist_resp.json()
         assert hist_body["thread_id"] == thread_id
-        assert hist_body["user_id"] == owner_id
-        assert hist_body["session"]["user_id"] == owner_id
-        assert hist_body["session"]["agent_id"] == "trackflow-support-agent"
+        assert hist_body["user_id"] == "unassigned"
+        assert hist_body["session"]["user_id"] == "unassigned"
+        assert hist_body["session"]["agent_id"] == "first_line_cx"
         assert hist_body["session"]["client_id"] == "trackflow-backoffice"
         assert hist_body["session"]["status"] in ("active", "interrupted")
         assert len(hist_body["messages"]) == 4
         assert hist_body["messages"][3]["status"] == "interrupted"
+
+
+def test_session_user_id_resolved_from_domain_customer_and_not_spoofable(
+    client: Any, test_users: Dict[str, Any]
+) -> None:
+    """Verify ChatSession.user_id resolves from domain session_context.customer_id (fallback 'unassigned'), ignores ?client_user_id=, survives streaming/interrupt, and preserves per-operator ownership."""
+    operator_a_token = test_users["active_token"]
+    operator_b_token = test_users["admin_token"]
+    operator_a_id = str(test_users["active"].id)
+    thread_id = "thr_domain_client_identity_01"
+    session_id = "sess_domain_client_identity_01"
+    customer_id = "cust_brand_acme_42"
+
+    # 1. REST thread creation/history before a customer is bound yields 'unassigned', never the operator id
+    initial_rest = client.get(
+        f"/api/v1/agent/threads/{thread_id}/history",
+        headers={"Authorization": f"Bearer {operator_a_token}"},
+    )
+    assert initial_rest.status_code == 200
+    initial_body = initial_rest.json()
+    assert initial_body["user_id"] == "unassigned"
+    assert initial_body["session"]["user_id"] == "unassigned"
+    assert initial_body["user_id"] != operator_a_id
+
+    # 2. WebSocket ignores ?client_user_id=spoofed_client on handshake
+    with client.websocket_connect(
+        f"/api/v1/agent/ws?token={operator_a_token}&thread_id={thread_id}&session_id={session_id}&client_user_id=spoofed_client"
+    ) as ws:
+        snap_before = ws.receive_json()
+        assert snap_before["event"] == "session_snapshot"
+        assert snap_before["user_id"] == "unassigned"
+        assert snap_before["session"]["user_id"] == "unassigned"
+
+        # 3. First user_message with domain session_context.customer_id binds ChatSession.user_id
+        ws.send_json(
+            {
+                "event": "user_message",
+                "query": "What is TrackFlow's standard return window?",
+                "turn_id": "usr_cust_1",
+                "session_context": {
+                    "session_id": session_id,
+                    "customer_id": customer_id,
+                    "customer_segment": "B2B",
+                    "primary_operating_country": "US",
+                },
+            }
+        )
+        frames = _collect_turn_frames_until_terminal(ws)
+        assert frames[-1]["event"] == "generation_completed"
+
+        # Rehydrate after streaming completion -> user_id is customer_id, not operator
+        ws.send_json({"event": "rehydrate"})
+        snap_after_stream = ws.receive_json()
+        assert snap_after_stream["event"] == "session_snapshot"
+        assert snap_after_stream["user_id"] == customer_id
+        assert snap_after_stream["session"]["user_id"] == customer_id
+        assert snap_after_stream["session"]["status"] == "active"
+
+    # 4. Persist an interrupted assistant turn and verify snapshot after interrupt keeps user_id == customer_id
+    repo = get_agent_chat_thread_repository_dep()
+    repo.append_or_update_message(
+        thread_id=thread_id,
+        session_id=session_id,
+        owner_user_id=operator_a_id,
+        message=ChatMessage(
+            turn_id="asst_cust_interrupted",
+            thread_id=thread_id,
+            session_id=session_id,
+            role="assistant",
+            content="Partial answer before interrupt...",
+            status="interrupted",
+            parent_user_turn_id="usr_cust_1",
+            interrupted_reason="client_interrupt",
+        ),
+    )
+
+    with client.websocket_connect(
+        f"/api/v1/agent/ws?token={operator_a_token}&thread_id={thread_id}&session_id={session_id}"
+    ) as ws_reconn:
+        snap_after_interrupt = ws_reconn.receive_json()
+        assert snap_after_interrupt["event"] == "session_snapshot"
+        assert snap_after_interrupt["user_id"] == customer_id
+        assert snap_after_interrupt["session"]["user_id"] == customer_id
+        assert snap_after_interrupt["session"]["status"] == "interrupted"
+
+    # 5. REST history also reports the resolved customer_id
+    bound_rest = client.get(
+        f"/api/v1/agent/threads/{thread_id}/history",
+        headers={"Authorization": f"Bearer {operator_a_token}"},
+    )
+    assert bound_rest.status_code == 200
+    assert bound_rest.json()["user_id"] == customer_id
+    assert bound_rest.json()["session"]["user_id"] == customer_id
+
+    # 6. Operator B is still rejected with 4003 (WS) and 403 (REST) even though user_id is now customer_id
+    with pytest.raises(WebSocketDisconnect) as exc_forbidden:
+        with client.websocket_connect(
+            f"/api/v1/agent/ws?token={operator_b_token}&thread_id={thread_id}&session_id={session_id}"
+        ) as ws_b:
+            ws_b.receive_json()
+    assert exc_forbidden.value.code == 4003
+
+    rest_forbidden = client.get(
+        f"/api/v1/agent/threads/{thread_id}/history",
+        headers={"Authorization": f"Bearer {operator_b_token}"},
+    )
+    assert rest_forbidden.status_code == 403
 
 
 # =====================================================================
@@ -853,13 +960,13 @@ def test_true_llm_streaming_and_mid_generation_abort_stops_model_stream() -> Non
     chat_sess = ChatSession(
         session_id="sess_contract_01",
         thread_id="thr_contract_01",
-        agent_id="trackflow-support-agent",
+        agent_id="first_line_cx",
         client_id="trackflow-backoffice",
         user_id="usr_contract_01",
         status="active",
     )
     sess_dict = chat_sess.to_dict()
-    assert sess_dict["agent_id"] == "trackflow-support-agent"
+    assert sess_dict["agent_id"] == "first_line_cx"
     assert sess_dict["client_id"] == "trackflow-backoffice"
     assert sess_dict["user_id"] == "usr_contract_01"
     assert sess_dict["status"] == "active"

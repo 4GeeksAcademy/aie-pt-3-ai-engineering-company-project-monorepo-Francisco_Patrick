@@ -31,6 +31,8 @@ from domain.agent.entities import (
     AuthenticatedSessionContext,
     ChatMessage,
     ChatThreadState,
+    UNASSIGNED_CLIENT_USER_ID,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import (
     MemoryGuardrailViolationError,
@@ -608,7 +610,7 @@ async def get_thread_history_endpoint(
         else:
             existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
             if existing is not None:
-                if existing.user_id and existing.user_id != user_id:
+                if existing.owner_user_id and existing.owner_user_id != user_id:
                     raise ThreadOwnershipMismatchError(
                         thread_id=thread_id,
                         requester_user_id=user_id,
@@ -619,7 +621,8 @@ async def get_thread_history_endpoint(
                 thread_state = ChatThreadState(
                     thread_id=thread_id,
                     session_id=thread_id,
-                    user_id=user_id,
+                    user_id=resolve_client_user_id(None),
+                    owner_user_id=user_id,
                     owner_email=current_user.email,
                     messages=[],
                     latest_sequence_id=broker.get_latest_sequence_id(thread_id),
@@ -684,7 +687,7 @@ async def get_thread_history_endpoint(
     return ChatThreadHistoryResponseSchema(
         thread_id=thread_state.thread_id,
         session_id=thread_state.session_id,
-        user_id=thread_state.user_id,
+        user_id=session_obj.user_id,
         agent_id=session_obj.agent_id,
         client_id=session_obj.client_id,
         status=session_obj.status,
@@ -847,13 +850,14 @@ async def support_agent_websocket_endpoint(
     ).strip()
     session_id = raw_session_id or thread_id
     agent_id = (
-        websocket.query_params.get("agent_id") or "trackflow-support-agent"
-    ).strip() or "trackflow-support-agent"
+        websocket.query_params.get("agent_id") or "first_line_cx"
+    ).strip() or "first_line_cx"
     client_id = (
         websocket.query_params.get("client_id") or "trackflow-backoffice"
     ).strip() or "trackflow-backoffice"
 
-    # Verify per-operator thread ownership and load rehydration snapshot (FR-003, FR-012)
+    # Verify per-operator thread ownership and load rehydration snapshot (FR-003, FR-012).
+    # Client identity (`user_id`) is resolved strictly from domain session_context, ignoring any query param.
     try:
         if hasattr(agent_service, "rehydrate_thread"):
             rehydrated_payload = await run_in_threadpool(
@@ -870,16 +874,21 @@ async def support_agent_websocket_endpoint(
             existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
             if (
                 existing is not None
-                and existing.user_id
-                and existing.user_id != user_id
+                and existing.owner_user_id
+                and existing.owner_user_id != user_id
             ):
                 raise ThreadOwnershipMismatchError(
                     thread_id=thread_id,
                     requester_user_id=user_id,
                 )
             now_snap = datetime.now(timezone.utc).isoformat()
+            resolved_client_uid = (
+                existing.session.user_id
+                if existing is not None
+                else UNASSIGNED_CLIENT_USER_ID
+            )
             rehydrated_payload = {
-                "user_id": user_id,
+                "user_id": resolved_client_uid,
                 "agent_id": agent_id,
                 "client_id": client_id,
                 "status": "active",
@@ -888,7 +897,7 @@ async def support_agent_websocket_endpoint(
                     "thread_id": thread_id,
                     "agent_id": agent_id,
                     "client_id": client_id,
-                    "user_id": user_id,
+                    "user_id": resolved_client_uid,
                     "status": "active",
                     "created_at": now_snap,
                     "updated_at": now_snap,
@@ -936,7 +945,7 @@ async def support_agent_websocket_endpoint(
             snapshot = rehydrated_payload
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         seq_id = broker.get_latest_sequence_id(thread_id)
-        resolved_uid = str(snapshot.get("user_id") or snapshot.get("owner_user_id") or user_id)
+        resolved_uid = str(snapshot.get("user_id") or UNASSIGNED_CLIENT_USER_ID)
         resolved_agent_id = str(snapshot.get("agent_id") or agent_id)
         resolved_client_id = str(snapshot.get("client_id") or client_id)
         resolved_status = str(snapshot.get("status") or "active")

@@ -35,13 +35,41 @@ const VALID_STATUSES: ReadonlySet<ChatTurnStatus> = new Set<ChatTurnStatus>([
   'error',
 ]);
 const VALID_SESSION_STATUSES: ReadonlySet<ChatSessionStatus> =
-  new Set<ChatSessionStatus>([
-    'active',
-    'streaming',
-    'interrupted',
-    'disconnected',
-    'closed',
-  ]);
+  new Set<ChatSessionStatus>(['active', 'interrupted', 'closed']);
+const LEGACY_SESSION_STATUS_MAP: Readonly<Record<string, ChatSessionStatus>> = {
+  streaming: 'active',
+  disconnected: 'interrupted',
+};
+const FIRST_LINE_AGENT_ID = 'first_line_cx';
+const UNASSIGNED_CLIENT_USER_ID = 'unassigned';
+const LEGACY_AGENT_IDS: ReadonlySet<string> = new Set<string>([
+  'trackflow-support-agent',
+]);
+
+/**
+ * Normalizes a raw session status into the briefing enum `active | interrupted | closed`.
+ *
+ * @param candidate - Raw status string from the wire (may be a legacy value).
+ * @returns A compliant status; unknown values fall back to `active`.
+ */
+export function normalizeSessionStatus(candidate: string): ChatSessionStatus {
+  if (VALID_SESSION_STATUSES.has(candidate as ChatSessionStatus)) {
+    return candidate as ChatSessionStatus;
+  }
+  return LEGACY_SESSION_STATUS_MAP[candidate] ?? 'active';
+}
+
+/**
+ * Normalizes a raw agent id, mapping empty/legacy values to `first_line_cx`.
+ *
+ * @param candidate - Raw agent id from the wire.
+ * @returns The briefing agent id or the supplied custom id.
+ */
+export function normalizeAgentId(candidate: string): string {
+  return candidate.length === 0 || LEGACY_AGENT_IDS.has(candidate)
+    ? FIRST_LINE_AGENT_ID
+    : candidate;
+}
 const VALID_INTERRUPTED_REASONS: ReadonlySet<ChatInterruptedReason> =
   new Set<ChatInterruptedReason>([
     'client_interrupt',
@@ -418,20 +446,20 @@ export function parseAgentChatStreamEvent(
     if (eventType === 'session_snapshot' || eventType === 'session_rehydrated') {
       const rawSession = isPlainRecord(parsed['session']) ? parsed['session'] : null;
       const userId =
-        typeof parsed['user_id'] === 'string' && parsed['user_id'].length > 0
-          ? parsed['user_id']
-          : typeof parsed['owner_user_id'] === 'string' &&
-              parsed['owner_user_id'].length > 0
-            ? parsed['owner_user_id']
-            : rawSession && typeof rawSession['user_id'] === 'string'
-              ? rawSession['user_id']
-              : '';
+        rawSession &&
+        typeof rawSession['user_id'] === 'string' &&
+        rawSession['user_id'].trim().length > 0
+          ? rawSession['user_id'].trim()
+          : typeof parsed['user_id'] === 'string' &&
+              parsed['user_id'].trim().length > 0
+            ? parsed['user_id'].trim()
+            : UNASSIGNED_CLIENT_USER_ID;
       const agentId =
         typeof parsed['agent_id'] === 'string' && parsed['agent_id'].length > 0
           ? parsed['agent_id']
           : rawSession && typeof rawSession['agent_id'] === 'string'
             ? rawSession['agent_id']
-            : 'trackflow-support-agent';
+            : FIRST_LINE_AGENT_ID;
       const clientId =
         typeof parsed['client_id'] === 'string' && parsed['client_id'].length > 0
           ? parsed['client_id']
@@ -444,11 +472,8 @@ export function parseAgentChatStreamEvent(
           : rawSession && typeof rawSession['status'] === 'string'
             ? rawSession['status']
             : 'active';
-      const sessionStatus: ChatSessionStatus = VALID_SESSION_STATUSES.has(
-        statusCandidate as ChatSessionStatus
-      )
-        ? (statusCandidate as ChatSessionStatus)
-        : 'active';
+      const sessionStatus: ChatSessionStatus =
+        normalizeSessionStatus(statusCandidate);
       const sessionObj: ChatSessionDTO = {
         session_id:
           rawSession && typeof rawSession['session_id'] === 'string'

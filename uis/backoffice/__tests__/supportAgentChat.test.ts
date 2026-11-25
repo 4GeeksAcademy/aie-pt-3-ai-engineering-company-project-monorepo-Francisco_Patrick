@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Automated Jest unit and integration test suite for Real-Time Bidirectional WebSocket Streaming Chat
  * with True Generation Abort (Part 2).
  *
@@ -589,13 +589,13 @@ describe('Support Agent Bidirectional WebSocket Streaming Chat (US1 - US5)', () 
           thread_id: 'thr_1',
           session_id: 'sess_1',
           user_id: 'usr_operator_01',
-          agent_id: 'trackflow-support-agent',
+          agent_id: 'first_line_cx',
           client_id: 'trackflow-backoffice',
           status: 'active',
           session: {
             session_id: 'sess_1',
             thread_id: 'thr_1',
-            agent_id: 'trackflow-support-agent',
+            agent_id: 'first_line_cx',
             client_id: 'trackflow-backoffice',
             user_id: 'usr_operator_01',
             status: 'active',
@@ -612,7 +612,7 @@ describe('Support Agent Bidirectional WebSocket Streaming Chat (US1 - US5)', () 
       expect(snapshotEvent?.event).toBe('session_snapshot');
       if (snapshotEvent?.event === 'session_snapshot') {
         expect(snapshotEvent.user_id).toBe('usr_operator_01');
-        expect(snapshotEvent.session.agent_id).toBe('trackflow-support-agent');
+        expect(snapshotEvent.session.agent_id).toBe('first_line_cx');
         expect(snapshotEvent.session.client_id).toBe('trackflow-backoffice');
         expect(snapshotEvent.session.user_id).toBe('usr_operator_01');
         expect(snapshotEvent.session.status).toBe('active');

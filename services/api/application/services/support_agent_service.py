@@ -61,6 +61,7 @@ from domain.agent.entities import (
     AgentQueryResult,
     AgentState,
     AgentTrace,
+    AuthenticatedSessionContext,
     ChatInterruptedReason,
     ChatMessage,
     ChatSession,
@@ -73,6 +74,8 @@ from domain.agent.entities import (
     RetrievedContext,
     SourceCitation,
     TicketToolOutput,
+    merge_thread_session_context,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import (
     ThreadOwnershipMismatchError,
@@ -287,6 +290,22 @@ class SupportAgentService(SupportAgentServicePort):
         tokens = re.findall(r"\S+\s*|\s+", text)
         return [tok for tok in tokens if tok]
 
+    @staticmethod
+    def resolve_client_user_id(
+        thread_state: Optional[ChatThreadState] = None,
+        session_context: Optional[AuthenticatedSessionContext] = None,
+    ) -> str:
+        """Resolve the chatting client `user_id` from domain `session_context.customer_id` (or `"unassigned"`)."""
+        effective_ctx = (
+            merge_thread_session_context(
+                thread_state.session_context if thread_state is not None else None,
+                session_context,
+            )
+            if thread_state is not None or session_context is not None
+            else None
+        )
+        return resolve_client_user_id(effective_ctx)
+
     def get_or_create_thread_state(
         self,
         thread_id: str,
@@ -294,20 +313,49 @@ class SupportAgentService(SupportAgentServicePort):
         user_id: Optional[str] = None,
         owner_user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
     ) -> ChatThreadState:
-        """Load or initialize a ChatThreadState bound to `user_id`, raising ThreadOwnershipMismatchError on mismatch."""
+        """Load or initialize a ChatThreadState bound to `owner_user_id`, raising ThreadOwnershipMismatchError on mismatch."""
         cleaned_thread = (thread_id or "").strip() or str(uuid.uuid4())
         cleaned_session = (session_id or "").strip() or cleaned_thread
-        cleaned_owner = str(user_id or owner_user_id or "").strip()
+        cleaned_owner = str(owner_user_id or user_id or "").strip()
 
         existing = self._chat_thread_repository.get_thread(cleaned_thread)
         if existing is not None:
-            if existing.user_id and existing.user_id != cleaned_owner:
+            if (
+                existing.owner_user_id
+                and cleaned_owner
+                and existing.owner_user_id != cleaned_owner
+            ):
                 raise ThreadOwnershipMismatchError(
                     thread_id=cleaned_thread,
                     requester_user_id=cleaned_owner,
+                )
+            merged_ctx = merge_thread_session_context(
+                existing.session_context,
+                session_context,
+            )
+            if merged_ctx != existing.session_context:
+                existing = self._chat_thread_repository.save_thread(
+                    ChatThreadState(
+                        thread_id=existing.thread_id,
+                        session_id=existing.session_id,
+                        user_id=self.resolve_client_user_id(session_context=merged_ctx),
+                        owner_user_id=existing.owner_user_id or cleaned_owner or None,
+                        owner_email=owner_email or existing.owner_email,
+                        agent_id=existing.agent_id,
+                        client_id=existing.client_id,
+                        status=existing.status,
+                        messages=list(existing.messages),
+                        pending_proposal=existing.pending_proposal,
+                        session_context=merged_ctx,
+                        latest_checkpoint_id=existing.latest_checkpoint_id,
+                        latest_sequence_id=existing.latest_sequence_id,
+                        created_at=existing.created_at,
+                        updated_at=datetime.now(timezone.utc),
+                    )
                 )
             self._chat_event_broker.sync_sequence_id(
                 cleaned_thread, existing.latest_sequence_id
@@ -326,14 +374,15 @@ class SupportAgentService(SupportAgentServicePort):
         initial_thread = ChatThreadState(
             thread_id=cleaned_thread,
             session_id=cleaned_session,
-            user_id=cleaned_owner,
+            user_id=self.resolve_client_user_id(session_context=session_context),
+            owner_user_id=cleaned_owner or None,
             owner_email=owner_email,
             agent_id=agent_id,
             client_id=client_id,
             status="active",
             messages=[],
             pending_proposal=pending if isinstance(pending, MemoryProposal) else None,
-            session_context=None,
+            session_context=session_context,
             latest_checkpoint_id=latest_cp,
             latest_sequence_id=self._chat_event_broker.get_latest_sequence_id(
                 cleaned_thread
@@ -348,15 +397,20 @@ class SupportAgentService(SupportAgentServicePort):
         thread_id: str,
         requester_user_id: str,
         session_id: Optional[str] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
     ) -> Tuple[ChatThreadState, int]:
-        """Return persisted thread history and checkpoint count, validating per-user thread ownership."""
+        """Return persisted thread history and checkpoint count, validating per-operator thread ownership."""
         cleaned_thread = (thread_id or "").strip()
         cleaned_requester = str(requester_user_id).strip()
         existing = self._chat_thread_repository.get_thread(cleaned_thread)
         if existing is not None:
-            if existing.user_id and existing.user_id != cleaned_requester:
+            if (
+                existing.owner_user_id
+                and cleaned_requester
+                and existing.owner_user_id != cleaned_requester
+            ):
                 raise ThreadOwnershipMismatchError(
                     thread_id=cleaned_thread,
                     requester_user_id=cleaned_requester,
@@ -366,9 +420,10 @@ class SupportAgentService(SupportAgentServicePort):
             thread_state = self.get_or_create_thread_state(
                 thread_id=cleaned_thread,
                 session_id=session_id or cleaned_thread,
-                user_id=cleaned_requester,
+                owner_user_id=cleaned_requester,
                 agent_id=agent_id,
                 client_id=client_id,
+                session_context=session_context,
             )
 
         checkpoints = self.get_checkpoints(cleaned_thread)
@@ -395,23 +450,27 @@ class SupportAgentService(SupportAgentServicePort):
         self._chat_event_broker.sync_sequence_id(cleaned_thread, latest_seq)
 
         is_currently_generating = self._chat_event_broker.is_generating(cleaned_thread)
+        # An in-flight turn keeps the session `active`; turn-level `streaming` lives on ChatTurnStatus.
         session_status: ChatSessionStatus = (
-            "streaming"
-            if is_currently_generating
-            else thread_state.session.status
+            "active" if is_currently_generating else thread_state.session.status
+        )
+        merged_ctx = merge_thread_session_context(
+            thread_state.session_context,
+            session_context,
         )
 
         reconciled = ChatThreadState(
             thread_id=thread_state.thread_id,
             session_id=session_id or thread_state.session_id,
-            user_id=thread_state.user_id,
+            user_id=self.resolve_client_user_id(session_context=merged_ctx),
+            owner_user_id=thread_state.owner_user_id,
             owner_email=thread_state.owner_email,
             agent_id=thread_state.agent_id or agent_id,
             client_id=thread_state.client_id or client_id,
             status=session_status,
             messages=list(thread_state.messages),
             pending_proposal=resolved_pending,
-            session_context=thread_state.session_context,
+            session_context=merged_ctx,
             latest_checkpoint_id=latest_cp,
             latest_sequence_id=latest_seq,
             created_at=thread_state.created_at,
@@ -420,6 +479,7 @@ class SupportAgentService(SupportAgentServicePort):
         if (
             reconciled.latest_checkpoint_id != thread_state.latest_checkpoint_id
             or reconciled.latest_sequence_id != thread_state.latest_sequence_id
+            or reconciled.session_context != thread_state.session_context
         ):
             reconciled = self._chat_thread_repository.save_thread(reconciled)
         return (reconciled, len(checkpoints))
@@ -431,29 +491,33 @@ class SupportAgentService(SupportAgentServicePort):
         user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
         owner_user_id: Optional[str] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
+        session_context: Optional[AuthenticatedSessionContext] = None,
     ) -> Dict[str, Any]:
         """Build a session_snapshot event payload from durable TinyDB history and LangGraph checkpoints."""
-        resolved_user_id = str(user_id or owner_user_id or "").strip()
+        resolved_owner_id = str(owner_user_id or user_id or "").strip()
         self.get_or_create_thread_state(
             thread_id=thread_id,
             session_id=session_id,
-            user_id=resolved_user_id,
+            owner_user_id=resolved_owner_id,
             owner_email=owner_email,
             agent_id=agent_id,
             client_id=client_id,
+            session_context=session_context,
         )
         thread_state, checkpoint_count = self.get_thread_history(
             thread_id=thread_id,
-            requester_user_id=resolved_user_id,
+            requester_user_id=resolved_owner_id,
             session_id=session_id,
             agent_id=agent_id,
             client_id=client_id,
+            session_context=session_context,
         )
         session_obj = thread_state.session
         return {
-            "user_id": thread_state.user_id,
+            "user_id": session_obj.user_id,
+            "owner_user_id": thread_state.owner_user_id,
             "agent_id": session_obj.agent_id,
             "client_id": session_obj.client_id,
             "status": session_obj.status,
@@ -742,7 +806,7 @@ class SupportAgentService(SupportAgentServicePort):
         owner_user_id: Optional[str] = None,
         owner_email: Optional[str] = None,
         session_id: Optional[str] = None,
-        agent_id: str = "trackflow-support-agent",
+        agent_id: str = "first_line_cx",
         client_id: str = "trackflow-backoffice",
         user_turn_id: Optional[str] = None,
         assistant_turn_id: Optional[str] = None,
@@ -804,11 +868,13 @@ class SupportAgentService(SupportAgentServicePort):
         thread_state = self.get_or_create_thread_state(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            user_id=resolved_user_id,
+            owner_user_id=resolved_user_id,
             owner_email=owner_email,
             agent_id=agent_id,
             client_id=client_id,
+            session_context=request.session_context,
         )
+        locked_session_context = thread_state.session_context
         prior_history = [
             {"role": m.role, "content": m.content, "status": m.status}
             for m in thread_state.messages
@@ -828,12 +894,13 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            user_id=resolved_user_id,
+            owner_user_id=resolved_user_id,
             owner_email=owner_email,
             message=user_msg,
             agent_id=agent_id,
             client_id=client_id,
-            session_status="streaming",
+            session_status="active",
+            session_context=locked_session_context,
         )
 
         # Emit generation_started
@@ -862,13 +929,14 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            user_id=resolved_user_id,
+            owner_user_id=resolved_user_id,
             owner_email=owner_email,
             message=streaming_placeholder,
             latest_sequence_id=started_event.sequence_id,
             agent_id=agent_id,
             client_id=client_id,
-            session_status="streaming",
+            session_status="active",
+            session_context=locked_session_context,
         )
 
         accumulated_parts: List[str] = []
@@ -966,13 +1034,14 @@ class SupportAgentService(SupportAgentServicePort):
                 active_repo.append_or_update_message(
                     thread_id=resolved_thread_id,
                     session_id=resolved_session_id,
-                    user_id=resolved_user_id,
+                    owner_user_id=resolved_user_id,
                     owner_email=owner_email,
                     message=interrupted_msg,
                     latest_sequence_id=interrupted_event.sequence_id,
                     agent_id=agent_id,
                     client_id=client_id,
                     session_status="interrupted",
+                    session_context=locked_session_context,
                 )
                 interrupted_result = interrupted_msg
                 return interrupted_msg
@@ -1311,7 +1380,7 @@ class SupportAgentService(SupportAgentServicePort):
         active_repo.append_or_update_message(
             thread_id=resolved_thread_id,
             session_id=resolved_session_id,
-            user_id=resolved_user_id,
+            owner_user_id=resolved_user_id,
             owner_email=owner_email,
             message=completed_msg,
             pending_proposal=memory_proposal,
@@ -1320,6 +1389,7 @@ class SupportAgentService(SupportAgentServicePort):
             agent_id=agent_id,
             client_id=client_id,
             session_status="active",
+            session_context=locked_session_context,
         )
         return completed_msg
 

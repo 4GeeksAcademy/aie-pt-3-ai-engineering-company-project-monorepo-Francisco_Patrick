@@ -443,7 +443,7 @@ class ChatSessionSchema(BaseModel):
     session_id: str = Field(..., description="Unique session identifier")
     thread_id: str = Field(..., description="Bound conversation thread identifier")
     agent_id: str = Field(
-        default="trackflow-support-agent",
+        default="first_line_cx",
         description="Support agent identifier",
     )
     client_id: str = Field(
@@ -451,15 +451,9 @@ class ChatSessionSchema(BaseModel):
         description="Connected client application or session client identifier",
     )
     user_id: str = Field(
-        ..., description="Authenticated operator user ID owning the session/thread"
+        ..., description="Chatting client user ID bound to the session"
     )
-    status: Literal[
-        "active",
-        "streaming",
-        "interrupted",
-        "disconnected",
-        "closed",
-    ] = Field(default="active", description="Current lifecycle status of the chat session")
+    status: Literal["active", "interrupted", "closed"] = Field(default="active", description="Current lifecycle status of the chat session")
     created_at: Optional[str] = Field(
         default=None, description="ISO-8601 UTC session creation timestamp"
     )
@@ -473,22 +467,19 @@ class ChatThreadHistoryResponseSchema(BaseModel):
 
     thread_id: str = Field(..., description="Conversation thread identifier")
     session_id: str = Field(..., description="Session identifier")
-    user_id: str = Field(..., description="Authenticated operator user ID owning the thread")
+    user_id: str = Field(
+        default="unassigned",
+        description="Chatting client user ID bound to the session (or 'unassigned' when no customer is bound)",
+    )
     agent_id: str = Field(
-        default="trackflow-support-agent",
+        default="first_line_cx",
         description="Support agent identifier",
     )
     client_id: str = Field(
         default="trackflow-backoffice",
         description="Client application identifier",
     )
-    status: Literal[
-        "active",
-        "streaming",
-        "interrupted",
-        "disconnected",
-        "closed",
-    ] = Field(default="active", description="Current chat session status")
+    status: Literal["active", "interrupted", "closed"] = Field(default="active", description="Current chat session status")
     session: ChatSessionSchema = Field(
         ..., description="Canonical ChatSession metadata object"
     )
@@ -568,15 +559,9 @@ class ServerSessionSnapshotEventSchema(BaseModel):
     thread_id: str
     session_id: str
     user_id: str
-    agent_id: str = "trackflow-support-agent"
+    agent_id: str = "first_line_cx"
     client_id: str = "trackflow-backoffice"
-    status: Literal[
-        "active",
-        "streaming",
-        "interrupted",
-        "disconnected",
-        "closed",
-    ] = "active"
+    status: Literal["active", "interrupted", "closed"] = "active"
     session: ChatSessionSchema
     messages: List[ChatMessageSchema] = Field(default_factory=list)
     pending_proposal: Optional[MemoryProposalSchema] = None

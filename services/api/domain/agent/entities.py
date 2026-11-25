@@ -50,13 +50,72 @@ CustomerSegment = Literal["B2B", "B2C"]
 OperatingCountry = Literal["US", "ES"]
 ChatTurnRole = Literal["user", "assistant"]
 ChatTurnStatus = Literal["streaming", "completed", "interrupted", "error"]
-ChatSessionStatus = Literal[
-    "active",
-    "streaming",
-    "interrupted",
-    "disconnected",
-    "closed",
-]
+ChatSessionStatus = Literal["active", "interrupted", "closed"]
+FIRST_LINE_AGENT_ID = "first_line_cx"
+UNASSIGNED_CLIENT_USER_ID = "unassigned"
+LEGACY_AGENT_IDS: Tuple[str, ...] = ("trackflow-support-agent",)
+_LEGACY_SESSION_STATUS_MAP: Dict[str, ChatSessionStatus] = {
+    "streaming": "active",
+    "disconnected": "interrupted",
+}
+
+
+def normalize_chat_session_status(raw: object) -> ChatSessionStatus:
+    """Coerce a raw (possibly legacy) status into the briefing enum `active|interrupted|closed`.
+
+    Legacy `streaming` maps to `active`, legacy `disconnected` maps to `interrupted`;
+    unknown or missing values fall back to `active`.
+    """
+    if raw == "active" or raw == "interrupted" or raw == "closed":
+        return raw
+    if isinstance(raw, str) and raw in _LEGACY_SESSION_STATUS_MAP:
+        return _LEGACY_SESSION_STATUS_MAP[raw]
+    return "active"
+
+
+def normalize_agent_id(raw: object) -> str:
+    """Return the briefing agent id, mapping empty/legacy values to `first_line_cx`."""
+    value = str(raw or "").strip()
+    if not value or value in LEGACY_AGENT_IDS:
+        return FIRST_LINE_AGENT_ID
+    return value
+
+
+def resolve_client_user_id(
+    session_context: Optional["AuthenticatedSessionContext"] = None,
+) -> str:
+    """Resolve the chatting client `user_id` from domain `session_context.customer_id`.
+
+    Falls back to `UNASSIGNED_CLIENT_USER_ID` (`"unassigned"`) when no customer context
+    is bound to the thread, never exposing the back-office operator ID.
+    """
+    if session_context is not None:
+        customer_id = str(session_context.customer_id or "").strip()
+        if customer_id:
+            return customer_id
+    return UNASSIGNED_CLIENT_USER_ID
+
+
+def merge_thread_session_context(
+    existing_context: Optional["AuthenticatedSessionContext"],
+    incoming_context: Optional["AuthenticatedSessionContext"],
+) -> Optional["AuthenticatedSessionContext"]:
+    """Lock the thread's customer identity to the first valid `session_context.customer_id` seen.
+
+    Once a non-empty `customer_id` is bound on the thread, subsequent turns without a context
+    or with a conflicting `customer_id` retain the original customer identity.
+    """
+    if existing_context is not None and str(existing_context.customer_id or "").strip():
+        if incoming_context is None:
+            return existing_context
+        existing_cid = str(existing_context.customer_id).strip()
+        incoming_cid = str(incoming_context.customer_id or "").strip()
+        if not incoming_cid or incoming_cid != existing_cid:
+            return existing_context
+        return incoming_context
+    if incoming_context is not None and str(incoming_context.customer_id or "").strip():
+        return incoming_context
+    return existing_context or incoming_context
 ChatInterruptedReason = Literal[
     "client_interrupt",
     "redirect_new_message",
@@ -868,12 +927,12 @@ class ChatMessage:
 
 @dataclass(frozen=True)
 class ChatSession:
-    """Represents an active or persisted Support Agent chat session bound to an authenticated operator."""
+    """Represents an active or persisted Support Agent chat session; `user_id` is the chatting client."""
 
     session_id: str
     thread_id: str
-    user_id: str
-    agent_id: str = "trackflow-support-agent"
+    user_id: str = UNASSIGNED_CLIENT_USER_ID
+    agent_id: str = FIRST_LINE_AGENT_ID
     client_id: str = "trackflow-backoffice"
     status: ChatSessionStatus = "active"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -902,17 +961,12 @@ class ChatSession:
         """Reconstruct a ChatSession from a dictionary."""
         session_id = str(data.get("session_id") or data.get("thread_id") or "default")
         thread_id = str(data.get("thread_id") or session_id)
-        user_id = str(data.get("user_id") or data.get("owner_user_id") or "")
-        status_raw = data.get("status")
-        status_val: ChatSessionStatus = (
-            status_raw
-            if status_raw in ("active", "streaming", "interrupted", "disconnected", "closed")
-            else "active"
-        )
+        user_id = str(data.get("user_id") or "").strip() or UNASSIGNED_CLIENT_USER_ID
+        status_val = normalize_chat_session_status(data.get("status"))
         return cls(
             session_id=session_id,
             thread_id=thread_id,
-            agent_id=str(data.get("agent_id") or "trackflow-support-agent"),
+            agent_id=normalize_agent_id(data.get("agent_id")),
             client_id=str(data.get("client_id") or "trackflow-backoffice"),
             user_id=user_id,
             status=status_val,
@@ -927,10 +981,10 @@ class ChatThreadState:
 
     thread_id: str
     session_id: str
-    user_id: str = ""
+    user_id: str = UNASSIGNED_CLIENT_USER_ID
     owner_user_id: Optional[str] = None
     owner_email: Optional[str] = None
-    agent_id: str = "trackflow-support-agent"
+    agent_id: str = FIRST_LINE_AGENT_ID
     client_id: str = "trackflow-backoffice"
     status: ChatSessionStatus = "active"
     messages: List[ChatMessage] = field(default_factory=list)
@@ -942,27 +996,37 @@ class ChatThreadState:
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self) -> None:
-        resolved_uid = str(self.user_id or self.owner_user_id or "").strip()
-        object.__setattr__(self, "user_id", resolved_uid)
-        object.__setattr__(self, "owner_user_id", resolved_uid)
+        raw_owner = str(self.owner_user_id or "").strip()
+        raw_user = str(self.user_id or "").strip()
+        resolved_client = resolve_client_user_id(self.session_context)
+        if (
+            not raw_owner
+            and raw_user
+            and raw_user != UNASSIGNED_CLIENT_USER_ID
+            and raw_user != resolved_client
+        ):
+            raw_owner = raw_user
+        object.__setattr__(self, "owner_user_id", raw_owner or None)
+        object.__setattr__(self, "user_id", resolved_client)
 
     @property
     def session(self) -> ChatSession:
         """Project the canonical ChatSession metadata for this thread."""
-        derived_status: ChatSessionStatus = self.status
+        derived_status: ChatSessionStatus = normalize_chat_session_status(self.status)
         if self.messages:
             last_msg = self.messages[-1]
-            if last_msg.role == "assistant":
-                if last_msg.status == "streaming":
-                    derived_status = "streaming"
-                elif last_msg.status == "interrupted" and self.status == "active":
-                    derived_status = "interrupted"
+            if (
+                last_msg.role == "assistant"
+                and last_msg.status == "interrupted"
+                and derived_status == "active"
+            ):
+                derived_status = "interrupted"
         return ChatSession(
             session_id=self.session_id,
             thread_id=self.thread_id,
-            agent_id=self.agent_id,
+            agent_id=normalize_agent_id(self.agent_id),
             client_id=self.client_id,
-            user_id=self.user_id,
+            user_id=resolve_client_user_id(self.session_context),
             status=derived_status,
             created_at=self.created_at,
             updated_at=self.updated_at,
@@ -974,8 +1038,8 @@ class ChatThreadState:
         return {
             "thread_id": self.thread_id,
             "session_id": self.session_id,
-            "user_id": self.user_id,
-            "owner_user_id": self.user_id,
+            "user_id": session_obj.user_id,
+            "owner_user_id": self.owner_user_id,
             "owner_email": self.owner_email,
             "agent_id": self.agent_id,
             "client_id": self.client_id,
@@ -1021,7 +1085,7 @@ class ChatThreadState:
         elif isinstance(raw_session_ctx, dict) and raw_session_ctx.get("session_id"):
             session_context = AuthenticatedSessionContext(
                 session_id=str(raw_session_ctx["session_id"]),
-                customer_id=str(raw_session_ctx.get("customer_id") or "default"),
+                customer_id=str(raw_session_ctx.get("customer_id") or "").strip(),
                 customer_segment=raw_session_ctx.get("customer_segment", "B2C"),
                 primary_operating_country=raw_session_ctx.get(
                     "primary_operating_country", "US"
@@ -1034,28 +1098,30 @@ class ChatThreadState:
 
         raw_session = data.get("session") if isinstance(data.get("session"), dict) else {}
         thread_id = str(data["thread_id"])
-        user_id = str(
-            data.get("user_id")
-            or data.get("owner_user_id")
-            or raw_session.get("user_id")
-            or ""
-        )
-        status_raw = data.get("status") or raw_session.get("status")
-        status_val: ChatSessionStatus = (
-            status_raw
-            if status_raw in ("active", "streaming", "interrupted", "disconnected", "closed")
-            else "active"
+        resolved_client = resolve_client_user_id(session_context)
+        raw_owner = str(data.get("owner_user_id") or "").strip()
+        raw_user = str(
+            data.get("user_id") or raw_session.get("user_id") or ""
+        ).strip()
+        # Legacy persisted threads stored the operator id in `user_id` without `owner_user_id`.
+        if (
+            not raw_owner
+            and raw_user
+            and raw_user != UNASSIGNED_CLIENT_USER_ID
+            and raw_user != resolved_client
+        ):
+            raw_owner = raw_user
+        status_val = normalize_chat_session_status(
+            data.get("status") or raw_session.get("status")
         )
         return cls(
             thread_id=thread_id,
             session_id=str(data.get("session_id") or raw_session.get("session_id") or thread_id),
-            user_id=user_id,
-            owner_user_id=user_id,
+            user_id=resolved_client,
+            owner_user_id=raw_owner or None,
             owner_email=data.get("owner_email"),
-            agent_id=str(
-                data.get("agent_id")
-                or raw_session.get("agent_id")
-                or "trackflow-support-agent"
+            agent_id=normalize_agent_id(
+                data.get("agent_id") or raw_session.get("agent_id")
             ),
             client_id=str(
                 data.get("client_id")

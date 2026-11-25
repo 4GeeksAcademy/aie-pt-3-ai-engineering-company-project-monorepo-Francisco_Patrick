@@ -74,12 +74,7 @@ export type ChatTurnStatus = "streaming" | "completed" | "interrupted" | "error"
 /**
  * Lifecycle state of a Support Agent chat session (`ChatSession`).
  */
-export type ChatSessionStatus =
-  | "active"
-  | "streaming"
-  | "interrupted"
-  | "disconnected"
-  | "closed";
+export type ChatSessionStatus = "active" | "interrupted" | "closed";
 
 /**
  * Canonical Support Agent chat session metadata (`ChatSession`).
@@ -89,11 +84,11 @@ export interface ChatSessionDTO {
   session_id: string;
   /** Bound conversation thread identifier. */
   thread_id: string;
-  /** Support agent identifier (e.g. "trackflow-support-agent"). */
+  /** Support agent identifier (briefing value: "first_line_cx"). */
   agent_id: string;
   /** Connected client application identifier (e.g. "trackflow-backoffice"). */
   client_id: string;
-  /** Authenticated operator user ID owning the session. */
+  /** Chatting client user ID bound to the session. */
   user_id: string;
   /** Current lifecycle status of the chat session. */
   status: ChatSessionStatus;
@@ -307,7 +302,7 @@ export interface ChatThreadHistoryResponseDTO {
   thread_id: string;
   /** Bound session identifier. */
   session_id: string;
-  /** Authenticated operator's user ID owning this thread. */
+  /** Chatting client user ID bound to the session (or "unassigned" before customer context is bound). */
   user_id: string;
   /** Support agent identifier. */
   agent_id: string;
@@ -343,7 +338,7 @@ export interface ServerSessionSnapshotEventDTO {
   thread_id: string;
   /** Bound session identifier. */
   session_id: string;
-  /** Authenticated operator's user ID owning this thread. */
+  /** Chatting client user ID bound to the session (or "unassigned" before customer context is bound). */
   user_id: string;
   /** Support agent identifier. */
   agent_id: string;
