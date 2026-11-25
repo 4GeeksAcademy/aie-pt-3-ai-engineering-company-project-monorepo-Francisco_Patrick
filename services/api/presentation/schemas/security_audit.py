@@ -324,7 +324,10 @@ class HITLReviewDecisionRequest(BaseModel):
 
     request_id: str
     decision: Literal["APPROVE", "REJECT"]
-    reviewer_id: str
+    reviewer_id: Optional[str] = Field(
+        default=None,
+        description="Optional supervisor ID; ignored/overridden in favor of authenticated JWT user identity (email/id) to prevent spoofing.",
+    )
     decision_notes: Optional[str] = None
 
 

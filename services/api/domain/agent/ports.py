@@ -34,6 +34,7 @@ from domain.agent.entities import (
     MemoryGuardrailVerdict,
     PersistentMemoryRecord,
     RetrievedContext,
+    SecurityAuditLogEntry,
     TicketToolInput,
     TicketToolOutput,
     UserIntentClassification,
@@ -414,6 +415,20 @@ class GuardrailObservabilityPort(ABC):
         limit: int = 50,
     ) -> List[GuardrailAuditEvent]:
         """List recorded GuardrailAuditEvent entries ordered newest first."""
+
+    def record_security_audit_log(
+        self, entry: SecurityAuditLogEntry
+    ) -> SecurityAuditLogEntry:
+        """Record a structured, redacted security audit log entry (FR-011, AC-8)."""
+        return entry
+
+    def list_security_audit_logs(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[SecurityAuditLogEntry]:
+        """Retrieve recent security audit log entries, optionally filtered by session."""
+        return []
 
     @abstractmethod
     def clear(self) -> None:

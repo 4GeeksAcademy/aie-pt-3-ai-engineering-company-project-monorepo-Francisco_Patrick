@@ -1184,7 +1184,12 @@ async def submit_supervisor_action_review(
     current_user: User = Depends(get_current_user),
     policy_service: Any = Depends(get_agent_action_policies_service),
 ) -> HumanApprovalGateResponse:
-    """Submit human supervisor review decision conforming to contracts/nist-governance-api.openapi.json."""
+    """Submit human supervisor review decision conforming to contracts/nist-governance-api.openapi.json.
+
+    Note: To prevent reviewer identity spoofing, `reviewer_id` is always derived from the
+    authenticated supervisor's Bearer JWT (`current_user.email or current_user.id`), ignoring
+    any client-supplied `reviewer_id` field in the request body.
+    """
     if current_user.role not in ("admin", "manager"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

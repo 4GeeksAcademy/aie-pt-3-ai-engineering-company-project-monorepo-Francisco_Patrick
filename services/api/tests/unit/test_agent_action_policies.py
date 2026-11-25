@@ -2,13 +2,22 @@
 
 import pytest
 from application.services.agent_action_policies import AgentActionPoliciesService
+from application.services.guardrail_observability import GuardrailObservabilityService
 from domain.agent.entities import AuthenticatedSessionContext
 
 
 @pytest.fixture
-def policy_service() -> AgentActionPoliciesService:
-    """Create a fresh AgentActionPoliciesService instance."""
-    return AgentActionPoliciesService()
+def observability_service() -> GuardrailObservabilityService:
+    """Create an isolated GuardrailObservabilityService instance."""
+    return GuardrailObservabilityService()
+
+
+@pytest.fixture
+def policy_service(
+    observability_service: GuardrailObservabilityService,
+) -> AgentActionPoliciesService:
+    """Create a fresh AgentActionPoliciesService instance wired to observability."""
+    return AgentActionPoliciesService(observability=observability_service)
 
 
 @pytest.fixture
@@ -205,4 +214,82 @@ def test_fail_secure_timeout_handling() -> None:
             reviewer_id="late_supervisor",
             approved=True,
         )
+
+
+def test_runtime_security_audit_log_emission_across_policies_and_reviews(
+    policy_service: AgentActionPoliciesService,
+    observability_service: GuardrailObservabilityService,
+    auth_session: AuthenticatedSessionContext,
+) -> None:
+    """Verify runtime policy evaluations, supervisor reviews, and timeouts emit SecurityAuditLogEntry (AC-8, FR-011)."""
+    # 1. Return approval exceeding 100 EUR -> emits PENDING_HUMAN_APPROVAL audit entry
+    ret_decision = policy_service.evaluate_return_approval(
+        session_context=auth_session,
+        order_id="10492",
+        refund_amount_eur=175.00,
+        shipment_status="DELIVERED",
+    )
+    queue_id = ret_decision.human_review_queue_id
+    assert queue_id is not None
+
+    # 2. High-value dispatch -> emits PENDING_HUMAN_APPROVAL audit entry
+    policy_service.evaluate_high_value_dispatch(
+        session_context=auth_session,
+        parcel_id="PCL-900",
+        declared_value_eur=850.00,
+        address_verified=True,
+    )
+
+    # 3. Carrier reassignment in transit -> emits PENDING_HUMAN_APPROVAL audit entry
+    policy_service.evaluate_carrier_reassignment(
+        session_context=auth_session,
+        order_id="10492",
+        target_carrier="SEUR",
+        shipment_status="IN_TRANSIT",
+    )
+
+    # 4. Cross-brand metric violation -> emits BLOCKED_SECURITY_VIOLATION audit entry
+    policy_service.evaluate_cross_brand_metric_share(
+        session_context=auth_session,
+        target_brand_id="brand_mango",
+        metric_name="on_time_delivery_rate",
+    )
+
+    # 5. Supervisor approval with PII in notes -> emits HUMAN_APPROVED with redacted notes
+    policy_service.review_pending_request(
+        request_id=queue_id,
+        reviewer_id="supervisor@trackflow.io",
+        approved=True,
+        decision_notes="Verified receipt with customer vip.customer@example.com and UPS_KEY=ups_sec_991122",
+    )
+
+    logs = observability_service.list_security_audit_logs(session_id="sess_test_01")
+    assert len(logs) == 5
+
+    actions = [entry.action_attempted for entry in logs]
+    assert actions == [
+        "RETURN_APPROVAL",
+        "HIGH_VALUE_DISPATCH",
+        "CARRIER_REASSIGNMENT",
+        "CROSS_BRAND_METRIC_SHARE",
+        "RETURN_APPROVAL",
+    ]
+
+    outcomes = [entry.decision_outcome for entry in logs]
+    assert outcomes == [
+        "PENDING_HUMAN_APPROVAL",
+        "PENDING_HUMAN_APPROVAL",
+        "PENDING_HUMAN_APPROVAL",
+        "BLOCKED_SECURITY_VIOLATION",
+        "HUMAN_APPROVED",
+    ]
+
+    review_log = logs[-1]
+    assert review_log.event_category == "HITL_SUPERVISOR_REVIEW"
+    assert "HITL_SUPERVISOR_AUTHORIZATION_GATE" in review_log.policy_rules_evaluated
+    assert "[REDACTED_EMAIL]" in review_log.reasoning_rationale
+    assert "vip.customer@example.com" not in review_log.reasoning_rationale
+    assert "[REDACTED_CARRIER_CREDENTIAL]" in review_log.reasoning_rationale
+    assert "ups_sec_991122" not in review_log.reasoning_rationale
+
 

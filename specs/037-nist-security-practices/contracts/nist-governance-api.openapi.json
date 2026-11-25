@@ -120,7 +120,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["request_id", "decision", "reviewer_id"],
+                "required": ["request_id", "decision"],
                 "properties": {
                   "request_id": {
                     "type": "string",
@@ -131,7 +131,8 @@
                     "enum": ["APPROVE", "REJECT"]
                   },
                   "reviewer_id": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Optional supervisor identifier; ignored/overridden server-side in favor of the authenticated Bearer JWT identity (email/id) to prevent spoofing."
                   },
                   "decision_notes": {
                     "type": "string"

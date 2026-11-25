@@ -617,7 +617,10 @@ class HITLReviewDecisionRequestSchema(BaseModel):
 
     request_id: str = Field(description="UUID of pending review request")
     decision: Literal["APPROVE", "REJECT"] = Field(description="Supervisor decision")
-    reviewer_id: str = Field(description="Authorized supervisor ID")
+    reviewer_id: Optional[str] = Field(
+        default=None,
+        description="Optional supervisor ID; ignored/overridden in favor of authenticated JWT user identity (email/id) to prevent spoofing.",
+    )
     decision_notes: Optional[str] = Field(default=None, description="Operational justification notes")
 
 

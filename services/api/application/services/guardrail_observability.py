@@ -221,6 +221,35 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
                 metadata=dict(result.metadata or {}),
             )
             self._events.append(event)
+
+            tenant_id = "default"
+            if result.metadata:
+                tenant_id = str(
+                    result.metadata.get("brand_id")
+                    or result.metadata.get("tenant_id")
+                    or "default"
+                )
+            self.record_security_audit_log(
+                SecurityAuditLogEntry(
+                    event_id=event.event_id,
+                    timestamp=event.timestamp,
+                    agent_id="TF-AI-01-SUPPORT-AGENT",
+                    session_id=effective_session,
+                    tenant_id=tenant_id,
+                    event_category=f"GUARDRAIL_{result.layer.upper()}",
+                    action_attempted=result.input_category,
+                    input_parameters_redacted={
+                        "redacted_preview": redacted,
+                        "trace_id": trace_id,
+                        "failure_type": failure_type,
+                    },
+                    policy_rules_evaluated=[result.layer, result.reason_code],
+                    decision_outcome=disposition.upper(),
+                    reasoning_rationale=sanitize_audit_preview(
+                        result.message or result.reason_code
+                    ),
+                )
+            )
             return event
 
     def get_summary(
@@ -313,6 +342,7 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
             self._total_evaluations = 0
             self._evaluations_by_session.clear()
             self._events.clear()
+            self._audit_logs.clear()
 
 
 def format_guardrail_summary_cli(report: GuardrailSummaryReport) -> str:

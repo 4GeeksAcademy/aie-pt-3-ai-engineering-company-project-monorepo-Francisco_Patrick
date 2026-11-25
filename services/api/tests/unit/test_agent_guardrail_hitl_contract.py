@@ -13,6 +13,7 @@ from application.services.agent_action_policies import (
     AgentActionPoliciesService,
     get_agent_action_policies_service,
 )
+from application.services.guardrail_observability import GuardrailObservabilityService
 from domain.agent.entities import AuthenticatedSessionContext
 from domain.models import User
 from presentation.api.v1.agent import router as agent_router
@@ -61,7 +62,11 @@ def hitl_test_app():
     """Create a test FastAPI application with isolated action review state."""
     app = FastAPI()
     app.include_router(agent_router, prefix="/api/v1/agent")
-    policy_svc = AgentActionPoliciesService(max_autonomous_amount_eur=100.0)
+    obs_svc = GuardrailObservabilityService()
+    policy_svc = AgentActionPoliciesService(
+        max_autonomous_amount_eur=100.0,
+        observability=obs_svc,
+    )
     app.dependency_overrides[get_agent_action_policies_service] = lambda: policy_svc
     return app, policy_svc
 
@@ -190,13 +195,13 @@ def test_nist_governance_actions_review_post_endpoint(hitl_test_app) -> None:
     req_id = eval_result.human_review_queue_id
     assert req_id is not None
 
-    # Submit decision via POST /api/v1/agent/actions/review
+    # Submit decision via POST /api/v1/agent/actions/review with spoofed reviewer_id
     resp = client.post(
         "/api/v1/agent/actions/review",
         json={
             "request_id": req_id,
             "decision": "APPROVE",
-            "reviewer_id": "lead.ops@trackflow.io",
+            "reviewer_id": "spoofed.attacker@external.com",
             "decision_notes": "NIST CSF review authorized by admin lead.",
         },
     )
@@ -204,6 +209,44 @@ def test_nist_governance_actions_review_post_endpoint(hitl_test_app) -> None:
     data = resp.json()
     assert data["request_id"] == req_id
     assert data["status"] == "HUMAN_APPROVED"
+    # Anti-spoofing: reviewer_id is resolved from authenticated JWT user
     assert data["reviewer_id"] == "lead.ops@trackflow.io"
+
+    # Also verify omitting optional reviewer_id succeeds and resolves from JWT
+    eval_result_2 = policy_svc.evaluate_return_approval(
+        session_context=session_ctx,
+        order_id="ORD-5501",
+        refund_amount_eur=210.00,
+        shipment_status="DELIVERED",
+    )
+    req_id_2 = eval_result_2.human_review_queue_id
+    assert req_id_2 is not None
+
+    resp_no_reviewer = client.post(
+        "/api/v1/agent/actions/review",
+        json={
+            "request_id": req_id_2,
+            "decision": "REJECT",
+            "decision_notes": "Rejected without redundant reviewer_id in payload.",
+        },
+    )
+    assert resp_no_reviewer.status_code == 200
+    data_2 = resp_no_reviewer.json()
+    assert data_2["request_id"] == req_id_2
+    assert data_2["status"] == "HUMAN_REJECTED"
+    assert data_2["reviewer_id"] == "lead.ops@trackflow.io"
+
+    # Confirm SecurityAuditLogEntry records were emitted for both evaluations and reviews
+    audit_logs = policy_svc.observability.list_security_audit_logs(
+        session_id="sess_nist_01"
+    )
+    assert len(audit_logs) == 4
+    assert [log.decision_outcome for log in audit_logs] == [
+        "PENDING_HUMAN_APPROVAL",
+        "HUMAN_APPROVED",
+        "PENDING_HUMAN_APPROVAL",
+        "HUMAN_REJECTED",
+    ]
+
 
 
