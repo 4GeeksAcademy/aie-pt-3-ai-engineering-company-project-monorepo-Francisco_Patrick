@@ -36,6 +36,9 @@ from domain.agent.entities import (
     AuthenticatedSessionContext,
     ChatMessage,
     ChatThreadState,
+    UNASSIGNED_CLIENT_USER_ID,
+    normalize_agent_id,
+    resolve_client_user_id,
 )
 from domain.agent.exceptions import (
     MemoryGuardrailViolationError,
@@ -74,9 +77,10 @@ from presentation.schemas.agent import (
     AgentQueryResponseSchema,
     AgentTraceResponseSchema,
     ChatMessageSchema,
+    ChatSessionSchema,
     ChatThreadHistoryResponseSchema,
     ClientAuthenticateFrameSchema,
-    ClientInterruptFrameSchema,
+    ClientInterruptRequestedFrameSchema,
     ClientPingFrameSchema,
     ClientRehydrateFrameSchema,
     ClientUserMessageFrameSchema,
@@ -94,7 +98,7 @@ from presentation.schemas.agent import (
     ServerGenerationInterruptedEventSchema,
     ServerGenerationStartedEventSchema,
     ServerPongEventSchema,
-    ServerSessionRehydratedEventSchema,
+    ServerSessionSnapshotEventSchema,
     ServerTokenChunkEventSchema,
     ToolCallTraceSchema,
 )
@@ -565,8 +569,10 @@ def _project_chat_message_schema(msg: ChatMessage) -> ChatMessageSchema:
 def _validate_and_serialize_outbound_frame(frame: Dict[str, Any]) -> Dict[str, Any]:
     """Validate outbound server-to-client WebSocket frame against its strict Pydantic schema (T035)."""
     event_name = frame.get("event")
-    if event_name == "session_rehydrated":
-        return ServerSessionRehydratedEventSchema.model_validate(frame).model_dump()
+    if event_name in ("session_snapshot", "session_rehydrated"):
+        normalized = dict(frame)
+        normalized["event"] = "session_snapshot"
+        return ServerSessionSnapshotEventSchema.model_validate(normalized).model_dump()
     if event_name == "generation_started":
         return ServerGenerationStartedEventSchema.model_validate(frame).model_dump()
     if event_name == "token_chunk":
@@ -603,21 +609,21 @@ async def get_thread_history_endpoint(
     broker: AgentChatEventBrokerPort = Depends(get_agent_chat_event_broker_dep),
 ) -> ChatThreadHistoryResponseSchema | JSONResponse:
     """Return persisted conversation thread history and checkpoint count for the authenticated operator."""
-    owner_user_id = str(current_user.id)
+    user_id = str(current_user.id)
     try:
         if hasattr(agent_service, "get_thread_history"):
             thread_state, checkpoint_count = await run_in_threadpool(
                 getattr(agent_service, "get_thread_history"),
                 thread_id,
-                owner_user_id,
+                user_id,
             )
         else:
             existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
             if existing is not None:
-                if existing.owner_user_id and existing.owner_user_id != owner_user_id:
+                if existing.owner_user_id and existing.owner_user_id != user_id:
                     raise ThreadOwnershipMismatchError(
                         thread_id=thread_id,
-                        requester_user_id=owner_user_id,
+                        requester_user_id=user_id,
                     )
                 thread_state = existing
             else:
@@ -625,7 +631,8 @@ async def get_thread_history_endpoint(
                 thread_state = ChatThreadState(
                     thread_id=thread_id,
                     session_id=thread_id,
-                    owner_user_id=owner_user_id,
+                    user_id=resolve_client_user_id(None),
+                    owner_user_id=user_id,
                     owner_email=current_user.email,
                     messages=[],
                     latest_sequence_id=broker.get_latest_sequence_id(thread_id),
@@ -675,10 +682,26 @@ async def get_thread_history_endpoint(
         else None
     )
 
+    session_obj = thread_state.session
+    session_schema = ChatSessionSchema(
+        session_id=session_obj.session_id,
+        thread_id=session_obj.thread_id,
+        agent_id=session_obj.agent_id,
+        client_id=session_obj.client_id,
+        user_id=session_obj.user_id,
+        status=session_obj.status,
+        created_at=session_obj.created_at.isoformat(),
+        updated_at=session_obj.updated_at.isoformat(),
+    )
+
     return ChatThreadHistoryResponseSchema(
         thread_id=thread_state.thread_id,
         session_id=thread_state.session_id,
-        owner_user_id=thread_state.owner_user_id,
+        user_id=session_obj.user_id,
+        agent_id=session_obj.agent_id,
+        client_id=session_obj.client_id,
+        status=session_obj.status,
+        session=session_schema,
         messages=[_project_chat_message_schema(m) for m in thread_state.messages],
         pending_proposal=pending_schema,
         latest_checkpoint_id=thread_state.latest_checkpoint_id,
@@ -818,7 +841,7 @@ async def support_agent_websocket_endpoint(
     if user is None:
         return
 
-    owner_user_id = str(user.id)
+    user_id = str(user.id)
     raw_thread_id = (
         auth_thread_id
         or websocket.query_params.get("thread_id")
@@ -836,30 +859,57 @@ async def support_agent_websocket_endpoint(
         or thread_id
     ).strip()
     session_id = raw_session_id or thread_id
+    agent_id = normalize_agent_id(websocket.query_params.get("agent_id"))
+    client_id = (
+        websocket.query_params.get("client_id") or "trackflow-backoffice"
+    ).strip() or "trackflow-backoffice"
 
-    # Verify per-operator thread ownership and load rehydration snapshot (FR-003, FR-012)
+    # Verify per-operator thread ownership and load rehydration snapshot (FR-003, FR-012).
+    # Client identity (`user_id`) is resolved strictly from domain session_context, ignoring any query param.
     try:
         if hasattr(agent_service, "rehydrate_thread"):
             rehydrated_payload = await run_in_threadpool(
                 getattr(agent_service, "rehydrate_thread"),
                 thread_id,
                 session_id,
-                owner_user_id,
+                user_id,
                 user.email,
+                user_id,
+                agent_id,
+                client_id,
             )
         else:
             existing = await run_in_threadpool(thread_repository.get_thread, thread_id)
             if (
                 existing is not None
                 and existing.owner_user_id
-                and existing.owner_user_id != owner_user_id
+                and existing.owner_user_id != user_id
             ):
                 raise ThreadOwnershipMismatchError(
                     thread_id=thread_id,
-                    requester_user_id=owner_user_id,
+                    requester_user_id=user_id,
                 )
+            now_snap = datetime.now(timezone.utc).isoformat()
+            resolved_client_uid = (
+                existing.session.user_id
+                if existing is not None
+                else UNASSIGNED_CLIENT_USER_ID
+            )
             rehydrated_payload = {
-                "owner_user_id": owner_user_id,
+                "user_id": resolved_client_uid,
+                "agent_id": agent_id,
+                "client_id": client_id,
+                "status": "active",
+                "session": {
+                    "session_id": session_id,
+                    "thread_id": thread_id,
+                    "agent_id": agent_id,
+                    "client_id": client_id,
+                    "user_id": resolved_client_uid,
+                    "status": "active",
+                    "created_at": now_snap,
+                    "updated_at": now_snap,
+                },
                 "messages": (
                     [m.to_dict() for m in existing.messages]
                     if existing is not None
@@ -893,18 +943,39 @@ async def support_agent_websocket_endpoint(
                 getattr(agent_service, "rehydrate_thread"),
                 thread_id,
                 session_id,
-                owner_user_id,
+                user_id,
                 user.email,
+                user_id,
+                agent_id,
+                client_id,
             )
         else:
             snapshot = rehydrated_payload
         now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         seq_id = broker.get_latest_sequence_id(thread_id)
+        resolved_uid = str(snapshot.get("user_id") or UNASSIGNED_CLIENT_USER_ID)
+        resolved_agent_id = str(snapshot.get("agent_id") or agent_id)
+        resolved_client_id = str(snapshot.get("client_id") or client_id)
+        resolved_status = str(snapshot.get("status") or "active")
+        session_dict = snapshot.get("session") or {
+            "session_id": session_id,
+            "thread_id": thread_id,
+            "agent_id": resolved_agent_id,
+            "client_id": resolved_client_id,
+            "user_id": resolved_uid,
+            "status": resolved_status,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
         frame = {
-            "event": "session_rehydrated",
+            "event": "session_snapshot",
             "thread_id": thread_id,
             "session_id": session_id,
-            "owner_user_id": snapshot["owner_user_id"],
+            "user_id": resolved_uid,
+            "agent_id": resolved_agent_id,
+            "client_id": resolved_client_id,
+            "status": resolved_status,
+            "session": session_dict,
             "messages": snapshot["messages"],
             "pending_proposal": snapshot["pending_proposal"],
             "latest_checkpoint_id": snapshot["latest_checkpoint_id"],
@@ -969,9 +1040,11 @@ async def support_agent_websocket_endpoint(
                 if hasattr(agent_service, "stream_query"):
                     await getattr(agent_service, "stream_query")(
                         request=domain_req,
-                        owner_user_id=owner_user_id,
+                        user_id=user_id,
                         owner_email=user.email,
                         session_id=session_id,
+                        agent_id=agent_id,
+                        client_id=client_id,
                         user_turn_id=user_turn_id,
                         assistant_turn_id=assistant_turn_id,
                         abort_event=abort_event,
@@ -1053,11 +1126,13 @@ async def support_agent_websocket_endpoint(
                 }
                 await _send_validated_frame(pong_frame)
 
-            elif event_type == "interrupt":
+            elif event_type in ("interrupt_requested", "interrupt"):
                 try:
-                    interrupt_cmd = ClientInterruptFrameSchema.model_validate(parsed)
+                    interrupt_cmd = ClientInterruptRequestedFrameSchema.model_validate(
+                        parsed
+                    )
                 except Exception:
-                    interrupt_cmd = ClientInterruptFrameSchema()
+                    interrupt_cmd = ClientInterruptRequestedFrameSchema()
                 # Idempotent no-op if no active generation is running
                 await broker.abort_active_generation(
                     thread_id=thread_id,

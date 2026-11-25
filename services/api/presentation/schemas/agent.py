@@ -437,12 +437,52 @@ class ChatMessageSchema(BaseModel):
     )
 
 
+class ChatSessionSchema(BaseModel):
+    """Canonical ChatSession metadata schema containing agent_id, client_id, user_id, and status."""
+
+    session_id: str = Field(..., description="Unique session identifier")
+    thread_id: str = Field(..., description="Bound conversation thread identifier")
+    agent_id: str = Field(
+        default="first_line_cx",
+        description="Support agent identifier",
+    )
+    client_id: str = Field(
+        default="trackflow-backoffice",
+        description="Connected client application or session client identifier",
+    )
+    user_id: str = Field(
+        ..., description="Chatting client user ID bound to the session"
+    )
+    status: Literal["active", "interrupted", "closed"] = Field(default="active", description="Current lifecycle status of the chat session")
+    created_at: Optional[str] = Field(
+        default=None, description="ISO-8601 UTC session creation timestamp"
+    )
+    updated_at: Optional[str] = Field(
+        default=None, description="ISO-8601 UTC session last-updated timestamp"
+    )
+
+
 class ChatThreadHistoryResponseSchema(BaseModel):
     """Response payload returned by GET /api/v1/agent/threads/{thread_id}/history (T007)."""
 
     thread_id: str = Field(..., description="Conversation thread identifier")
     session_id: str = Field(..., description="Session identifier")
-    owner_user_id: str = Field(..., description="Authenticated operator user ID owning the thread")
+    user_id: str = Field(
+        default="unassigned",
+        description="Chatting client user ID bound to the session (or 'unassigned' when no customer is bound)",
+    )
+    agent_id: str = Field(
+        default="first_line_cx",
+        description="Support agent identifier",
+    )
+    client_id: str = Field(
+        default="trackflow-backoffice",
+        description="Client application identifier",
+    )
+    status: Literal["active", "interrupted", "closed"] = Field(default="active", description="Current chat session status")
+    session: ChatSessionSchema = Field(
+        ..., description="Canonical ChatSession metadata object"
+    )
     messages: List[ChatMessageSchema] = Field(
         default_factory=list, description="Ordered list of user and assistant turns"
     )
@@ -469,6 +509,8 @@ class ClientAuthenticateFrameSchema(BaseModel):
     token: str = Field(..., min_length=1)
     thread_id: Optional[str] = None
     session_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    client_id: Optional[str] = None
 
 
 class ClientUserMessageFrameSchema(BaseModel):
@@ -485,12 +527,15 @@ class ClientUserMessageFrameSchema(BaseModel):
     session_context: Optional[AuthenticatedSessionContextSchema] = None
 
 
-class ClientInterruptFrameSchema(BaseModel):
-    """Client-to-server mid-response interrupt command."""
+class ClientInterruptRequestedFrameSchema(BaseModel):
+    """Client-to-server mid-response interrupt_requested command."""
 
-    event: Literal["interrupt"] = "interrupt"
+    event: Literal["interrupt_requested", "interrupt"] = "interrupt_requested"
     turn_id: Optional[str] = None
     reason: Optional[str] = None
+
+
+ClientInterruptFrameSchema = ClientInterruptRequestedFrameSchema
 
 
 class ClientRehydrateFrameSchema(BaseModel):
@@ -507,19 +552,26 @@ class ClientPingFrameSchema(BaseModel):
     timestamp: Optional[str] = None
 
 
-class ServerSessionRehydratedEventSchema(BaseModel):
-    """Server-to-client session_rehydrated WebSocket event."""
+class ServerSessionSnapshotEventSchema(BaseModel):
+    """Server-to-client session_snapshot WebSocket event."""
 
-    event: Literal["session_rehydrated"] = "session_rehydrated"
+    event: Literal["session_snapshot"] = "session_snapshot"
     thread_id: str
     session_id: str
-    owner_user_id: str
+    user_id: str
+    agent_id: str = "first_line_cx"
+    client_id: str = "trackflow-backoffice"
+    status: Literal["active", "interrupted", "closed"] = "active"
+    session: ChatSessionSchema
     messages: List[ChatMessageSchema] = Field(default_factory=list)
     pending_proposal: Optional[MemoryProposalSchema] = None
     latest_checkpoint_id: Optional[str] = None
     checkpoint_count: int = Field(default=0, ge=0)
     sequence_id: int = Field(..., ge=0)
     timestamp: str
+
+
+ServerSessionRehydratedEventSchema = ServerSessionSnapshotEventSchema
 
 
 class ServerGenerationStartedEventSchema(BaseModel):
@@ -619,9 +671,11 @@ __all__ = [
     "AgentTraceResponseSchema",
     "AuthenticatedSessionContextSchema",
     "ChatMessageSchema",
+    "ChatSessionSchema",
     "ChatThreadHistoryResponseSchema",
     "ClientAuthenticateFrameSchema",
     "ClientInterruptFrameSchema",
+    "ClientInterruptRequestedFrameSchema",
     "ClientPingFrameSchema",
     "ClientRehydrateFrameSchema",
     "ClientUserMessageFrameSchema",
@@ -642,6 +696,7 @@ __all__ = [
     "ServerGenerationStartedEventSchema",
     "ServerPongEventSchema",
     "ServerSessionRehydratedEventSchema",
+    "ServerSessionSnapshotEventSchema",
     "ServerTokenChunkEventSchema",
     "ToolCallTraceSchema",
 ]

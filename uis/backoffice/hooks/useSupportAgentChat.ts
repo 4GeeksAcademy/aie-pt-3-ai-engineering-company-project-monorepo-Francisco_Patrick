@@ -9,9 +9,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AgentAuthenticatedSessionContextDTO,
   AgentMemoryProposalDTO,
   AgentQueryResponseDTO,
   ChatMessageDTO,
+  ChatSessionDTO,
   ChatThreadHistoryResponseDTO,
   WebSocketChatConnectionStatus,
 } from '@repo/shared-types';
@@ -38,6 +40,8 @@ export interface UseSupportAgentChatOptions {
   initialThreadId?: string;
   /** Optional explicit session_id override. */
   initialSessionId?: string;
+  /** Optional authenticated customer session context (`customer_id`, segment, operating country). */
+  sessionContext?: AgentAuthenticatedSessionContextDTO | null;
   /** Preferred response language ('en' or 'es', defaults to 'en'). */
   language?: 'en' | 'es';
   /** Whether to automatically connect the WebSocket on mount (defaults to true). */
@@ -56,6 +60,8 @@ export interface UseSupportAgentChatResult {
   threadId: string;
   /** Bound `session_id`. */
   sessionId: string;
+  /** Active `ChatSession` metadata (`agent_id`, `client_id`, `user_id`, `status`), if hydrated. */
+  chatSession: ChatSessionDTO | null;
   /** True while an assistant response is actively streaming `token_chunk` events. */
   isStreaming: boolean;
   /** Turn ID of the currently streaming assistant message, if any. */
@@ -69,7 +75,10 @@ export interface UseSupportAgentChatResult {
   /** Last monotonic event `sequence_id` received on the thread. */
   lastSequenceId: number;
   /** Submit a new user inquiry (or mid-stream redirecting inquiry) over the WebSocket. */
-  sendMessage: (query: string) => Promise<void>;
+  sendMessage: (
+    query: string,
+    sessionContextOverride?: AgentAuthenticatedSessionContextDTO | null
+  ) => Promise<void>;
   /** Immediately interrupt the active streaming assistant response (`{"event": "interrupt"}`). */
   interruptGeneration: () => void;
   /** Manually trigger an immediate WebSocket reconnection and thread rehydration. */
@@ -119,6 +128,7 @@ export function useSupportAgentChat(
       : getOrInitializeThreadId(options.initialThreadId)
   );
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
+  const [chatSession, setChatSession] = useState<ChatSessionDTO | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<WebSocketChatConnectionStatus>('connecting');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -155,6 +165,9 @@ export function useSupportAgentChat(
           return;
         }
         const historyData = (await response.json()) as ChatThreadHistoryResponseDTO;
+        if (historyData.session) {
+          setChatSession(historyData.session);
+        }
         if (Array.isArray(historyData.messages)) {
           setMessages((prev) => mergeRehydratedMessages(prev, historyData.messages));
         }
@@ -249,7 +262,8 @@ export function useSupportAgentChat(
         setLastSequenceId((prev) => Math.max(prev, parsedEvent.sequence_id));
         setMessages((prev) => applyStreamEventToMessages(prev, parsedEvent));
 
-        if (parsedEvent.event === 'session_rehydrated') {
+        if (parsedEvent.event === 'session_snapshot') {
+          setChatSession(parsedEvent.session);
           setPendingProposal(parsedEvent.pending_proposal);
           const streamingTurn = parsedEvent.messages.find(
             (m) => m.role === 'assistant' && m.status === 'streaming'
@@ -380,7 +394,7 @@ export function useSupportAgentChat(
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(
         serializeClientCommand({
-          event: 'interrupt',
+          event: 'interrupt_requested',
           turn_id: currentTurnId,
           reason: 'client_interrupt',
         })
@@ -389,11 +403,18 @@ export function useSupportAgentChat(
   }, []);
 
   const sendMessage = useCallback(
-    async (rawQuery: string): Promise<void> => {
+    async (
+      rawQuery: string,
+      sessionContextOverride?: AgentAuthenticatedSessionContextDTO | null
+    ): Promise<void> => {
       const trimmed = rawQuery.trim();
       if (!trimmed) {
         return;
       }
+      const effectiveSessionContext =
+        sessionContextOverride !== undefined
+          ? sessionContextOverride
+          : (options.sessionContext ?? null);
       setErrorMessage(null);
       const nowIso = new Date().toISOString();
       const userTurnId = `usr_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
@@ -453,6 +474,9 @@ export function useSupportAgentChat(
             language,
             top_k: 3,
             min_score: 0.62,
+            ...(effectiveSessionContext
+              ? { session_context: effectiveSessionContext }
+              : {}),
           })
         );
         return;
@@ -482,6 +506,9 @@ export function useSupportAgentChat(
             language,
             top_k: 3,
             min_score: 0.62,
+            ...(effectiveSessionContext
+              ? { session_context: effectiveSessionContext }
+              : {}),
           }),
         });
         if (!response.ok) {
@@ -532,7 +559,7 @@ export function useSupportAgentChat(
         setActiveTurnId(null);
       }
     },
-    [apiUrl, language, sessionId, threadId]
+    [apiUrl, language, options.sessionContext, sessionId, threadId]
   );
 
   const reconnectNow = useCallback((): void => {
@@ -595,6 +622,7 @@ export function useSupportAgentChat(
     connectionStatus,
     threadId,
     sessionId,
+    chatSession,
     isStreaming,
     activeTurnId,
     pendingProposal,

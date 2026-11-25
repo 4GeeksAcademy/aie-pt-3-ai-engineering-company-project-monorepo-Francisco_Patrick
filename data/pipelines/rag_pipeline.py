@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+import re
 import sys
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 API_ROOT = REPO_ROOT / "services" / "api"
@@ -205,6 +206,74 @@ def generate_answer(
     return enforced_answer, citations
 
 
+def build_citations_from_context(
+    context: Sequence[RetrievedContext],
+) -> List[SourceCitation]:
+    """Build normalized SourceCitation records from pre-retrieved context chunks."""
+    return [
+        SourceCitation(
+            source_document=ctx.chunk.source_document,
+            section=ctx.chunk.section,
+            similarity_score=round(max(0.0, min(1.0, ctx.similarity_score)), 4),
+        )
+        for ctx in context
+    ]
+
+
+def stream_generate_answer(
+    question: str,
+    context: List[RetrievedContext],
+    llm_generator: Optional[LLMGenerationPort] = None,
+    guardrail_validator: Optional[BusinessGuardrailValidator] = None,
+    language: str = "en",
+    config: Optional[KnowledgeRuntimeConfig] = None,
+    abort_event: Optional[Any] = None,
+) -> Iterator[str]:
+    """Stream grounded answer deltas progressively from pre-retrieved context with cooperative cancellation.
+
+    Delegates to `llm_generator.stream_grounded_answer(...)` if supported, checking `abort_event`
+    on every yielded delta so an interrupted turn immediately halts the underlying generation stream.
+    """
+    if abort_event is not None and hasattr(abort_event, "is_set") and abort_event.is_set():
+        return
+
+    active_config = config or KnowledgeRuntimeConfig.from_env()
+    validator = guardrail_validator or BusinessGuardrailValidator()
+    generator = llm_generator or GroundedGenerationAdapter(
+        guardrail_validator=validator,
+        config=active_config,
+    )
+
+    if hasattr(generator, "stream_grounded_answer"):
+        for delta in generator.stream_grounded_answer(
+            query=question,
+            contexts=context,
+            language=language,
+            abort_event=abort_event,
+        ):
+            if abort_event is not None and hasattr(abort_event, "is_set") and abort_event.is_set():
+                return
+            if delta:
+                yield delta
+        return
+
+    raw_answer = generator.generate_grounded_answer(
+        query=question,
+        contexts=context,
+        language=language,
+    )
+    enforced_answer = validator.enforce(
+        query=question,
+        answer=raw_answer,
+        contexts=context,
+    )
+    for delta in re.findall(r"\S+\s*|\s+", enforced_answer):
+        if abort_event is not None and hasattr(abort_event, "is_set") and abort_event.is_set():
+            return
+        if delta:
+            yield delta
+
+
 def query(
     question: str,
     vector_store: VectorStorePort,
@@ -252,10 +321,12 @@ def query(
 
 __all__ = [
     "DEFAULT_SIMILARITY_THRESHOLD",
+    "build_citations_from_context",
     "build_refusal_message",
     "embed",
     "generate_answer",
     "query",
     "retrieve",
     "setup",
+    "stream_generate_answer",
 ]

@@ -31,12 +31,30 @@
         "session_context": { "type": ["object", "null"] }
       }
     },
-    "ClientInterruptFrame": {
+    "ChatSession": {
+      "type": "object",
+      "required": ["session_id", "thread_id", "agent_id", "client_id", "user_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": { "type": "string" },
+        "thread_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "interrupted", "closed"]
+        },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "ClientInterruptRequestedFrame": {
       "type": "object",
       "required": ["event"],
       "additionalProperties": false,
       "properties": {
-        "event": { "const": "interrupt" },
+        "event": { "const": "interrupt_requested" },
         "turn_id": { "type": ["string", "null"] },
         "reason": { "type": ["string", "null"] }
       }
@@ -59,13 +77,17 @@
         "timestamp": { "type": ["string", "null"] }
       }
     },
-    "ServerSessionRehydratedEvent": {
+    "ServerSessionSnapshotEvent": {
       "type": "object",
       "required": [
         "event",
         "thread_id",
         "session_id",
-        "owner_user_id",
+        "user_id",
+        "agent_id",
+        "client_id",
+        "status",
+        "session",
         "messages",
         "checkpoint_count",
         "sequence_id",
@@ -73,10 +95,17 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "event": { "const": "session_rehydrated" },
+        "event": { "const": "session_snapshot" },
         "thread_id": { "type": "string" },
         "session_id": { "type": "string" },
-        "owner_user_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "agent_id": { "type": "string" },
+        "client_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "interrupted", "closed"]
+        },
+        "session": { "$ref": "#/$defs/ChatSession" },
         "messages": { "type": "array", "items": { "type": "object" } },
         "pending_proposal": { "type": ["object", "null"] },
         "latest_checkpoint_id": { "type": ["string", "null"] },
