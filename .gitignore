@@ -52,4 +52,4 @@ Thumbs.db
 
 
 guardrail_cli.py
-test_guardrail_cli.py
+test_guardrail_cli.py*.tsbuildinfo

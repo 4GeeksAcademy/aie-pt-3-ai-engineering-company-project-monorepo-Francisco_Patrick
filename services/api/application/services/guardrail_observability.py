@@ -64,6 +64,21 @@ _ORDER_ID_TOKEN_PATTERN = re.compile(
     r"(?:#\d{4,10}|\b(?:ORD|TRK)-[A-Za-z0-9_-]+\b|\b(?:pedido|order)\s*#?\s*\d{4,10}\b)",
     re.IGNORECASE,
 )
+_CARRIER_CREDENTIAL_PATTERN = re.compile(
+    r"(?:"
+    r"\b(?:UPS|FEDEX|DHL|MRW|SEUR)[_-]?(?:KEY|SECRET|TOKEN|METER|ACCOUNT|PASS|LICENSE)\b(?:\s*[:=]\s*[^\s,;]+)?"
+    r"|\b(?:ups_sec_|ups_api_|fx_live_|dhl_token_|mrw_secret_|mrw_api_|seur_secret_|seur_live_)[A-Za-z0-9_-]+\b"
+    r"|\b(?:ups|fedex|dhl|mrw|seur)[_-]?(?:api_key|secret|token|license)\s*[:=]\s*[^\s,;]+"
+    r")",
+    re.IGNORECASE,
+)
+_AUTH_TOKEN_PATTERN = re.compile(
+    r"(?:"
+    r"\bBearer\s+[A-Za-z0-9\-_.~+/]+=*"
+    r"|\b(?:jwt_secret|api_key|access_token|refresh_token)\s*[:=]\s*[^\s,;]+"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def sanitize_audit_preview(
@@ -94,6 +109,8 @@ def sanitize_audit_preview(
     cleaned = " ".join(str(raw_text).strip().split())
     cleaned = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", cleaned)
     cleaned = _PHONE_PATTERN.sub("[REDACTED_PHONE]", cleaned)
+    cleaned = _CARRIER_CREDENTIAL_PATTERN.sub("[REDACTED_CARRIER_CREDENTIAL]", cleaned)
+    cleaned = _AUTH_TOKEN_PATTERN.sub("[REDACTED_AUTH_TOKEN]", cleaned)
     cleaned = _CARRIER_RATE_PATTERN.sub("[REDACTED_CARRIER_RATE]", cleaned)
     cleaned = _WAREHOUSE_ROUTE_PATTERN.sub("[REDACTED_WAREHOUSE_ROUTE]", cleaned)
     cleaned = _SYSTEM_PROMPT_FRAGMENT_PATTERN.sub("[REDACTED_SYSTEM_PROMPT]", cleaned)

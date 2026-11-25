@@ -1170,7 +1170,188 @@ class AgentChatStreamEvent:
         return base
 
 
+# ---------------------------------------------------------------------------
+# OWASP Top 10 Security Audit, Governance & Action Policy Entities (FR-001..FR-007)
+# ---------------------------------------------------------------------------
+
+ComponentCategory = Literal["BACKEND", "FRONTEND", "AGENTIC", "HOST"]
+OWASPCategory = Literal[
+    "A01_BROKEN_ACCESS_CONTROL",
+    "A02_CRYPTOGRAPHIC_FAILURES",
+    "A03_INJECTION",
+    "A04_INSECURE_DESIGN",
+    "A05_SECURITY_MISCONFIGURATION",
+    "A06_VULNERABLE_COMPONENTS",
+    "A07_AUTH_FAILURES",
+    "A08_INTEGRITY_FAILURES",
+    "A09_LOGGING_MONITORING_FAILURES",
+    "A10_SSRF",
+]
+SeverityLevel = Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL"]
+ApplicabilityVerdict = Literal["APPLIES", "DOES_NOT_APPLY"]
+VerificationStatus = Literal[
+    "OPEN", "IN_PROGRESS", "VERIFIED_RESOLVED", "MITIGATED", "PRE_EXISTING_MITIGATED"
+]
+DataClassification = Literal[
+    "RESTRICTED_PII", "CONFIDENTIAL_B2B", "INTERNAL_OPERATIONAL", "PUBLIC"
+]
+RegulatoryFramework = Literal["GDPR_EU", "CCPA_CPRA_US"]
+
+AgentActionType = Literal[
+    "RETURN_APPROVAL",
+    "CARRIER_REASSIGNMENT",
+    "ORDER_LOOKUP",
+    "BRAND_METRIC_QUERY",
+]
+ApprovalStatus = Literal[
+    "AUTONOMOUSLY_APPROVED",
+    "PENDING_HUMAN_APPROVAL",
+    "HUMAN_APPROVED",
+    "HUMAN_REJECTED",
+    "BLOCKED_SECURITY_VIOLATION",
+    "REFUSED_OUT_OF_SCOPE",
+]
+
+
+@dataclass(frozen=True)
+class SecurityFinding:
+    """Audited vulnerability or hardening item evaluated against OWASP Top 10."""
+
+    id: str
+    component: ComponentCategory
+    category: OWASPCategory
+    title: str
+    location: str
+    severity: SeverityLevel
+    applicability: ApplicabilityVerdict
+    description: str = ""
+    gdpr_implications: bool = False
+    ccpa_implications: bool = False
+    remediation_plan: str = ""
+    verification_status: VerificationStatus = "OPEN"
+    verification_proof: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_at: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert finding to dictionary representation."""
+        return {
+            "id": self.id,
+            "component": self.component,
+            "category": self.category,
+            "title": self.title,
+            "description": self.description,
+            "location": self.location,
+            "severity": self.severity,
+            "applicability": self.applicability,
+            "gdpr_implications": self.gdpr_implications,
+            "ccpa_implications": self.ccpa_implications,
+            "remediation_plan": self.remediation_plan,
+            "verification_status": self.verification_status,
+            "verification_proof": self.verification_proof,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SecurityFinding":
+        """Reconstruct SecurityFinding from dictionary."""
+        return cls(
+            id=str(data["id"]),
+            component=data["component"],
+            category=data["category"],
+            title=str(data["title"]),
+            description=str(data.get("description", "")),
+            location=str(data["location"]),
+            severity=data["severity"],
+            applicability=data["applicability"],
+            gdpr_implications=bool(data.get("gdpr_implications", False)),
+            ccpa_implications=bool(data.get("ccpa_implications", False)),
+            remediation_plan=str(data.get("remediation_plan", "")),
+            verification_status=data.get("verification_status", "OPEN"),
+            verification_proof=str(data.get("verification_proof", "")),
+        )
+
+
+@dataclass(frozen=True)
+class AuditScopeRecord:
+    """Subsystem under security audit scope."""
+
+    service_id: str
+    service_name: str
+    repository_path: str
+    data_classification: DataClassification
+    engineering_owner: str
+    regulatory_scope: List[RegulatoryFramework] = field(default_factory=lambda: ["GDPR_EU"])
+    runtime_environment: str = "production"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert scope record to dictionary representation."""
+        return {
+            "service_id": self.service_id,
+            "service_name": self.service_name,
+            "repository_path": self.repository_path,
+            "data_classification": self.data_classification,
+            "engineering_owner": self.engineering_owner,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AuditScopeRecord":
+        """Reconstruct AuditScopeRecord from dictionary."""
+        return cls(
+            service_id=str(data["service_id"]),
+            service_name=str(data["service_name"]),
+            repository_path=str(data["repository_path"]),
+            data_classification=data["data_classification"],
+            engineering_owner=str(data["engineering_owner"]),
+        )
+
+
+@dataclass(frozen=True)
+class AgentActionPolicy:
+    """Policy rules governing autonomous actions vs. human-in-the-loop authorization gates."""
+
+    action_type: AgentActionType
+    max_autonomous_amount_eur: float = 100.00
+    allowed_autonomous_statuses: List[str] = field(default_factory=lambda: ["PENDING", "PROCESSING", "DELIVERED"])
+    require_session_binding: bool = True
+    enforce_human_approval_gate: bool = True
+
+
+@dataclass(frozen=True)
+class HumanApprovalGateRecord:
+    """Immutable audit record for actions undergoing human-in-the-loop operational review."""
+
+    request_id: str
+    action_type: AgentActionType
+    entity_id: str
+    requested_by_session: str
+    payload_snapshot: Dict[str, Any] = field(default_factory=dict)
+    requested_amount_eur: float = 0.0
+    status: ApprovalStatus = "PENDING_HUMAN_APPROVAL"
+    reviewer_id: Optional[str] = None
+    decision_notes: Optional[str] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    reviewed_at: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert approval gate record to dictionary representation."""
+        return {
+            "request_id": self.request_id,
+            "action_type": self.action_type,
+            "entity_id": self.entity_id,
+            "requested_by_session": self.requested_by_session,
+            "payload_snapshot": self.payload_snapshot,
+            "requested_amount_eur": self.requested_amount_eur,
+            "status": self.status,
+            "reviewer_id": self.reviewer_id,
+            "decision_notes": self.decision_notes,
+            "created_at": self.created_at.isoformat(),
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+        }
+
+
 __all__ = [
+    "AgentActionPolicy",
+    "AgentActionType",
     "AgentChatEventName",
     "AgentChatStreamEvent",
     "AgentCheckpoint",
@@ -1178,7 +1359,10 @@ __all__ = [
     "AgentQueryResult",
     "AgentState",
     "AgentTrace",
+    "ApplicabilityVerdict",
+    "ApprovalStatus",
     "AuditEventType",
+    "AuditScopeRecord",
     "AuthenticatedSessionContext",
     "ChatInterruptedReason",
     "ChatMessage",
@@ -1187,8 +1371,10 @@ __all__ = [
     "ChatThreadState",
     "ChatTurnRole",
     "ChatTurnStatus",
+    "ComponentCategory",
     "ConsolidatedCarrierProfile",
     "CustomerSegment",
+    "DataClassification",
     "GuardrailAction",
     "GuardrailAuditEvent",
     "GuardrailDisposition",
@@ -1198,6 +1384,7 @@ __all__ = [
     "GuardrailInputCategory",
     "GuardrailLayer",
     "GuardrailSummaryReport",
+    "HumanApprovalGateRecord",
     "IntentOutcome",
     "InventoryRecordDTO",
     "InventoryToolInput",
@@ -1208,13 +1395,18 @@ __all__ = [
     "MemoryGuardrailVerdict",
     "MemoryProposal",
     "OperatingCountry",
+    "OWASPCategory",
     "PersistentMemoryRecord",
     "ProposalStatus",
+    "RegulatoryFramework",
     "RetrievedContext",
+    "SecurityFinding",
+    "SeverityLevel",
     "SourceCitation",
     "TicketRecordDTO",
     "TicketToolInput",
     "TicketToolOutput",
     "ToolCallStatus",
     "UserIntentClassification",
+    "VerificationStatus",
 ]

@@ -205,3 +205,110 @@ class TestCountryResolutionAndPolicySeparation:
         assert result.failure_category == "none"
         assert result.reason_code == "AUTHORIZATION_AND_POLICY_VERIFIED"
         assert result.resolved_country == "ES"
+
+    def test_cross_customer_order_refusal(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify tool execution with unauthorized order #45821 is blocked fail-closed."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="lookup_order",
+            parameters={"order_id": "45821"},
+            language="es",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "ORDER_NOT_IN_AUTHENTICATED_SESSION"
+        assert "#45821" in result.message
+
+    def test_cross_brand_metric_isolation(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+    ) -> None:
+        """Verify cross-brand query is refused when session brand does not match parameters."""
+        session = AuthenticatedSessionContext(
+            session_id="sess_brand_a",
+            customer_id="cust_b2b_a",
+            customer_segment="B2B",
+            primary_operating_country="ES",
+            authorized_order_ids=("ORD-001",),
+        )
+        # Monkey-patch brand_id onto session context
+        object.__setattr__(session, "brand_id", "brand_nike_es")
+
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=session,
+            tool_name="get_brand_metrics",
+            parameters={"brand_id": "brand_adidas_es"},
+            language="en",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "CROSS_BRAND_METRIC_ACCESS_DENIED"
+
+    def test_tool_call_authorization_high_value_return_hitl(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify autonomous return approval tool exceeding 100 EUR is blocked for HITL approval."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="return_approval",
+            parameters={"order_id": "10492", "refund_amount_eur": 180.00, "shipment_status": "DELIVERED"},
+            language="es",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "HIGH_VALUE_RETURN_REQUIRES_HUMAN_APPROVAL"
+        assert "human_review_queue_id" in result.metadata
+
+    def test_tool_call_authorization_in_transit_carrier_reassignment_hitl(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify in-transit carrier reassignment tool is blocked for human supervisor review."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="carrier_reassignment",
+            parameters={
+                "order_id": "10492",
+                "target_carrier": "MRW",
+                "shipment_status": "IN_TRANSIT",
+            },
+            language="es",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "IN_TRANSIT_CARRIER_CHANGE_REQUIRES_HUMAN_APPROVAL"
+        assert "human_review_queue_id" in result.metadata
+
+    def test_runtime_ticket_tool_node_blocks_unauthorized_order(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify ticket_tool_node executes validate_tool_call_authorization in runtime and blocks unauthorized order #45821."""
+        from application.services.agent_workflow import ticket_tool_node
+        from domain.agent.entities import TicketToolInput
+        from infrastructure.adapters.mcp_ticket_tool_adapter import McpTicketToolAdapter
+
+        state = {
+            "query": "How is ticket for order #45821?",
+            "session_context": spain_b2c_session,
+            "language": "es",
+            "ticket_tool_input": TicketToolInput(ticket_id="45821"),
+        }
+        res = ticket_tool_node(
+            state=state,  # type: ignore[arg-type]
+            ticket_tool=McpTicketToolAdapter(),
+            authorization_guard=auth_guard,
+        )
+        assert res["is_refusal"] is True
+        assert res["guardrail_action"] == "block"
+        assert res["guardrail_reason_code"] == "ORDER_NOT_IN_AUTHENTICATED_SESSION"
+        assert "#45821" in res["answer"]
+

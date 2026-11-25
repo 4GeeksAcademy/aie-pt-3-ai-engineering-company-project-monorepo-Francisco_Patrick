@@ -628,6 +628,7 @@ class SupportAgentService(SupportAgentServicePort):
                         ticket_tool=self._ticket_tool,
                         context_sanitizer=self._context_sanitizer,
                         observability=self._guardrail_observability,
+                        authorization_guard=self._authorization_guard,
                     )
                 )
                 next_node = route_after_ticket_tool(state)
@@ -638,6 +639,7 @@ class SupportAgentService(SupportAgentServicePort):
                         inventory_tool=self._inventory_tool,
                         context_sanitizer=self._context_sanitizer,
                         observability=self._guardrail_observability,
+                        authorization_guard=self._authorization_guard,
                     )
                 )
                 next_node = route_after_inventory_tool(state)

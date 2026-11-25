@@ -1,0 +1,170 @@
+# Critical Vulnerability Remediation Proof & Verification Artifacts
+
+**Organization**: TrackFlow Tech  
+**Audit Framework**: OWASP Top 10 (2021) & Host Infrastructure Baseline  
+**Evaluation Date**: 2026-11-25  
+**Commit**: `602e55cf3a85a53af25eade50fbbe7fde8dc1b54` | **Branch**: `feature/owasp-top10-audit`
+
+---
+
+## 1. Executive Summary of Critical Findings Remediated
+
+This document provides deterministic, reproducible before-and-after evidence demonstrating that 100% of the 2 code-level vulnerabilities classified with severity **CRITICAL** (`SEC-BK-005`, `SEC-AG-002`) have been fully remediated and verified through automated test suites. (`SEC-BK-009` was audited and reclassified as `PRE_EXISTING_MITIGATED` because `services/api/core/exceptions.py` was already sanitized on `main` in commit `4a38d68`; its regression coverage via `test_error_handling_sanitization.py` is recorded as an informational baseline note in Section 2.2. `SEC-HST-001` is classified as `HIGH` / `MITIGATED` with declarative repository templates and `docker-compose.yml` loopback bindings verified in CI, while live Linux host execution of `capture_baseline.sh` and `verify_hardening.sh` is documented as an operational deployment prerequisite and residual risk in Sections 2.4 and 3.)
+
+| Finding ID | Component | OWASP Category | Finding Title | Pre-Remediation State | Post-Remediation State | Verification Test |
+|---|---|---|---|---|---|---|
+| `SEC-BK-005` | BACKEND | A05: Security Misconfiguration | Wildcard CORS with Credentials Allowed | `allow_origins=["*"]` with `allow_credentials=True` in `services/api/main.py:95` | Explicit whitelist from `CORS_ALLOWED_ORIGINS` (`http://localhost:3000`, `https://app.trackflow.io`); unapproved origins rejected | `test_security_cors_configuration.py` |
+| `SEC-AG-002` | AGENTIC | A02: Cryptographic Failures | Carrier API Keys & Auth Tokens in Observability Logs | Carrier keys (UPS, FedEx, DHL, MRW, SEUR) and Bearer tokens logged cleartext | Multi-carrier regex masking sanitizing tokens to `[REDACTED_CARRIER_CREDENTIAL]` and `[REDACTED_AUTH_TOKEN]` | `test_guardrail_observability_redaction.py` |
+
+---
+
+## 2. Detailed Before & After Evidence
+
+### 2.1 SEC-BK-005: CORS Wildcard Misconfiguration
+
+#### Pre-Remediation State (`services/api/main.py`):
+```python
+# VULNERABLE: Wildcard origin with ambient credentials violates browser cross-origin policy
+application.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+- **Risk**: An attacker on `https://evil-attacker.com` could perform cross-origin authenticated requests with cookies/credentials, accessing sensitive customer data.
+
+#### Post-Remediation State (`services/api/main.py`):
+```python
+# REMEDIATED: Explicit origin whitelist loaded from environment
+cors_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "").strip()
+if cors_origins_env and cors_origins_env != "*":
+    allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://app.trackflow.io",
+    ]
+
+application.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+#### Verification Execution:
+```bash
+uv run --project services/api pytest services/api/tests/unit/test_security_cors_configuration.py -v
+# Output:
+# test_cors_rejects_arbitrary_attacker_origin PASSED
+# test_cors_accepts_whitelisted_origins PASSED
+```
+
+---
+
+### 2.2 SEC-BK-009 (Pre-Existing Mitigated Baseline Control — Not Counted as Branch Remediation): Raw Exception Exposure
+
+#### Status & Provenance (`PRE_EXISTING_MITIGATED` / `INFORMATIONAL`):
+- `services/api/core/exceptions.py` was already sanitized on `main` (commit `4a38d68`) prior to this branch, with zero code diff against `main`.
+- It is therefore classified as `PRE_EXISTING_MITIGATED` (`DOES_NOT_APPLY` / `INFORMATIONAL`) rather than an in-branch critical remediation, and is pinned by the regression suite `services/api/tests/unit/test_error_handling_sanitization.py`.
+
+```python
+async def generic_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Sanitized 500 handler ensuring zero raw stack traces or internal leaks are exposed."""
+    payload = ErrorResponsePayload(
+        error="Server Error",
+        message="An unexpected error occurred. Please try again or contact support.",
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=payload.model_dump(),
+    )
+```
+
+#### Verification Execution:
+```bash
+uv run --project services/api pytest services/api/tests/unit/test_error_handling_sanitization.py -v
+# Output:
+# test_unhandled_exception_returns_sanitized_500 PASSED
+# test_http_exception_returns_clean_payload PASSED
+```
+
+---
+
+### 2.3 SEC-AG-002: Carrier Credential & Token Masking in Logs
+
+#### Pre-Remediation State:
+- Tool execution parameters with carrier keys (e.g. `UPS_KEY: ups_sec_994821a8f9`, `fx_live_9921`, `dhl_token_secret_1234567890`) were stored verbatim in `GuardrailAuditEvent` records.
+
+#### Post-Remediation State (`services/api/application/services/guardrail_observability.py`):
+```python
+_CARRIER_CREDENTIAL_PATTERN = re.compile(
+    r"(?:"
+    r"\b(?:UPS|FEDEX|DHL|MRW|SEUR)[_-]?(?:KEY|SECRET|TOKEN|METER|ACCOUNT|PASS|LICENSE)\b(?:\s*[:=]\s*[^\s,;]+)?"
+    r"|\b(?:ups_sec_|ups_api_|fx_live_|dhl_token_|mrw_secret_|mrw_api_|seur_secret_|seur_live_)[A-Za-z0-9_-]+\b"
+    r"|\b(?:ups|fedex|dhl|mrw|seur)[_-]?(?:api_key|secret|token|license)\s*[:=]\s*[^\s,;]+"
+    r")",
+    re.IGNORECASE,
+)
+_AUTH_TOKEN_PATTERN = re.compile(
+    r"(?:"
+    r"\bBearer\s+[A-Za-z0-9\-_.~+/]+=*"
+    r"|\b(?:jwt_secret|api_key|access_token|refresh_token)\s*[:=]\s*[^\s,;]+"
+    r")",
+    re.IGNORECASE,
+)
+```
+
+#### Verification Execution:
+```bash
+uv run --project services/api pytest services/api/tests/unit/test_guardrail_observability_redaction.py -v
+# Output:
+# test_carrier_credentials_masking PASSED
+# test_customer_pii_and_auth_token_masking PASSED
+```
+
+---
+
+### 2.4 SEC-HST-001 (Declarative Host Hardening Controls & Residual Operational Risk — Classified as `HIGH` / `MITIGATED`): Host Baseline & SSH Hardening
+
+#### Status & Provenance (`HIGH` / `MITIGATED` — Pending Live Host Capture):
+- Because the repository CI and development workspace do not have SSH access to a live staging or production Linux server, `infra/host/baseline_pre.json` (`"provenance": "illustrative"`) and `infra/host/baseline_post.json` (`"provenance": "captured_config_verification"`) are offline configuration templates rather than measured live host captures (`"provenance": "measured_host_capture"`).
+- Therefore, `SEC-HST-001` is excluded from the resolved `CRITICAL` count and classified as `HIGH` / `MITIGATED` (declarative infrastructure-as-code controls verified in CI, with residual operational risk documented below).
+
+#### Declarative Repository Mitigations Implemented:
+- Bound internal Docker ports (`8000`, `6379`, `5555`) to `127.0.0.1` in `docker-compose.yml` and removed the default `admin:admin` Flower credential fallback.
+- Created declarative template `infra/host/sshd_config.hardened` enforcing `PermitRootLogin no`, `PasswordAuthentication no`, and `MaxAuthTries 3`.
+- Configured firewall setup script `infra/host/ufw_setup.sh` with default-deny inbound and explicit `deny` rules for `8000/tcp`, `6379/tcp`, `6333/tcp`, and `5555/tcp`.
+- Enforced filesystem masks `0600` on secrets in `infra/host/permissions_setup.sh`.
+- Updated `infra/host/capture_baseline.sh` to parse live `sshd -T`, `ss -ltnH`, and `ufw status` outputs on Linux hosts and require an explicit `--offline-template` flag when host utilities are unavailable.
+
+#### CI Template Verification Execution:
+```bash
+uv run --project services/api pytest services/api/tests/integration/test_host_hardening_verification.py -v
+# Output:
+# test_sshd_config_hardened_rules PASSED
+# test_ufw_setup_script PASSED
+# test_permissions_setup_script PASSED
+# test_verify_hardening_script PASSED
+```
+
+---
+
+## 3. Residual Risk & Verification Sign-Off
+
+Both code-level critical findings identified across the TrackFlow monorepo (`SEC-BK-005`, `SEC-AG-002`) have been systematically remediated and verified with passing unit tests (plus regression verification for pre-existing `SEC-BK-009`).
+
+### Residual Operational Risk (`SEC-HST-001` — Live Host OS Verification):
+- **Risk Description**: While repository configuration files (`docker-compose.yml`, `infra/host/sshd_config.hardened`, `infra/host/ufw_setup.sh`, `infra/host/permissions_setup.sh`) are validated in CI via `test_host_hardening_verification.py` and `verify_hardening.sh --template-check`, `baseline_pre.json` (`illustrative`) and `baseline_post.json` (`captured_config_verification`) do not represent a live measurement from a deployed staging or production Linux host. If a target host is provisioned without applying these scripts, SSH or firewall misconfigurations could persist at the OS layer.
+- **Mandatory Deployment Runbook**: During staging and production server provisioning, operations must execute:
+  1. `sudo cp infra/host/sshd_config.hardened /etc/ssh/sshd_config && sudo systemctl reload sshd`
+  2. `sudo bash infra/host/ufw_setup.sh && sudo bash infra/host/permissions_setup.sh`
+  3. `sudo bash infra/host/verify_hardening.sh` (strict host mode, without `--template-check`)
+  4. `sudo bash infra/host/capture_baseline.sh infra/host/baseline_post.json POST_REMEDIATION` (producing `"provenance": "measured_host_capture"`) and attach the measured artifact before elevating `SEC-HST-001` to `VERIFIED_RESOLVED`.
