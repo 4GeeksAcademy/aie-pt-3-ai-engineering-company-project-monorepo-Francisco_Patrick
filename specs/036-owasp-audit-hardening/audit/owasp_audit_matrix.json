@@ -525,14 +525,14 @@
       "category": "A05_SECURITY_MISCONFIGURATION",
       "title": "Unauthenticated Direct Root SSH & Public Internal Port Exposure",
       "location": "infra/host/sshd_config.hardened",
-      "severity": "CRITICAL",
+      "severity": "HIGH",
       "applicability": "APPLIES",
       "gdpr_implications": true,
       "ccpa_implications": true,
-      "description": "Unrestricted root SSH logins, password authentication, and non-loopback Docker port bindings (8000, 6379, 5555) exposed internal services.",
-      "remediation_plan": "Enforce PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3 in sshd_config.hardened, bind Docker internal ports (8000, 6379, 5555) to 127.0.0.1 in docker-compose.yml, require FLOWER_BASIC_AUTH, and deny 8000/6379/6333/5555 in ufw_setup.sh.",
-      "verification_status": "VERIFIED_RESOLVED",
-      "verification_proof": "Verified by services/api/tests/integration/test_host_hardening_verification.py."
+      "description": "Unrestricted root SSH logins, password authentication, and non-loopback Docker port bindings (8000, 6379, 5555) exposed internal services. Declarative hardening templates are committed and validated in CI, while live host OS enforcement remains an operational deployment prerequisite until measured on staging/production.",
+      "remediation_plan": "Enforce PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3 in sshd_config.hardened, bind Docker internal ports (8000, 6379, 5555) to 127.0.0.1 in docker-compose.yml, require FLOWER_BASIC_AUTH, and deny 8000/6379/6333/5555 in ufw_setup.sh; execute capture_baseline.sh and verify_hardening.sh on live staging/production hosts during provisioning.",
+      "verification_status": "MITIGATED",
+      "verification_proof": "Declarative repository templates verified by services/api/tests/integration/test_host_hardening_verification.py (--template-check); live host OS measurement (provenance=measured_host_capture) pending staging/production deployment execution."
     }
   ]
 }

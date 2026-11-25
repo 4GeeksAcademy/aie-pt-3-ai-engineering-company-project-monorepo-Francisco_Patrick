@@ -22,8 +22,8 @@ Durante noviembre de 2026, TrackFlow Tech llevó a cabo una auditoría integral 
 
 ### Hitos y Resultados Clave:
 1. **Evaluación al 100% del OWASP Top 10**: Se evaluaron las 10 categorías en los 3 carriles técnicos (30 intersecciones discretas analizadas, con veredictos explícitos de aplicabilidad, calificación de severidad CVSS/OWASP y citas directas de código/endpoints, más `SEC-HST-001` en infraestructura host).
-2. **0 Vulnerabilidades Críticas Abiertas (100% Remediadas)**: Las 3 vulnerabilidades críticas descubiertas (`SEC-BK-005` CORS wildcard con credenciales, `SEC-AG-002` credenciales de carriers en logs agénticos y `SEC-HST-001` acceso SSH directo como root y puertos internos expuestos) fueron solventadas con pruebas antes/después reproducibles. (`SEC-BK-009` en `services/api/core/exceptions.py` ya se encontraba mitigado en `main` desde el commit `4a38d68`, por lo que se clasifica como `PRE_EXISTING_MITIGATED` / `INFORMATIONAL` y se asegura con tests de regresión.)
-3. **Endurecimiento de Host Certificado**: Implementación de usuario operativo sin privilegios (`trackflow-ops`), desactivación de acceso root por SSH (`PermitRootLogin no`, `PasswordAuthentication no`), vinculación a loopback (`127.0.0.1`) de los puertos internos en Docker (`8000`, `6379`, `5555`), eliminación de credenciales por defecto `admin:admin` en Flower, cortafuegos `ufw` con política predeterminada *default-deny* y máscara de permisos `0600` en secretos `.env`.
+2. **0 Vulnerabilidades Críticas Abiertas (100% Remediadas en Código)**: Las 2 vulnerabilidades críticas de código descubiertas (`SEC-BK-005` CORS wildcard con credenciales y `SEC-AG-002` credenciales de carriers en logs agénticos) fueron solventadas con pruebas antes/después reproducibles. (`SEC-BK-009` en `services/api/core/exceptions.py` ya se encontraba mitigado en `main` desde el commit `4a38d68`, por lo que se clasifica como `PRE_EXISTING_MITIGATED` / `INFORMATIONAL` y se asegura con tests de regresión.)
+3. **Plantillas de Endurecimiento de Host y Riesgo Operacional Residual (`SEC-HST-001`)**: Se implementaron plantillas declarativas para el usuario operativo sin privilegios (`trackflow-ops`), desactivación de acceso root por SSH (`PermitRootLogin no`, `PasswordAuthentication no` en `sshd_config.hardened`), vinculación a loopback (`127.0.0.1`) de los puertos internos en Docker (`8000`, `6379`, `5555`), eliminación de credenciales por defecto `admin:admin` en Flower, cortafuegos `ufw` con política predeterminada *default-deny* (`ufw_setup.sh`) y máscara de permisos `0600` en secretos `.env` (`permissions_setup.sh`). Dado que `baseline_pre.json` (`illustrative`) y `baseline_post.json` (`captured_config_verification`) corresponden a verificaciones de configuración en repositorio/CI y no a una captura en vivo de un servidor Linux de staging/producción, `SEC-HST-001` se clasifica con severidad **ALTA** (`HIGH`) y estado **MITIGADO** (`MITIGATED`), documentando el riesgo operacional residual y el runbook obligatorio de captura en despliegue.
 4. **Gobernanza Agéntica y Compuertas HITL (Human-in-the-Loop)**: Aislamiento estricto de herramientas contra IDOR (aislamiento por sesión de órdenes B2C y métricas de marcas B2B) y compuertas de aprobación humana obligatorias para devoluciones $> 100{,}00$ EUR y cambio de transportista en paquetes en tránsito.
 5. **Remediación del Bug de Pre-Merge (`owasp-hardening-pr-findings`)**: Cierre de brechas en endpoints `/actions/review` (RBAC con roles supervisor `admin`/`manager`, prevención de suplantación de `reviewer_id`), cableado en runtime de validación de herramientas en LangGraph (`ticket_tool_node`, `inventory_tool_node`), y eliminación de falsos positivos en el script de verificación del host.
 
@@ -34,11 +34,11 @@ Durante noviembre de 2026, TrackFlow Tech llevó a cabo una auditoría integral 
 │ Backend API          │    1     │  2   │   3    │  1  │      3       │  10   │
 │ Frontend Web Apps    │    0     │  3   │   3    │  1  │      3       │  10   │
 │ Flujos Agénticos IA  │    1     │  4   │   3    │  1  │      1       │  10   │
-│ Infraestructura Host │    1     │  0   │   0    │  0  │      0       │   1   │
+│ Infraestructura Host │    0     │  1   │   0    │  0  │      0       │   1   │
 ├──────────────────────┼──────────┼──────┼────────┼─────┼──────────────┼───────┤
-│ Total Monorepo       │    3     │  9   │   9    │  3  │      7       │  31   │
+│ Total Monorepo       │    2     │ 10   │   9    │  3  │      7       │  31   │
 └──────────────────────┴──────────┴──────┴────────┴─────┴──────────────┴───────┘
-Estado: 3/3 Críticas Resueltas (100%) | 0 Regresiones | Tests Pasando
+Estado: 2/2 Críticas de Código Resueltas (100%) | SEC-HST-001 Mitigado en Plantillas (Pendiente Captura en Host Live) | 0 Regresiones
 ```
 
 ---
@@ -113,7 +113,7 @@ A continuación se detalla la matriz de auditoría con las 10 categorías evalua
 | **A05: Configuración Incorrecta** | Backend | `SEC-BK-005` | Wildcard CORS Permisivo (`*`) con `allow_credentials=True` | **CRÍTICA** | APLICA | **RESUELTO** (Whitelist de Entorno) |
 | | Frontend | `SEC-FE-005` | Cabeceras de Seguridad Ausentes (CSP, HSTS, X-Frame) | ALTA | APLICA | MITIGADO (`next.config.js`) |
 | | Agente IA | `SEC-AG-005` | Límites No Acotados de Tokens en Nodos de Generación LLM | MEDIA | APLICA | **RESUELTO** (MaxTokens=1024, Temp=0.2) |
-| | Host | `SEC-HST-001` | Acceso SSH Directo de Root y Autenticación por Password | **CRÍTICA** | APLICA | **RESUELTO** (`sshd_config.hardened`) |
+| | Host | `SEC-HST-001` | Acceso SSH Directo de Root y Exposición de Puertos Internos | ALTA | APLICA | MITIGADO (Plantillas CI; Pendiente Captura Host Live) |
 | **A06: Componentes Vulnerables** | Backend | `SEC-BK-006` | Dependencias Python con Rangos Abiertos en pyproject.toml | BAJA | APLICA | MITIGADO (`uv lock` fijado) |
 | | Frontend | `SEC-FE-006` | Dependencias npm Desactualizadas en Árbol de Trabajo | MEDIA | APLICA | MITIGADO (`npm audit fix`) |
 | | Agente IA | `SEC-AG-006` | Vulnerabilidades en Frameworks LLM (`langgraph`, `fastmcp`) | BAJA | APLICA | MITIGADO (Lockfiles Estrictos) |
@@ -237,9 +237,18 @@ A continuación se detalla la prueba reproducible antes/después de las correcci
 - **Archivo**: `services/api/core/exceptions.py` (ya sanitizado en `main` en el commit `4a38d68`, sin diff en esta rama).
 - **Estado Seguro**: El manejador de excepciones `generic_exception_handler` captura cualquier excepción imprevista y responde un JSON estandarizado sin incluir trazas de conexión ni `str(e)`. Reclasificado como `PRE_EXISTING_MITIGATED` (`INFORMATIONAL` / `DOES_NOT_APPLY`) y asegurado mediante el conjunto de pruebas de regresión `services/api/tests/unit/test_error_handling_sanitization.py`.
 
-### 7.4 SEC-HST-001: Endurecimiento de Acceso Host
-- **Archivos**: `infra/host/sshd_config.hardened`, `infra/host/ufw_setup.sh`, `infra/host/permissions_setup.sh`, `infra/host/verify_hardening.sh`.
-- **Prueba Determinista**: Test de integración `services/api/tests/integration/test_host_hardening_verification.py`.
+### 7.4 SEC-HST-001 (`HIGH` / `MITIGATED`): Endurecimiento Declarativo de Acceso Host y Riesgo Operacional Residual
+- **Archivos de Configuración y Plantillas**: `docker-compose.yml` (puertos `8000`, `6379`, `5555` vinculados a `127.0.0.1` y `FLOWER_BASIC_AUTH` obligatorio), `infra/host/sshd_config.hardened`, `infra/host/ufw_setup.sh`, `infra/host/permissions_setup.sh`, `infra/host/verify_hardening.sh`, `infra/host/capture_baseline.sh`.
+- **Verificación en CI (Plantillas)**: Test de integración `services/api/tests/integration/test_host_hardening_verification.py`.
+- **Alcance de la Evidencia y Riesgo Residual**: `infra/host/baseline_pre.json` tiene `"provenance": "illustrative"` e `infra/host/baseline_post.json` tiene `"provenance": "captured_config_verification"`, lo que refleja la validación estática de plantillas y configuración de repositorio en entorno CI/desarrollo, no la salida en vivo de `verify_hardening.sh` sobre un host Linux de staging o producción. Por transparencia metodológica, `SEC-HST-001` se retira del conteo de vulnerabilidades críticas cerradas en código y se registra como `HIGH` / `MITIGATED` con riesgo operacional residual hasta que durante el aprovisionamiento del servidor Linux de destino se ejecuten:
+  ```bash
+  sudo cp infra/host/sshd_config.hardened /etc/ssh/sshd_config && sudo systemctl reload sshd
+  sudo bash infra/host/ufw_setup.sh
+  sudo bash infra/host/permissions_setup.sh
+  sudo bash infra/host/verify_hardening.sh
+  sudo bash infra/host/capture_baseline.sh infra/host/baseline_post.json POST_REMEDIATION
+  ```
+  adjuntando el artefacto resultante con `"provenance": "measured_host_capture"`.
 
 ---
 

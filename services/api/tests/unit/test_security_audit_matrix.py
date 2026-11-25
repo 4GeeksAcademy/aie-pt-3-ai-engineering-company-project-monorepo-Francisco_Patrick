@@ -84,14 +84,37 @@ def test_critical_findings_require_diff_or_test_and_valid_commit_hash(
         "commit_hash must not point to pre-audit commit 8f4091a"
     )
 
+    # Load host baseline_post.json provenance to verify whether host claims are backed by measured live capture
+    baseline_post_path = repo_root / "infra" / "host" / "baseline_post.json"
+    baseline_post_data = json.loads(baseline_post_path.read_text(encoding="utf-8"))
+    host_provenance = baseline_post_data.get("provenance")
+
     # Check every CRITICAL finding marked VERIFIED_RESOLVED
     critical_resolved = [
         f
         for f in validated.findings
         if f.severity == "CRITICAL" and f.verification_status == "VERIFIED_RESOLVED"
     ]
-    assert len(critical_resolved) == 3, (
-        f"Expected exactly 3 VERIFIED_RESOLVED CRITICAL findings (SEC-BK-005, SEC-AG-002, SEC-HST-001), got {[f.id for f in critical_resolved]}"
+    for finding in critical_resolved:
+        if finding.component == "HOST":
+            assert host_provenance == "measured_host_capture", (
+                f"HOST finding {finding.id} cannot be CRITICAL + VERIFIED_RESOLVED when "
+                f"baseline_post.json provenance is '{host_provenance}' (requires 'measured_host_capture')"
+            )
+
+    expected_critical_ids = {"SEC-BK-005", "SEC-AG-002"}
+    if host_provenance == "measured_host_capture":
+        expected_critical_ids.add("SEC-HST-001")
+    else:
+        hst_findings = [f for f in validated.findings if f.id == "SEC-HST-001"]
+        assert len(hst_findings) == 1
+        assert not (
+            hst_findings[0].severity == "CRITICAL"
+            and hst_findings[0].verification_status == "VERIFIED_RESOLVED"
+        ), "SEC-HST-001 must not be claimed as CRITICAL + VERIFIED_RESOLVED without a measured_host_capture"
+
+    assert {f.id for f in critical_resolved} == expected_critical_ids, (
+        f"Expected VERIFIED_RESOLVED CRITICAL findings {sorted(expected_critical_ids)}, got {[f.id for f in critical_resolved]}"
     )
 
     for finding in critical_resolved:

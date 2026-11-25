@@ -119,3 +119,34 @@ def test_ufw_setup_covers_all_compose_internal_ports(repo_root: Path) -> None:
                 f"Internal port {container_port} from service '{service_name}' is not covered by ufw_setup.sh"
             )
 
+
+def test_capture_baseline_parses_live_probes_and_guards_unmeasured_provenance(repo_root: Path) -> None:
+    """Verify capture_baseline.sh parses live probe outputs rather than ignoring them, and baseline JSON provenance is transparent."""
+    capture_script = repo_root / "infra" / "host" / "capture_baseline.sh"
+    assert capture_script.exists(), f"capture_baseline.sh missing at {capture_script}"
+    script_content = capture_script.read_text(encoding="utf-8")
+
+    # Verify probe variables are actively referenced and parsed in the script
+    assert "--offline-template" in script_content
+    assert 'echo "$SSH_SOURCE"' in script_content
+    assert 'echo "$SS_OUT"' in script_content
+    assert 'echo "$UFW_OUT"' in script_content
+    assert 'echo "$DOCKER_PORTS"' in script_content
+    assert 'echo "$IPTABLES_DOCKER_USER"' in script_content
+    assert '"permit_root_login": ${PERMIT_ROOT_LOGIN}' in script_content
+
+    # Verify unmeasured baseline files are explicitly tagged and not disguised as measured_host_capture
+    pre_data = json.loads((repo_root / "infra" / "host" / "baseline_pre.json").read_text(encoding="utf-8"))
+    post_data = json.loads((repo_root / "infra" / "host" / "baseline_post.json").read_text(encoding="utf-8"))
+    assert pre_data.get("provenance") == "illustrative"
+    assert post_data.get("provenance") in {"captured_config_verification", "measured_host_capture"}
+    if post_data.get("provenance") != "measured_host_capture":
+        matrix_data = json.loads(
+            (repo_root / "specs" / "036-owasp-audit-hardening" / "audit" / "owasp_audit_matrix.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        hst_finding = next(f for f in matrix_data["findings"] if f["id"] == "SEC-HST-001")
+        assert hst_finding["verification_status"] != "VERIFIED_RESOLVED"
+
+

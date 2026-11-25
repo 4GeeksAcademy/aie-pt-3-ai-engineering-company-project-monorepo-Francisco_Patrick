@@ -9,13 +9,12 @@
 
 ## 1. Executive Summary of Critical Findings Remediated
 
-This document provides deterministic, reproducible before-and-after evidence demonstrating that 100% of the 3 vulnerabilities classified with severity **CRITICAL** (`SEC-BK-005`, `SEC-AG-002`, `SEC-HST-001`) have been fully remediated and verified through automated test suites. (`SEC-BK-009` was audited and reclassified as `PRE_EXISTING_MITIGATED` because `services/api/core/exceptions.py` was already sanitized on `main` in commit `4a38d68`; its regression coverage via `test_error_handling_sanitization.py` is recorded as an informational baseline note in Section 2.2.)
+This document provides deterministic, reproducible before-and-after evidence demonstrating that 100% of the 2 code-level vulnerabilities classified with severity **CRITICAL** (`SEC-BK-005`, `SEC-AG-002`) have been fully remediated and verified through automated test suites. (`SEC-BK-009` was audited and reclassified as `PRE_EXISTING_MITIGATED` because `services/api/core/exceptions.py` was already sanitized on `main` in commit `4a38d68`; its regression coverage via `test_error_handling_sanitization.py` is recorded as an informational baseline note in Section 2.2. `SEC-HST-001` is classified as `HIGH` / `MITIGATED` with declarative repository templates and `docker-compose.yml` loopback bindings verified in CI, while live Linux host execution of `capture_baseline.sh` and `verify_hardening.sh` is documented as an operational deployment prerequisite and residual risk in Sections 2.4 and 3.)
 
 | Finding ID | Component | OWASP Category | Finding Title | Pre-Remediation State | Post-Remediation State | Verification Test |
 |---|---|---|---|---|---|---|
 | `SEC-BK-005` | BACKEND | A05: Security Misconfiguration | Wildcard CORS with Credentials Allowed | `allow_origins=["*"]` with `allow_credentials=True` in `services/api/main.py:95` | Explicit whitelist from `CORS_ALLOWED_ORIGINS` (`http://localhost:3000`, `https://app.trackflow.io`); unapproved origins rejected | `test_security_cors_configuration.py` |
 | `SEC-AG-002` | AGENTIC | A02: Cryptographic Failures | Carrier API Keys & Auth Tokens in Observability Logs | Carrier keys (UPS, FedEx, DHL, MRW, SEUR) and Bearer tokens logged cleartext | Multi-carrier regex masking sanitizing tokens to `[REDACTED_CARRIER_CREDENTIAL]` and `[REDACTED_AUTH_TOKEN]` | `test_guardrail_observability_redaction.py` |
-| `SEC-HST-001` | HOST | A05: Security Misconfiguration | Unauthenticated Direct Root SSH & Public Internal Port Exposure | Root SSH logins permitted; internal ports (`8000`, `6379`, `5555`) published on `0.0.0.0` with `admin:admin` Flower fallback | Hardened SSH config (`PermitRootLogin no`, `PasswordAuthentication no`, `MaxAuthTries 3`), loopback binding (`127.0.0.1`) for `8000`/`6379`/`5555`, mandatory `FLOWER_BASIC_AUTH`, and UFW deny rules | `test_host_hardening_verification.py` |
 
 ---
 
@@ -133,17 +132,20 @@ uv run --project services/api pytest services/api/tests/unit/test_guardrail_obse
 
 ---
 
-### 2.4 SEC-HST-001: Host Baseline & SSH Hardening
+### 2.4 SEC-HST-001 (Declarative Host Hardening Controls & Residual Operational Risk — Classified as `HIGH` / `MITIGATED`): Host Baseline & SSH Hardening
 
-#### Pre-Remediation State:
-- SSH daemon allowed root login (`PermitRootLogin yes`) and password brute-forcing (`PasswordAuthentication yes`).
+#### Status & Provenance (`HIGH` / `MITIGATED` — Pending Live Host Capture):
+- Because the repository CI and development workspace do not have SSH access to a live staging or production Linux server, `infra/host/baseline_pre.json` (`"provenance": "illustrative"`) and `infra/host/baseline_post.json` (`"provenance": "captured_config_verification"`) are offline configuration templates rather than measured live host captures (`"provenance": "measured_host_capture"`).
+- Therefore, `SEC-HST-001` is excluded from the resolved `CRITICAL` count and classified as `HIGH` / `MITIGATED` (declarative infrastructure-as-code controls verified in CI, with residual operational risk documented below).
 
-#### Post-Remediation State:
+#### Declarative Repository Mitigations Implemented:
+- Bound internal Docker ports (`8000`, `6379`, `5555`) to `127.0.0.1` in `docker-compose.yml` and removed the default `admin:admin` Flower credential fallback.
 - Created declarative template `infra/host/sshd_config.hardened` enforcing `PermitRootLogin no`, `PasswordAuthentication no`, and `MaxAuthTries 3`.
-- Configured firewall setup `infra/host/ufw_setup.sh` with default-deny inbound.
+- Configured firewall setup script `infra/host/ufw_setup.sh` with default-deny inbound and explicit `deny` rules for `8000/tcp`, `6379/tcp`, `6333/tcp`, and `5555/tcp`.
 - Enforced filesystem masks `0600` on secrets in `infra/host/permissions_setup.sh`.
+- Updated `infra/host/capture_baseline.sh` to parse live `sshd -T`, `ss -ltnH`, and `ufw status` outputs on Linux hosts and require an explicit `--offline-template` flag when host utilities are unavailable.
 
-#### Verification Execution:
+#### CI Template Verification Execution:
 ```bash
 uv run --project services/api pytest services/api/tests/integration/test_host_hardening_verification.py -v
 # Output:
@@ -157,4 +159,12 @@ uv run --project services/api pytest services/api/tests/integration/test_host_ha
 
 ## 3. Residual Risk & Verification Sign-Off
 
-All 3 critical findings identified across the TrackFlow monorepo and host infrastructure (`SEC-BK-005`, `SEC-AG-002`, `SEC-HST-001`) have been systematically mitigated with passing unit and integration verification tests (plus regression verification for pre-existing `SEC-BK-009`). Zero unmitigated critical findings remain.
+Both code-level critical findings identified across the TrackFlow monorepo (`SEC-BK-005`, `SEC-AG-002`) have been systematically remediated and verified with passing unit tests (plus regression verification for pre-existing `SEC-BK-009`).
+
+### Residual Operational Risk (`SEC-HST-001` — Live Host OS Verification):
+- **Risk Description**: While repository configuration files (`docker-compose.yml`, `infra/host/sshd_config.hardened`, `infra/host/ufw_setup.sh`, `infra/host/permissions_setup.sh`) are validated in CI via `test_host_hardening_verification.py` and `verify_hardening.sh --template-check`, `baseline_pre.json` (`illustrative`) and `baseline_post.json` (`captured_config_verification`) do not represent a live measurement from a deployed staging or production Linux host. If a target host is provisioned without applying these scripts, SSH or firewall misconfigurations could persist at the OS layer.
+- **Mandatory Deployment Runbook**: During staging and production server provisioning, operations must execute:
+  1. `sudo cp infra/host/sshd_config.hardened /etc/ssh/sshd_config && sudo systemctl reload sshd`
+  2. `sudo bash infra/host/ufw_setup.sh && sudo bash infra/host/permissions_setup.sh`
+  3. `sudo bash infra/host/verify_hardening.sh` (strict host mode, without `--template-check`)
+  4. `sudo bash infra/host/capture_baseline.sh infra/host/baseline_post.json POST_REMEDIATION` (producing `"provenance": "measured_host_capture"`) and attach the measured artifact before elevating `SEC-HST-001` to `VERIFIED_RESOLVED`.
