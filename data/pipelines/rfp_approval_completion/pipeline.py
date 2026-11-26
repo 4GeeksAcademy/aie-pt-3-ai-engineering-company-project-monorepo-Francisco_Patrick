@@ -499,16 +499,26 @@ class RFPApprovalCompletionPipeline:
 
         current_approval_status = snapshot.values.get("approval_status")
         if not snapshot.next:
-            if current_approval_status == "rejected" and decision in ("request_changes", "approve"):
+            if (
+                current_approval_status == "rejected"
+                and decision in ("request_changes", "approve")
+            ) or (
+                current_approval_status == "needs_human_review"
+                and decision in ("approve", "reject", "request_changes")
+            ):
                 branch_state = dict(snapshot.values)
                 branch_state["review_feedback"] = validated.get("feedback")
                 branch_state["approver"] = validated.get("approver")
                 if decision == "request_changes":
                     branch_state["approval_status"] = "pending"
+                    if current_approval_status == "needs_human_review":
+                        branch_state["max_revisions"] = (
+                            int(branch_state.get("iteration_count", 0)) + 1
+                        )
                     revised_update = self._node_revise_department_draft(branch_state)
                     branch_state.update(revised_update)
                     self.branch_graph.invoke(branch_state, config=config)
-                elif decision == "approve":
+                elif decision in ("approve", "reject"):
                     branch_state["approval_status"] = "pending"
                     self.branch_graph.invoke(branch_state, config=config)
                     self.branch_graph.invoke(Command(resume=validated), config=config)
