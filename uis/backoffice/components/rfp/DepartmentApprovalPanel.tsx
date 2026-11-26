@@ -9,6 +9,7 @@ import type {
   ResumeDecisionRequestDTO,
   ResumeDecisionResponseDTO,
 } from '@repo/shared-types';
+import { MarkdownPreview } from './MarkdownPreview';
 
 /**
  * Props for the DepartmentApprovalPanel component.
@@ -281,10 +282,11 @@ export function DepartmentApprovalPanel({
                 )}
 
                 {/* Draft Markdown Preview */}
-                <div className="bg-slate-900/90 border border-slate-800/80 rounded-lg p-3.5 max-h-56 overflow-y-auto">
-                  <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">
-                    {section.draft_content || 'Sin borrador generado.'}
-                  </pre>
+                <div className="bg-slate-900/90 border border-slate-800/80 rounded-lg p-3.5 max-h-64 overflow-y-auto">
+                  <MarkdownPreview
+                    content={section.draft_content || ''}
+                    emptyText="Sin borrador generado."
+                  />
                 </div>
 
                 {/* Revision Feedback Input */}

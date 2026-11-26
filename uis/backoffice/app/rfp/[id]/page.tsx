@@ -9,10 +9,10 @@ import type {
 import { TicketStatusBadge } from '../../../components/rfp/TicketStatusBadge';
 import { ReadabilityMetricCard } from '../../../components/rfp/ReadabilityMetricCard';
 import { DepartmentKeyAspectsCard } from '../../../components/rfp/DepartmentKeyAspectsCard';
-import { HandoffJsonViewer } from '../../../components/rfp/HandoffJsonViewer';
 import { DepartmentApprovalPanel } from '../../../components/rfp/DepartmentApprovalPanel';
 import { ArbitrationLogViewer } from '../../../components/rfp/ArbitrationLogViewer';
 import { FinalDocumentViewer } from '../../../components/rfp/FinalDocumentViewer';
+import { MarkdownPreview } from '../../../components/rfp/MarkdownPreview';
 
 /**
  * Page props interface matching Next.js App Router dynamic route parameters.
@@ -35,6 +35,8 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
   const [ticket, setTicket] = useState<IntakeTicketDetailResponseDTO | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingProposal, setIsGeneratingProposal] = useState<boolean>(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const fetchTicket = useCallback(async (): Promise<void> => {
     try {
@@ -54,13 +56,64 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
     }
   }, [ticketId]);
 
+  const handleGenerateProposal = useCallback(async (): Promise<void> => {
+    setIsGeneratingProposal(true);
+    setGenerationError(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/rfp/${ticketId}/generate-proposal`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const errBody = (await response.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(errBody.detail || 'Error al iniciar la generación de propuesta.');
+      }
+      await fetchTicket();
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Error desconocido al iniciar generación.';
+      setGenerationError(msg);
+    } finally {
+      setIsGeneratingProposal(false);
+    }
+  }, [ticketId, fetchTicket]);
+
+  const handleEnterApproval = useCallback(async (): Promise<void> => {
+    setIsGeneratingProposal(true);
+    setGenerationError(null);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/rfp/tickets/${ticketId}/enter-approval`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const errBody = (await response.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(errBody.detail || 'Error al pasar el ticket a aprobación.');
+      }
+      await fetchTicket();
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Error desconocido al pasar a aprobación.';
+      setGenerationError(msg);
+    } finally {
+      setIsGeneratingProposal(false);
+    }
+  }, [ticketId, fetchTicket]);
+
   useEffect(() => {
     fetchTicket();
   }, [fetchTicket]);
 
-  // Polling: if still analyzing, poll every 2.5 seconds
+  // Polling: while analyzing, drafting, or evaluating, poll every 2.5 seconds
   useEffect(() => {
-    if (!ticket || ticket.status !== 'analizando') return;
+    if (
+      !ticket ||
+      (ticket.status !== 'analizando' &&
+        ticket.status !== 'generando_borrador' &&
+        ticket.status !== 'en_evaluación')
+    ) {
+      return;
+    }
 
     const interval = setInterval(() => {
       fetchTicket();
@@ -187,6 +240,79 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
         </div>
       )}
 
+      {/* Drafting In-Progress Banner */}
+      {ticket.status === 'generando_borrador' && (
+        <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-6 text-center space-y-3">
+          <span className="inline-block w-8 h-8 border-3 border-sky-400 border-t-transparent rounded-full animate-spin" />
+          <h3 className="text-sm font-semibold text-sky-300">
+            Generando Propuestas Departamentales y Evaluando Cumplimiento
+          </h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Los agentes departamentales están redactando y evaluando cada sección antes de habilitar el panel de aprobación humana.
+          </p>
+        </div>
+      )}
+
+      {/* Evaluated Banner: Allow advancing to esperando_aprobación if still in en_evaluación */}
+      {ticket.status === 'en_evaluación' && (
+        <div className="bg-sky-500/10 border border-sky-500/25 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-sky-300">
+              Evaluación Completada — Listo para Aprobación Humana
+            </h3>
+            <p className="text-xs text-slate-300">
+              Los borradores departamentales ya fueron evaluados. Pasa el ticket a{' '}
+              <span className="font-mono text-sky-400">esperando_aprobación</span> para habilitar el panel de los responsables.
+            </p>
+            {generationError && (
+              <p className="text-xs text-rose-400 pt-1">{generationError}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            data-testid="enter-approval-button"
+            disabled={isGeneratingProposal}
+            onClick={() => {
+              void handleEnterApproval();
+            }}
+            className="shrink-0 px-4 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer"
+          >
+            {isGeneratingProposal ? 'Habilitando...' : 'Habilitar Panel de Aprobación'}
+          </button>
+        </div>
+      )}
+
+      {/* Action Banner: Trigger Part 2 Proposal Generation & Part 3 Approval */}
+      {ticket.status === 'analisis_completo' && (
+        <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-emerald-300">
+              Análisis Completado — Listo para Generar Propuesta y Aprobación
+            </h3>
+            <p className="text-xs text-slate-300">
+              Inicia la redacción de secciones por departamento y su paso a{' '}
+              <span className="font-mono text-emerald-400">esperando_aprobación</span> para habilitar la revisión de los responsables.
+            </p>
+            {generationError && (
+              <p className="text-xs text-rose-400 pt-1">{generationError}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            data-testid="generate-proposal-button"
+            disabled={isGeneratingProposal}
+            onClick={() => {
+              void handleGenerateProposal();
+            }}
+            className="shrink-0 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer"
+          >
+            {isGeneratingProposal
+              ? 'Iniciando generación...'
+              : 'Generar Propuesta y Enviar a Aprobación'}
+          </button>
+        </div>
+      )}
+
       {/* Complete Analysis & Part 3 Approval / Final Document Sections */}
       {(ticket.status === 'analisis_completo' ||
         ticket.status === 'en_evaluación' ||
@@ -224,8 +350,8 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
                   Síntesis Comercial para Ventas (Miguel Torres)
                 </h3>
               </div>
-              <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-950/60 p-4 rounded-lg border border-slate-800 font-sans">
-                {ticket.handoff.executive_summary}
+              <div className="bg-slate-950/60 p-4 rounded-lg border border-slate-800">
+                <MarkdownPreview content={ticket.handoff.executive_summary} />
               </div>
             </div>
           )}
@@ -235,9 +361,6 @@ export default function RFPDetailPage({ params }: RFPDetailPageProps): React.Rea
 
           {/* Department Worker Sections */}
           <DepartmentKeyAspectsCard sections={ticket.department_sections} />
-
-          {/* Handoff Viewer */}
-          <HandoffJsonViewer handoff={ticket.handoff} />
         </div>
       )}
     </div>

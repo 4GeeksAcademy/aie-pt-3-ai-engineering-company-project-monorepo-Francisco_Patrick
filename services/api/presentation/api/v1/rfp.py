@@ -744,6 +744,34 @@ def get_rfp_approval_service(
 
 
 @router.post(
+    "/tickets/{ticket_id}/enter-approval",
+    status_code=status.HTTP_200_OK,
+    summary="Transition an evaluated ticket to esperando_aprobación",
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def enter_approval_milestone(
+    ticket_id: UUID,
+    approval_service: RFPApprovalService = Depends(get_rfp_approval_service),
+) -> dict:
+    """Initialize Part 3 scoped department interrupts and transition ticket to esperando_aprobación."""
+    try:
+        return approval_service.enter_approval_milestone(ticket_id=ticket_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
     "/tickets/{ticket_id}/resume-approval",
     response_model=ResumeDecisionResponse,
     status_code=status.HTTP_200_OK,

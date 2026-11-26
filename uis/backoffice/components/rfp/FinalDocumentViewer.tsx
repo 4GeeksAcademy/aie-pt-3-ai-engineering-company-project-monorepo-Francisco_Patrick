@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { DepartmentId, FinalDocumentDTO, FinalDocumentSectionEntryDTO } from '@repo/shared-types';
+import { MarkdownPreview } from './MarkdownPreview';
 
 /**
  * Props for the FinalDocumentViewer component.
@@ -55,9 +56,9 @@ export function FinalDocumentViewer({ document }: FinalDocumentViewerProps): Rea
         <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-400">
           Resumen Ejecutivo Consolidado (Miguel Torres)
         </h3>
-        <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-line">
-          {document.executive_summary}
-        </p>
+        <div className="bg-slate-900/60 rounded-lg p-3 border border-slate-800/80">
+          <MarkdownPreview content={document.executive_summary} />
+        </div>
       </div>
 
       {/* Approved Department Sections */}
@@ -76,9 +77,9 @@ export function FinalDocumentViewer({ document }: FinalDocumentViewerProps): Rea
                   Aprobado por {sec.responsible_person}
                 </span>
               </div>
-              <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans leading-relaxed bg-slate-900/70 p-3 rounded-lg border border-slate-800">
-                {sec.approved_content}
-              </pre>
+              <div className="bg-slate-900/70 p-3.5 rounded-lg border border-slate-800">
+                <MarkdownPreview content={sec.approved_content} />
+              </div>
             </div>
           );
         })}

@@ -109,7 +109,14 @@ def run_rfp_response_generation_background(ticket_id: UUID) -> None:
         repo = SQLModelIntakeTicketRepository(session)
         pipeline = RFPResponseGenerationPipeline(repository=repo)
         try:
-            pipeline.execute_for_ticket(ticket_id)
+            part3_payload = pipeline.execute_for_ticket(ticket_id)
+            if part3_payload.overall_status != "needs_human_review":
+                from data.pipelines.rfp_intake.rfp_approval_service import (
+                    RFPApprovalService,
+                )
+
+                approval_service = RFPApprovalService(repository=repo)
+                approval_service.enter_approval_milestone(ticket_id)
         except Exception as exc:
             logger.exception(
                 "RFP Part 2 response generation failed for ticket %s: %s",
