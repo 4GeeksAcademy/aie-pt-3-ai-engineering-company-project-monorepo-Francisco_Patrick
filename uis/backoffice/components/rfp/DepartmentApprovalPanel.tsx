@@ -118,10 +118,11 @@ export function DepartmentApprovalPanel({
     return section.approval_status ?? 'pending';
   };
 
-  const submitDecisionToApi = async (payload: ResumeDecisionRequestDTO): Promise<void> => {
+  const submitDecisionToApi = async (
+    payload: ResumeDecisionRequestDTO
+  ): Promise<ResumeDecisionResponseDTO | void> => {
     if (onSubmitDecision) {
-      await onSubmitDecision(payload);
-      return;
+      return await onSubmitDecision(payload);
     }
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     const response = await fetch(`${apiUrl}/api/v1/rfp/tickets/${ticketId}/resume-approval`, {
@@ -130,8 +131,12 @@ export function DepartmentApprovalPanel({
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      throw new Error(`Error al registrar decisión para ${payload.department_id}.`);
+      const errBody = (await response.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(
+        errBody.detail || `Error al registrar decisión para ${payload.department_id}.`
+      );
     }
+    return (await response.json()) as ResumeDecisionResponseDTO;
   };
 
   const handleDecisionClick = async (
@@ -184,16 +189,17 @@ export function DepartmentApprovalPanel({
           };
 
     try {
-      await submitDecisionToApi(payload);
-      const nextStatus: ApprovalStatus =
+      const result = await submitDecisionToApi(payload);
+      const fallbackStatus: ApprovalStatus =
         decision === 'approve'
           ? 'approved'
           : decision === 'reject'
             ? 'rejected'
             : 'changes_requested';
+      const nextStatus: ApprovalStatus = result?.approval_status ?? fallbackStatus;
 
       setStatusMap((prev) => ({ ...prev, [deptId]: nextStatus }));
-      if (decision === 'approve') {
+      if (decision === 'approve' || decision === 'request_changes') {
         setActiveFeedbackDept(null);
       }
       if (onDecisionRecorded) {
@@ -235,6 +241,7 @@ export function DepartmentApprovalPanel({
           const currentStatus = getEffectiveStatus(section);
           const isApproved = currentStatus === 'approved';
           const isRejected = currentStatus === 'rejected';
+          const isEscalated = currentStatus === 'needs_human_review';
           const isSubmitting = submittingDept === deptId;
           const showFeedbackBox = activeFeedbackDept === deptId;
           const validationError = validationErrorMap[deptId];
@@ -290,7 +297,7 @@ export function DepartmentApprovalPanel({
                 </div>
 
                 {/* Revision Feedback Input */}
-                {showFeedbackBox && !isApproved && (
+                {showFeedbackBox && !isApproved && !isEscalated && (
                   <div className="space-y-2 pt-1">
                     <label
                       htmlFor={`feedback-input-${deptId}`}
@@ -325,43 +332,49 @@ export function DepartmentApprovalPanel({
               </div>
 
               {/* Action Controls */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
-                <button
-                  type="button"
-                  data-testid={`approve-btn-${deptId}`}
-                  disabled={isApproved || isRejected || isSubmitting}
-                  onClick={() => {
-                    void handleDecisionClick(section, 'approve');
-                  }}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Approve
-                </button>
+              {isEscalated ? (
+                <div className="pt-2 border-t border-slate-800/80 text-xs text-purple-300">
+                  Sección escalada a revisión comercial (Miguel Torres) tras alcanzar el límite de revisiones.
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    data-testid={`approve-btn-${deptId}`}
+                    disabled={isApproved || isRejected || isSubmitting}
+                    onClick={() => {
+                      void handleDecisionClick(section, 'approve');
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Approve
+                  </button>
 
-                <button
-                  type="button"
-                  data-testid={`request-changes-btn-${deptId}`}
-                  disabled={isApproved || isRejected || isSubmitting}
-                  onClick={() => {
-                    void handleDecisionClick(section, 'request_changes');
-                  }}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Request Changes
-                </button>
+                  <button
+                    type="button"
+                    data-testid={`request-changes-btn-${deptId}`}
+                    disabled={isApproved || isRejected || isSubmitting}
+                    onClick={() => {
+                      void handleDecisionClick(section, 'request_changes');
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {showFeedbackBox ? 'Confirmar Cambios' : 'Request Changes'}
+                  </button>
 
-                <button
-                  type="button"
-                  data-testid={`reject-btn-${deptId}`}
-                  disabled={isApproved || isRejected || isSubmitting}
-                  onClick={() => {
-                    void handleDecisionClick(section, 'reject');
-                  }}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  Reject
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    data-testid={`reject-btn-${deptId}`}
+                    disabled={isApproved || isRejected || isSubmitting}
+                    onClick={() => {
+                      void handleDecisionClick(section, 'reject');
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
