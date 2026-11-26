@@ -12,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from application.services.knowledge_service import KnowledgeService
 from domain.knowledge.entities import QueryRequest
-from presentation.dependencies import get_knowledge_service_dep
+from presentation.dependencies import get_knowledge_service_dep, verify_llm_rate_limit
 from presentation.schemas.knowledge import (
     KnowledgeHealthResponseSchema,
     KnowledgeQueryRequestSchema,
@@ -32,6 +32,7 @@ router = APIRouter(tags=["Knowledge"])
 async def query_knowledge(
     payload: KnowledgeQueryRequestSchema,
     knowledge_service: KnowledgeService = Depends(get_knowledge_service_dep),
+    _rate_limit: None = Depends(verify_llm_rate_limit),
 ) -> KnowledgeQueryResponseSchema:
     """Process a natural-language policy question and return a grounded answer with citations."""
     domain_request = QueryRequest(

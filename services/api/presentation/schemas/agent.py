@@ -664,6 +664,36 @@ class ServerPongEventSchema(BaseModel):
     timestamp: str
 
 
+class HITLReviewDecisionRequestSchema(BaseModel):
+    """Supervisor review submission schema for HITL gates."""
+
+    request_id: str = Field(description="UUID of pending review request")
+    decision: Literal["APPROVE", "REJECT"] = Field(description="Supervisor decision")
+    reviewer_id: Optional[str] = Field(
+        default=None,
+        description="Optional supervisor ID; ignored/overridden in favor of authenticated JWT user identity (email/id) to prevent spoofing.",
+    )
+    decision_notes: Optional[str] = Field(default=None, description="Operational justification notes")
+
+
+class HITLApprovalResponseSchema(BaseModel):
+    """Response returned upon supervisor review resolution."""
+
+    request_id: str
+    action_type: str
+    entity_id: str
+    requested_by_session: str
+    requested_by_agent: str
+    payload_snapshot: Dict[str, Any]
+    monetary_impact_eur: Optional[float] = None
+    status: str
+    reviewer_id: Optional[str] = None
+    decision_notes: Optional[str] = None
+    created_at: str
+    expires_at: str
+    resolved_at: Optional[str] = None
+
+
 __all__ = [
     "AgentHealthResponseSchema",
     "AgentQueryRequestSchema",
@@ -683,6 +713,8 @@ __all__ = [
     "GuardrailInterventionSchema",
     "GuardrailResetResponseSchema",
     "GuardrailSummaryResponseSchema",
+    "HITLApprovalResponseSchema",
+    "HITLReviewDecisionRequestSchema",
     "KnowledgeSourceCitationSchema",
     "MemoryAuditLogEntrySchema",
     "MemoryProposalFeedbackRequestSchema",

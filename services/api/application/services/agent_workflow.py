@@ -735,6 +735,19 @@ def ticket_tool_node(
         tool_input = _extract_ticket_tool_input(state.get("query") or "")
 
     tool_params = tool_input.to_dict() if tool_input else {}
+    for extra_key in (
+        "order_id",
+        "entity_id",
+        "parcel_id",
+        "declared_value_eur",
+        "address_verified",
+        "refund_amount_eur",
+        "target_carrier",
+        "shipment_status",
+        "brand_id",
+    ):
+        if state.get(extra_key) is not None and extra_key not in tool_params:
+            tool_params[extra_key] = state.get(extra_key)
     if not tool_params.get("order_id"):
         from application.services.agent_guardrails import extract_referenced_order_ids
 
@@ -903,6 +916,19 @@ def inventory_tool_node(
         tool_input = _extract_inventory_tool_input(state.get("query") or "")
 
     tool_params = tool_input.to_dict() if tool_input else {}
+    for extra_key in (
+        "order_id",
+        "entity_id",
+        "parcel_id",
+        "declared_value_eur",
+        "address_verified",
+        "refund_amount_eur",
+        "target_carrier",
+        "shipment_status",
+        "brand_id",
+    ):
+        if state.get(extra_key) is not None and extra_key not in tool_params:
+            tool_params[extra_key] = state.get(extra_key)
 
     # Enforce authorization guardrail if provided (OWASP A01 / FR-007)
     if authorization_guard is not None:

@@ -4,8 +4,10 @@ Centralizes dependency resolution across presentation endpoints, providing acces
 to database connections, driven adapters, repository ports, and application services.
 """
 
-from typing import TYPE_CHECKING, Any, Generator, Optional
-from fastapi import Depends, HTTPException, status
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
 from tinydb import TinyDB
@@ -608,6 +610,70 @@ def get_rate_limiter_dep() -> "RateLimiter":
     return RateLimiter()
 
 
+class LLMRateLimiter:
+    """Sliding-window in-memory rate limiter for LLM-triggering endpoints (default: 30 req/min)."""
+
+    def __init__(self, max_requests: int = 30, window_seconds: int = 60) -> None:
+        """Initialize sliding window rate limiter."""
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._history: Dict[str, List[datetime]] = {}
+        self._lock = threading.Lock()
+
+    def check_rate_limit(self, identifier: str) -> None:
+        """Check whether identifier has exceeded request quota; raises HTTP 429 if breached."""
+        with self._lock:
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(seconds=self.window_seconds)
+            timestamps = [ts for ts in self._history.get(identifier, []) if ts > cutoff]
+
+            if len(timestamps) >= self.max_requests:
+                oldest = timestamps[0]
+                retry_after = max(
+                    1,
+                    int((oldest + timedelta(seconds=self.window_seconds) - now).total_seconds()),
+                )
+                self._history[identifier] = timestamps
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too Many Requests: LLM query rate limit exceeded.",
+                    headers={"Retry-After": str(retry_after)},
+                )
+
+            timestamps.append(now)
+            self._history[identifier] = timestamps
+
+    def reset(self) -> None:
+        """Reset all rate limiter tracking history (for test isolation)."""
+        with self._lock:
+            self._history.clear()
+
+
+_global_llm_rate_limiter = LLMRateLimiter(max_requests=30, window_seconds=60)
+
+
+def get_llm_rate_limiter() -> LLMRateLimiter:
+    """Dependency provider for global singleton LLM rate limiter."""
+    return _global_llm_rate_limiter
+
+
+def verify_llm_rate_limit(
+    request: Request,
+    rate_limiter: LLMRateLimiter = Depends(get_llm_rate_limiter),
+) -> None:
+    """FastAPI dependency enforcing LLM rate limit per client IP or authorization header."""
+    client_id = request.headers.get("Authorization") or (
+        request.client.host if request.client else "unknown_client"
+    )
+    rate_limiter.check_rate_limit(client_id)
+
+
+def get_nist_governance_repository_dep():
+    """Dependency provider for NIST governance repository."""
+    from infrastructure.adapters.nist_governance_repository import get_nist_governance_repository
+    return get_nist_governance_repository()
+
+
 # --- Authentication & Authorization Guards ---
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -684,8 +750,10 @@ __all__ = [
     "get_knowledge_config_dep",
     "get_knowledge_service_dep",
     "get_llm_generation_dep",
+    "get_llm_rate_limiter",
     "get_memory_audit_log_repository_dep",
     "get_memory_guardrail_dep",
+    "get_nist_governance_repository_dep",
     "get_output_guardrail_dep",
     "get_password_reset_token_repository_dep",
     "get_profile_repository_dep",
@@ -712,4 +780,6 @@ __all__ = [
     "get_user_service_dep",
     "get_vector_store_dep",
     "oauth2_scheme",
+    "verify_llm_rate_limit",
+    "LLMRateLimiter",
 ]

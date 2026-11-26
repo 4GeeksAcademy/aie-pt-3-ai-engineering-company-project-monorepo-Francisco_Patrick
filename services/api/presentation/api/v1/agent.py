@@ -66,8 +66,11 @@ from presentation.dependencies import (
     get_security_adapter_dep,
     get_support_agent_service,
     get_user_service_dep,
+    verify_llm_rate_limit,
 )
 from presentation.schemas.security_audit import (
+    EvaluationResultSchema,
+    HighValueDispatchEvaluationRequest,
     HumanApprovalDecisionRequest,
     HumanApprovalGateResponse,
 )
@@ -86,6 +89,8 @@ from presentation.schemas.agent import (
     ClientUserMessageFrameSchema,
     GuardrailInterventionSchema,
     GuardrailResetResponseSchema,
+    HITLApprovalResponseSchema,
+    HITLReviewDecisionRequestSchema,
     GuardrailSummaryResponseSchema,
     KnowledgeSourceCitationSchema,
     MemoryProposalFeedbackRequestSchema,
@@ -120,6 +125,7 @@ router = APIRouter(tags=["Support Agent"])
 async def query_support_agent(
     payload: AgentQueryRequestSchema,
     agent_service: SupportAgentServicePort = Depends(get_support_agent_service),
+    _rate_limit: None = Depends(verify_llm_rate_limit),
 ) -> AgentQueryResponseSchema | JSONResponse:
     """Execute the compiled LangGraph support agent workflow and return a grounded answer with trace metadata."""
     session_ctx: Optional[AuthenticatedSessionContext] = None
@@ -1245,6 +1251,63 @@ async def list_pending_agent_action_reviews(
 
 
 @router.post(
+    "/actions/review",
+    response_model=HumanApprovalGateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Submit Human Supervisor Review Decision for HITL Gate (NIST Contract)",
+)
+async def submit_supervisor_action_review(
+    review_req: HITLReviewDecisionRequestSchema = Body(...),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
+) -> HumanApprovalGateResponse:
+    """Submit human supervisor review decision conforming to contracts/nist-governance-api.openapi.json.
+
+    Note: To prevent reviewer identity spoofing, `reviewer_id` is always derived from the
+    authenticated supervisor's Bearer JWT (`current_user.email or current_user.id`), ignoring
+    any client-supplied `reviewer_id` field in the request body.
+    """
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions. Supervisor or administrator role required.",
+        )
+    reviewer = current_user.email or current_user.id
+    try:
+        updated = await run_in_threadpool(
+            policy_service.review_pending_request,
+            request_id=review_req.request_id,
+            reviewer_id=reviewer,
+            approved=(review_req.decision == "APPROVE"),
+            decision_notes=review_req.decision_notes,
+        )
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Review request '{review_req.request_id}' not found.",
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+
+    return HumanApprovalGateResponse(
+        request_id=updated.request_id,
+        action_type=updated.action_type,
+        entity_id=updated.entity_id,
+        requested_by_session=updated.requested_by_session,
+        payload_snapshot=updated.payload_snapshot,
+        requested_amount_eur=updated.requested_amount_eur,
+        status=updated.status,
+        reviewer_id=updated.reviewer_id,
+        decision_notes=updated.decision_notes,
+        created_at=updated.created_at.isoformat(),
+        reviewed_at=updated.reviewed_at.isoformat() if updated.reviewed_at else None,
+    )
+
+
+@router.post(
     "/actions/review/{request_id}",
     response_model=HumanApprovalGateResponse,
     status_code=status.HTTP_200_OK,
@@ -1290,5 +1353,36 @@ async def review_agent_action(
         created_at=updated.created_at.isoformat(),
         reviewed_at=updated.reviewed_at.isoformat() if updated.reviewed_at else None,
     )
+
+
+@router.post(
+    "/actions/dispatch",
+    response_model=EvaluationResultSchema,
+    status_code=status.HTTP_200_OK,
+    summary="Evaluate and gate high-value or unverified parcel dispatch (HITL Gate FR-012)",
+)
+async def evaluate_high_value_dispatch_action(
+    dispatch_req: HighValueDispatchEvaluationRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    policy_service: Any = Depends(get_agent_action_policies_service),
+) -> EvaluationResultSchema:
+    """Evaluate a parcel dispatch confirmation against the high-value (> 500 EUR) and address verification HITL gate."""
+    session_ctx = AuthenticatedSessionContext(
+        session_id=f"sess_{current_user.id}",
+        customer_id=str(current_user.id),
+        authorized_order_ids=(
+            (dispatch_req.order_id,)
+            if dispatch_req.order_id
+            else (dispatch_req.parcel_id,)
+        ),
+    )
+    return await run_in_threadpool(
+        policy_service.evaluate_high_value_dispatch,
+        session_context=session_ctx,
+        parcel_id=dispatch_req.parcel_id,
+        declared_value_eur=dispatch_req.declared_value_eur,
+        address_verified=dispatch_req.address_verified,
+    )
+
 
 

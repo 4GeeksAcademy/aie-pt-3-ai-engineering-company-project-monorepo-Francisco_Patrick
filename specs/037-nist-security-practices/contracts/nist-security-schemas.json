@@ -1,0 +1,388 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TrackFlowNISTSecurityGovernanceSchemas",
+  "description": "JSON Schemas for TrackFlow NIST Security Practices, AI Governance, and HITL Gates",
+  "definitions": {
+    "AISystemRecord": {
+      "type": "object",
+      "required": [
+        "system_id",
+        "name",
+        "description",
+        "repository_path",
+        "architecture_type",
+        "custodian_team",
+        "technical_lead",
+        "data_classification",
+        "input_attack_surfaces",
+        "requires_hitl_gates",
+        "rate_limiting_enabled",
+        "last_audited_at"
+      ],
+      "properties": {
+        "system_id": {
+          "type": "string",
+          "pattern": "^TF-AI-[0-9]{2}-[A-Z0-9-]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "repository_path": {
+          "type": "string"
+        },
+        "architecture_type": {
+          "type": "string",
+          "enum": [
+            "AUTONOMOUS_AGENT",
+            "DECISION_ENGINE",
+            "RAG_PIPELINE",
+            "MCP_SERVER_TOOL"
+          ]
+        },
+        "custodian_team": {
+          "type": "string"
+        },
+        "technical_lead": {
+          "type": "string"
+        },
+        "data_classification": {
+          "type": "string",
+          "enum": [
+            "RESTRICTED_PII",
+            "CONFIDENTIAL_B2B",
+            "INTERNAL_OPERATIONAL",
+            "PUBLIC_TRANSIT"
+          ]
+        },
+        "input_attack_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires_hitl_gates": {
+          "type": "boolean"
+        },
+        "rate_limiting_enabled": {
+          "type": "boolean"
+        },
+        "last_audited_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "SharedResponsibilityRecord": {
+      "type": "object",
+      "required": [
+        "provider_id",
+        "provider_name",
+        "vendor_category",
+        "service_scope",
+        "trackflow_responsibilities",
+        "vendor_responsibilities",
+        "zero_data_retention_active",
+        "transit_encryption_enforced",
+        "governing_dpa_reference"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string"
+        },
+        "provider_name": {
+          "type": "string"
+        },
+        "vendor_category": {
+          "type": "string",
+          "enum": [
+            "FOUNDATION_MODEL_API",
+            "VECTOR_DATABASE_CLOUD",
+            "COURIER_CARRIER_INTEGRATION"
+          ]
+        },
+        "service_scope": {
+          "type": "string"
+        },
+        "trackflow_responsibilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vendor_responsibilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "zero_data_retention_active": {
+          "type": "boolean"
+        },
+        "transit_encryption_enforced": {
+          "type": "boolean"
+        },
+        "governing_dpa_reference": {
+          "type": "string"
+        }
+      }
+    },
+    "HITLApprovalRequest": {
+      "type": "object",
+      "required": [
+        "request_id",
+        "action_type",
+        "entity_id",
+        "requested_by_session",
+        "requested_by_agent",
+        "payload_snapshot",
+        "status",
+        "created_at",
+        "expires_at"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "action_type": {
+          "type": "string",
+          "enum": [
+            "RETURN_APPROVAL",
+            "HIGH_VALUE_DISPATCH",
+            "CARRIER_REASSIGNMENT",
+            "CROSS_BRAND_METRIC_SHARE"
+          ]
+        },
+        "entity_id": {
+          "type": "string"
+        },
+        "requested_by_session": {
+          "type": "string"
+        },
+        "requested_by_agent": {
+          "type": "string"
+        },
+        "payload_snapshot": {
+          "type": "object"
+        },
+        "monetary_impact_eur": {
+          "type": "number",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING_HUMAN_APPROVAL",
+            "HUMAN_APPROVED",
+            "HUMAN_REJECTED",
+            "EXPIRED_FAIL_SECURE"
+          ]
+        },
+        "reviewer_id": {
+          "type": ["string", "null"]
+        },
+        "decision_notes": {
+          "type": ["string", "null"]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolved_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    "ResidualRiskRecord": {
+      "type": "object",
+      "required": [
+        "risk_id",
+        "nist_function",
+        "description",
+        "severity",
+        "business_impact",
+        "compensatory_controls",
+        "target_remediation_milestone",
+        "risk_owner",
+        "status"
+      ],
+      "properties": {
+        "risk_id": {
+          "type": "string",
+          "pattern": "^RISK-NIST-[A-Z]{2}-[0-9]{2}$"
+        },
+        "nist_function": {
+          "type": "string",
+          "enum": [
+            "GOVERN",
+            "IDENTIFY",
+            "PROTECT",
+            "DETECT",
+            "RESPOND",
+            "RECOVER"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "business_impact": {
+          "type": "string"
+        },
+        "compensatory_controls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_remediation_milestone": {
+          "type": "string"
+        },
+        "risk_owner": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACCEPTED_TEMPORARY",
+            "REMEDIATION_SCHEDULED",
+            "REMEDIATED"
+          ]
+        }
+      }
+    },
+    "NISTControlAction": {
+      "type": "object",
+      "required": [
+        "control_id",
+        "category_code",
+        "title",
+        "concrete_operational_action",
+        "verification_mechanism",
+        "implementation_location",
+        "priority"
+      ],
+      "properties": {
+        "control_id": {
+          "type": "string"
+        },
+        "category_code": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "concrete_operational_action": {
+          "type": "string"
+        },
+        "verification_mechanism": {
+          "type": "string"
+        },
+        "implementation_location": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["P1", "P2", "P3"]
+        }
+      }
+    },
+    "NISTAssessmentReport": {
+      "type": "object",
+      "required": [
+        "report_id",
+        "framework_version",
+        "created_at",
+        "executive_sponsor",
+        "functions",
+        "residual_risks",
+        "regulatory_alignment"
+      ],
+      "properties": {
+        "report_id": {
+          "type": "string"
+        },
+        "framework_version": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "executive_sponsor": {
+          "type": "string"
+        },
+        "functions": {
+          "type": "object",
+          "required": [
+            "GOVERN",
+            "IDENTIFY",
+            "PROTECT",
+            "DETECT",
+            "RESPOND",
+            "RECOVER"
+          ],
+          "properties": {
+            "GOVERN": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            },
+            "IDENTIFY": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            },
+            "PROTECT": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            },
+            "DETECT": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            },
+            "RESPOND": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            },
+            "RECOVER": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/NISTControlAction" }
+            }
+          }
+        },
+        "residual_risks": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ResidualRiskRecord" }
+        },
+        "regulatory_alignment": {
+          "type": "object",
+          "required": [
+            "gdpr_aepd_72h_sla_compliant",
+            "ccpa_cpra_rights_enforced",
+            "primary_dpo_office"
+          ],
+          "properties": {
+            "gdpr_aepd_72h_sla_compliant": { "type": "boolean" },
+            "ccpa_cpra_rights_enforced": { "type": "boolean" },
+            "primary_dpo_office": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

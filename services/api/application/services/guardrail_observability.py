@@ -26,6 +26,7 @@ from domain.agent.entities import (
     GuardrailEvaluationResult,
     GuardrailFailureType,
     GuardrailSummaryReport,
+    SecurityAuditLogEntry,
 )
 from domain.agent.ports import GuardrailObservabilityPort
 
@@ -139,6 +140,25 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
         self._total_evaluations: int = 0
         self._evaluations_by_session: Dict[str, int] = {}
         self._events: List[GuardrailAuditEvent] = []
+        self._audit_logs: List[SecurityAuditLogEntry] = []
+
+    def record_security_audit_log(self, entry: SecurityAuditLogEntry) -> SecurityAuditLogEntry:
+        """Record a structured security audit log entry with thread safety."""
+        with self._lock:
+            self._audit_logs.append(entry)
+            return entry
+
+    def list_security_audit_logs(
+        self,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[SecurityAuditLogEntry]:
+        """Retrieve recent security audit log entries, optionally filtered by session."""
+        with self._lock:
+            if session_id:
+                matching = [log for log in self._audit_logs if log.session_id == session_id]
+                return matching[-limit:]
+            return self._audit_logs[-limit:]
 
     def record_evaluation(
         self,
@@ -201,6 +221,35 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
                 metadata=dict(result.metadata or {}),
             )
             self._events.append(event)
+
+            tenant_id = "default"
+            if result.metadata:
+                tenant_id = str(
+                    result.metadata.get("brand_id")
+                    or result.metadata.get("tenant_id")
+                    or "default"
+                )
+            self.record_security_audit_log(
+                SecurityAuditLogEntry(
+                    event_id=event.event_id,
+                    timestamp=event.timestamp,
+                    agent_id="TF-AI-01-SUPPORT-AGENT",
+                    session_id=effective_session,
+                    tenant_id=tenant_id,
+                    event_category=f"GUARDRAIL_{result.layer.upper()}",
+                    action_attempted=result.input_category,
+                    input_parameters_redacted={
+                        "redacted_preview": redacted,
+                        "trace_id": trace_id,
+                        "failure_type": failure_type,
+                    },
+                    policy_rules_evaluated=[result.layer, result.reason_code],
+                    decision_outcome=disposition.upper(),
+                    reasoning_rationale=sanitize_audit_preview(
+                        result.message or result.reason_code
+                    ),
+                )
+            )
             return event
 
     def get_summary(
@@ -293,6 +342,7 @@ class GuardrailObservabilityService(GuardrailObservabilityPort):
             self._total_evaluations = 0
             self._evaluations_by_session.clear()
             self._events.clear()
+            self._audit_logs.clear()
 
 
 def format_guardrail_summary_cli(report: GuardrailSummaryReport) -> str:

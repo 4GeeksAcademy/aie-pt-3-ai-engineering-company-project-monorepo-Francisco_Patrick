@@ -133,16 +133,20 @@ class KnowledgeService:
         query: str,
         top_k: int = 3,
         min_score: Optional[float] = None,
+        tenant_id: Optional[str] = None,
     ) -> List[RetrievedContext]:
         """Embed a query and retrieve qualifying context chunks above the similarity threshold.
+
+        Applies strict tenant isolation when tenant_id is specified to prevent context poisoning.
 
         Args:
             query: Sanitized or raw user inquiry string.
             top_k: Maximum number of candidate chunks to retrieve.
             min_score: Optional minimum cosine similarity score threshold override.
+            tenant_id: Optional B2B tenant or customer brand ID partition.
 
         Returns:
-            List of RetrievedContext instances meeting `min_score`.
+            List of RetrievedContext instances meeting `min_score` and matching tenant filter.
         """
         effective_threshold = (
             min_score if min_score is not None else self._default_min_score
@@ -153,11 +157,18 @@ class KnowledgeService:
             top_k=top_k,
             language=None,
         )
-        return [
-            ctx
-            for ctx in raw_candidates
-            if ctx.similarity_score >= effective_threshold
-        ]
+        filtered: List[RetrievedContext] = []
+        for ctx in raw_candidates:
+            if ctx.similarity_score < effective_threshold:
+                continue
+            # Enforce tenant isolation when specified to prevent cross-tenant context poisoning
+            if tenant_id and hasattr(ctx, "metadata") and ctx.metadata:
+                chunk_tenant = ctx.metadata.get("tenant_id") or ctx.metadata.get("brand_id")
+                if chunk_tenant and chunk_tenant != tenant_id:
+                    continue
+            filtered.append(ctx)
+
+        return filtered
 
     def generate_answer(
         self,

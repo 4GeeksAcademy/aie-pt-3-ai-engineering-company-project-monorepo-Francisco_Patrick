@@ -286,6 +286,99 @@ class TestCountryResolutionAndPolicySeparation:
         assert result.reason_code == "IN_TRANSIT_CARRIER_CHANGE_REQUIRES_HUMAN_APPROVAL"
         assert "human_review_queue_id" in result.metadata
 
+    def test_tool_call_authorization_high_value_dispatch_hitl(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify high-value parcel dispatch (> 500 EUR) is intercepted at runtime and queued for HITL approval."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="high_value_dispatch",
+            parameters={
+                "order_id": "10492",
+                "parcel_id": "PKG-HV-901",
+                "declared_value_eur": 750.00,
+                "address_verified": True,
+            },
+            language="es",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "HIGH_VALUE_DISPATCH_REQUIRES_HUMAN_APPROVAL"
+        assert "human_review_queue_id" in result.metadata
+        assert result.metadata["human_review_queue_id"].startswith("req_hitl_")
+
+        # Within autonomous threshold (<= 500 EUR and verified address) is allowed
+        allowed_res = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="high_value_dispatch",
+            parameters={
+                "order_id": "10492",
+                "parcel_id": "PKG-STD-102",
+                "declared_value_eur": 240.00,
+                "address_verified": True,
+            },
+            language="es",
+        )
+        assert allowed_res.action == "allow"
+        assert allowed_res.reason_code == "TOOL_AUTHORIZATION_VERIFIED"
+
+    def test_tool_call_authorization_unverified_address_dispatch_hitl(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify parcel dispatch with unverified address is intercepted even below 500 EUR."""
+        result = auth_guard.validate_tool_call_authorization(
+            session_context=spain_b2c_session,
+            tool_name="confirm_dispatch",
+            parameters={
+                "parcel_id": "PKG-UNVERIFIED-303",
+                "declared_value_eur": 120.00,
+                "address_verified": False,
+            },
+            language="en",
+        )
+        assert result.action == "block"
+        assert result.failure_category == "security"
+        assert result.reason_code == "HIGH_VALUE_DISPATCH_REQUIRES_HUMAN_APPROVAL"
+        assert "human_review_queue_id" in result.metadata
+
+    def test_runtime_inventory_tool_node_blocks_high_value_dispatch_for_hitl(
+        self,
+        auth_guard: AuthorizationGuardrailValidator,
+        spain_b2c_session: AuthenticatedSessionContext,
+    ) -> None:
+        """Verify inventory_tool_node enforces high-value dispatch HITL gate in runtime workflow execution."""
+        from application.services.agent_workflow import inventory_tool_node
+        from domain.agent.entities import InventoryToolInput, InventoryToolOutput
+        from domain.agent.ports import InventoryStockToolPort
+
+        class _StubInventoryTool(InventoryStockToolPort):
+            def query_inventory(self, tool_input: InventoryToolInput) -> InventoryToolOutput:
+                return InventoryToolOutput(status="success", records=[], total_matched=0)
+
+        state = {
+            "query": "Confirm dispatch for order #10492 parcel PKG-HV-999",
+            "session_context": spain_b2c_session,
+            "language": "es",
+            "inventory_tool_input": InventoryToolInput(sku="TF-100"),
+            "order_id": "10492",
+            "parcel_id": "PKG-HV-999",
+            "declared_value_eur": 920.00,
+            "address_verified": True,
+        }
+        res = inventory_tool_node(
+            state=state,  # type: ignore[arg-type]
+            inventory_tool=_StubInventoryTool(),
+            authorization_guard=auth_guard,
+        )
+        assert res["is_refusal"] is True
+        assert res["guardrail_action"] == "block"
+        assert res["guardrail_reason_code"] == "HIGH_VALUE_DISPATCH_REQUIRES_HUMAN_APPROVAL"
+        assert "PKG-HV-999" in res["answer"]
+
     def test_runtime_ticket_tool_node_blocks_unauthorized_order(
         self,
         auth_guard: AuthorizationGuardrailValidator,

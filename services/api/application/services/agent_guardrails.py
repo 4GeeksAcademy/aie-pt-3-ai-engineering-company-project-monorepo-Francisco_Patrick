@@ -183,6 +183,19 @@ def _is_spanish(query: str, language: str = "en") -> bool:
     return (language or "").strip().lower().startswith("es")
 
 
+BOUNDARY_DELIMITER_START = "<<<EXTERNAL_UNTRUSTED_CONTENT>>>"
+BOUNDARY_DELIMITER_END = "<<</EXTERNAL_UNTRUSTED_CONTENT>>>"
+
+
+def wrap_untrusted_content(content: str) -> str:
+    """Envelop untrusted external input within structural prompt boundary markers.
+
+    Neutralizes embedded delimiter escaping and encapsulates raw user or document content.
+    """
+    clean_text = (content or "").replace(BOUNDARY_DELIMITER_START, "").replace(BOUNDARY_DELIMITER_END, "")
+    return f"{BOUNDARY_DELIMITER_START}\n{clean_text}\n{BOUNDARY_DELIMITER_END}"
+
+
 def build_hardened_system_prompt(
     language: str = "en",
     resolved_country: Optional[OperatingCountry] = None,
@@ -1455,6 +1468,16 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
         if brand_id and session_context:
             session_brand = getattr(session_context, "brand_id", None)
             if session_brand and session_brand != brand_id:
+                from application.services.agent_action_policies import (
+                    get_agent_action_policies_service,
+                )
+
+                policy_svc = get_agent_action_policies_service()
+                eval_res = policy_svc.evaluate_cross_brand_metric_share(
+                    session_context=session_context,
+                    target_brand_id=str(brand_id),
+                    metric_name=str(parameters.get("metric_name") or tool_name),
+                )
                 msg = (
                     f"Acceso denegado a métricas de la marca '{brand_id}'."
                     if use_es
@@ -1465,11 +1488,11 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                     action="block",
                     failure_category="security",
                     input_category="unauthorized_order",
-                    reason_code="CROSS_BRAND_METRIC_ACCESS_DENIED",
+                    reason_code=eval_res.reason_code or "CROSS_BRAND_METRIC_ACCESS_DENIED",
                     message=msg,
                 )
 
-        # 3. Agent Action Policies (HITL gates for high-impact/irreversible actions - FR-004, FR-007)
+        # 3. Agent Action Policies (HITL gates for high-impact/irreversible actions - FR-004, FR-007, FR-012)
         normalized_tool = tool_name.strip().lower()
         if normalized_tool in ("return_approval", "return_tool") or "refund_amount_eur" in parameters:
             from application.services.agent_action_policies import (
@@ -1497,6 +1520,45 @@ class AuthorizationGuardrailValidator(AuthorizationGuardrailPort):
                     failure_category="security",
                     input_category="policy_mismatch",
                     reason_code=eval_res.reason_code or "HIGH_VALUE_RETURN_REQUIRES_HUMAN_APPROVAL",
+                    message=msg,
+                    metadata={"human_review_queue_id": eval_res.human_review_queue_id},
+                )
+
+        if (
+            normalized_tool in ("high_value_dispatch", "dispatch_tool", "confirm_dispatch", "parcel_dispatch")
+            or "declared_value_eur" in parameters
+            or "address_verified" in parameters
+        ):
+            from application.services.agent_action_policies import (
+                get_agent_action_policies_service,
+            )
+
+            policy_svc = get_agent_action_policies_service()
+            parcel_id = str(parameters.get("parcel_id") or order_id or "unknown")
+            declared_value_eur = float(parameters.get("declared_value_eur") or 0.0)
+            address_verified = (
+                bool(parameters["address_verified"])
+                if "address_verified" in parameters and parameters["address_verified"] is not None
+                else True
+            )
+            eval_res = policy_svc.evaluate_high_value_dispatch(
+                session_context=session_context,
+                parcel_id=parcel_id,
+                declared_value_eur=declared_value_eur,
+                address_verified=address_verified,
+            )
+            if eval_res.decision == "PENDING_HUMAN_APPROVAL":
+                msg = (
+                    f"El despacho del envío #{parcel_id} (valor declarado {declared_value_eur:.2f} €, dirección verificada={address_verified}) requiere aprobación de un supervisor humano."
+                    if use_es
+                    else f"Dispatch for parcel #{parcel_id} (declared value {declared_value_eur:.2f} EUR, address_verified={address_verified}) requires human supervisor approval."
+                )
+                return GuardrailEvaluationResult(
+                    layer="authorization_guard",
+                    action="block",
+                    failure_category="security",
+                    input_category="policy_mismatch",
+                    reason_code=eval_res.reason_code or "HIGH_VALUE_DISPATCH_REQUIRES_HUMAN_APPROVAL",
                     message=msg,
                     metadata={"human_review_queue_id": eval_res.human_review_queue_id},
                 )
@@ -2003,9 +2065,92 @@ class OutputGuardrailValidator(OutputGuardrailPort):
             sanitized_text=cleaned,
         )
 
+    def validate_tool_execution(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> GuardrailEvaluationResult:
+        """Validate proposed tool call and arguments against the execution allowlist."""
+        validator = ToolExecutionAllowlistValidator()
+        return validator.validate_tool_call(tool_name, arguments)
+
+
+APPROVED_TOOL_ALLOWLIST: Dict[str, Dict[str, Any]] = {
+    "lookup_order": {"order_id": str},
+    "get_inventory": {"sku": str},
+    "request_return_approval": {
+        "order_id": str,
+        "refund_amount_eur": (int, float),
+        "shipment_status": str,
+    },
+    "select_carrier": {
+        "order_id": str,
+        "weight_kg": (int, float),
+        "destination_country": str,
+    },
+}
+
+
+class ToolExecutionAllowlistValidator:
+    """Intermediate execution gate validating proposed tool calls against allowlist schemas."""
+
+    def __init__(self, allowlist: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+        """Initialize allowlist validator with registered tool schemas."""
+        self.allowlist = allowlist or APPROVED_TOOL_ALLOWLIST
+
+    def validate_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> GuardrailEvaluationResult:
+        """Verify tool name and parameter types prior to adapter execution."""
+        if tool_name not in self.allowlist:
+            return GuardrailEvaluationResult(
+                layer="output_guard",
+                action="block",
+                failure_category="security",
+                input_category="malformed_output",
+                reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                message=f"Unauthorized tool invocation: '{tool_name}' is not in the execution allowlist.",
+            )
+
+        expected_schema = self.allowlist[tool_name]
+        for field_name, expected_type in expected_schema.items():
+            if field_name not in arguments:
+                return GuardrailEvaluationResult(
+                    layer="output_guard",
+                    action="block",
+                    failure_category="structural",
+                    input_category="malformed_output",
+                    reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                    message=f"Missing required parameter '{field_name}' for tool '{tool_name}'.",
+                )
+            val = arguments[field_name]
+            if not isinstance(val, expected_type):
+                return GuardrailEvaluationResult(
+                    layer="output_guard",
+                    action="block",
+                    failure_category="structural",
+                    input_category="malformed_output",
+                    reason_code="SECURITY_GUARDRAIL_VIOLATION",
+                    message=f"Parameter '{field_name}' must be of type {expected_type}, got {type(val)}.",
+                )
+
+        return GuardrailEvaluationResult(
+            layer="output_guard",
+            action="allow",
+            failure_category="none",
+            input_category="in_domain",
+            reason_code="TOOL_CALL_APPROVED",
+            message="Tool invocation validated against allowlist.",
+        )
+
 
 __all__ = [
+    "APPROVED_TOOL_ALLOWLIST",
     "AuthorizationGuardrailValidator",
+    "BOUNDARY_DELIMITER_END",
+    "BOUNDARY_DELIMITER_START",
     "FastIntentSemanticRouter",
     "InputGuardrailValidator",
     "JAILBREAK_REFUSAL_EN",
@@ -2017,6 +2162,7 @@ __all__ = [
     "PERSONAL_TASK_REFUSAL_ES",
     "SAFE_OUTPUT_FALLBACK_EN",
     "SAFE_OUTPUT_FALLBACK_ES",
+    "ToolExecutionAllowlistValidator",
     "TwoTierContextSanitizer",
     "build_casual_trivia_response",
     "build_hardened_system_prompt",
@@ -2024,4 +2170,5 @@ __all__ = [
     "extract_referenced_order_ids",
     "strip_external_context_tags",
     "wrap_passive_external_context",
+    "wrap_untrusted_content",
 ]
