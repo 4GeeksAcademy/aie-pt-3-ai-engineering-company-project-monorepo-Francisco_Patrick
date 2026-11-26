@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build/
+data/raw/*.pdf
 
 # Next.js build directories
 .next/
